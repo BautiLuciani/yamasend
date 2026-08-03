@@ -1,0 +1,414 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import type {
+  AppUser,
+  Campaign,
+  ChatMessage,
+  Contact,
+  ContactList,
+  KpiFilterKey,
+  StatusState,
+  Template,
+} from "@/lib/types";
+import Topbar from "./Topbar";
+import ProfileDrawer from "./ProfileDrawer";
+import KpiRow from "./KpiRow";
+import ContactsTable from "./ContactsTable";
+import CampaignPanel from "./CampaignPanel";
+import Footer from "./Footer";
+import AiChatBar from "./AiChatBar";
+import QrImportModal from "./QrImportModal";
+import SaveModal from "./SaveModal";
+import { saveListAction, saveCampaignAction } from "@/lib/actions/write";
+
+interface AppShellProps {
+  user: AppUser;
+  contacts: Contact[];
+  templates: Template[];
+  lists: ContactList[];
+  campaigns: Campaign[];
+  onLogout: () => void | Promise<void>;
+}
+
+const COST_PER_MSG = 0.0618;
+
+export default function AppShell({
+  user,
+  contacts,
+  templates,
+  lists,
+  campaigns,
+  onLogout,
+}: AppShellProps) {
+  const router = useRouter();
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
+  const [modo24h, setModo24h] = useState(false);
+
+  const [tplId, setTplId] = useState<string | null>(null);
+  const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [newTplContent, setNewTplContent] = useState("");
+  const [newTplName, setNewTplName] = useState("");
+  const [freeText, setFreeText] = useState("");
+
+  const [status, setStatus] = useState<StatusState>("idle");
+
+  const [qrOpen, setQrOpen] = useState(false);
+  const [saveModal, setSaveModal] = useState<"lista" | "campaña" | null>(null);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: "welcome",
+      type: "bot",
+      text: "Hola 👋 Soy tu asistente AI. Podés pedirme que arme listas, redacte mensajes o te ayude con la campaña.",
+    },
+  ]);
+
+  function addMsg(text: string, type: ChatMessage["type"] = "bot") {
+    setMessages((prev) => [
+      ...prev,
+      { id: `${Date.now()}-${Math.random()}`, text, type },
+    ]);
+  }
+
+  // ── filtrado combinado, replicando la lógica del original ──
+  const visibleContacts = useMemo(() => {
+    return contacts.filter((c) => {
+      if (c.bloqueado && !modo24h) return false;
+      if (filt.has("24h") && !c.en24h) return false;
+      if (filt.has("cliente") && c.etapa !== "cerrado") return false;
+      if (filt.has("ai") && !c.enListaAI) return false;
+      const scores = (["caliente", "tibio", "frio"] as const).filter((s) =>
+        filt.has(s),
+      );
+      if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
+        return false;
+      return true;
+    });
+  }, [contacts, filt, modo24h]);
+
+  const counts = useMemo(
+    () => ({
+      total: contacts.filter((c) => !c.bloqueado).length,
+      clientes: contacts.filter((c) => !c.bloqueado && c.etapa === "cliente")
+        .length,
+      ai: contacts.filter((c) => c.enListaAI).length,
+      h24: contacts.filter((c) => c.en24h).length,
+      caliente: contacts.filter((c) => !c.bloqueado && c.score === "caliente")
+        .length,
+      tibio: contacts.filter((c) => !c.bloqueado && c.score === "tibio")
+        .length,
+      frio: contacts.filter((c) => !c.bloqueado && c.score === "frio").length,
+    }),
+    [contacts],
+  );
+
+  function recomputeSelFromFilters(nextFilt: Set<KpiFilterKey>, next24h: boolean) {
+    const next = new Set<string>();
+    contacts.forEach((c) => {
+      if (c.bloqueado && !next24h) return;
+      if (nextFilt.has("24h") && !c.en24h) return;
+      if (nextFilt.has("cliente") && c.etapa !== "cerrado") return;
+      if (nextFilt.has("ai") && !c.enListaAI) return;
+      const scores = (["caliente", "tibio", "frio"] as const).filter((s) =>
+        nextFilt.has(s),
+      );
+      if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
+        return;
+      next.add(c.id);
+    });
+    setSel(next);
+  }
+
+  function handleSelectTotal() {
+    setFilt(new Set());
+    setModo24h(false);
+    const next = new Set(contacts.filter((c) => !c.bloqueado).map((c) => c.id));
+    setSel(next);
+    setStatus(next.size > 0 ? "need-tpl" : "idle");
+    addMsg(
+      `Seleccionaste ${next.size} contactos. ¿Elegís un template existente o querés que te arme uno especial para esta lista?`,
+    );
+  }
+
+  function handleToggleFilter(key: KpiFilterKey) {
+    setFilt((prev) => {
+      const next = new Set(prev);
+      let next24h = modo24h;
+
+      if (key === "ai" && !prev.has("ai")) {
+        next.clear();
+        next.add("ai");
+      } else if (key !== "ai" && prev.has("ai")) {
+        next.delete("ai");
+        next.add(key);
+        if (key === "24h") next24h = true;
+      } else if (next.has(key)) {
+        next.delete(key);
+        if (key === "24h") next24h = false;
+      } else {
+        next.add(key);
+        if (key === "24h") next24h = true;
+      }
+
+      setModo24h(next24h);
+      if (next24h && tplId) {
+        setTplId(null);
+        setIsCreatingNew(false);
+      }
+      recomputeSelFromFilters(next, next24h);
+      setStatus("need-tpl");
+      return next;
+    });
+  }
+
+  function handleToggleRow(id: string) {
+    setSel((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.size > 0 && status === "idle") setStatus("need-tpl");
+      if (next.size === 0) setStatus("idle");
+      return next;
+    });
+  }
+
+  function handleToggleAll(checked: boolean) {
+    setSel((prev) => {
+      const next = new Set(prev);
+      visibleContacts.forEach((c) => {
+        checked ? next.add(c.id) : next.delete(c.id);
+      });
+      return next;
+    });
+  }
+
+  function handleClearSel() {
+    setSel(new Set());
+    setTplId(null);
+    setIsCreatingNew(false);
+    setNewTplContent("");
+    setNewTplName("");
+    setFreeText("");
+    setFilt(new Set());
+    setModo24h(false);
+    setStatus("idle");
+    addMsg(
+      "Hola 👋 Seleccioná contactos usando los KPIs, o pedime que arme una lista. Puedo ayudarte en cada paso.",
+    );
+  }
+
+  function handleSelectTpl(id: string | null) {
+    setTplId(id);
+    setIsCreatingNew(false);
+    if (id && sel.size > 0) {
+      setStatus("ready");
+      addMsg(
+        `✅ Todo listo para enviar. ${sel.size} contactos · ${templates.find((t) => t.id === id)?.nombre ?? "template"}. Cuando quieras presioná Enviar campaña.`,
+      );
+    } else if (sel.size > 0) {
+      setStatus("need-tpl");
+    } else {
+      setStatus("idle");
+    }
+  }
+
+  function handleStartNewTpl() {
+    setIsCreatingNew(true);
+    setTplId(null);
+    setNewTplContent("");
+    setNewTplName("");
+    setStatus("editing-tpl");
+    addMsg(
+      `Avisame si necesitás ayuda para escribir el template. Puedo sugerirte un texto pensado para tus ${sel.size} contactos.`,
+    );
+  }
+
+  function handleCancelNewTpl() {
+    setIsCreatingNew(false);
+    setNewTplContent("");
+    setNewTplName("");
+    setStatus(sel.size > 0 ? "need-tpl" : "idle");
+  }
+
+  function handleSendToMeta() {
+    setStatus("approving");
+    addMsg(
+      "Template enviado a Meta para revisión. Te aviso cuando esté aprobado — puede tardar unos minutos.",
+    );
+    // Simulación: en producción esto llama al webhook de n8n desde el servidor
+    setTimeout(() => {
+      setStatus("ready");
+      setIsCreatingNew(false);
+      addMsg(
+        "✅ Template aprobado por Meta. Ya podés enviar la campaña. Presioná Enviar campaña.",
+      );
+    }, 3000);
+  }
+
+  function handleEnviar() {
+    if (status !== "ready") return;
+    const cost = modo24h ? "Gratis" : `USD ${(sel.size * COST_PER_MSG).toFixed(2)}`;
+    addMsg(`✅ Campaña enviada. ${sel.size} contactos · ${cost}.`);
+    handleClearSel();
+  }
+
+  function handleChatSend(text: string) {
+    addMsg(text, "user");
+    setTimeout(() => {
+      addMsg(
+        "Podés pedirme que arme una lista, te sugiera un template, o te diga el costo estimado del envío. ¿Qué necesitás?",
+      );
+    }, 500);
+  }
+
+  const costEstimate = modo24h
+    ? "Gratis"
+    : tplId || isCreatingNew
+      ? `USD ${(sel.size * COST_PER_MSG).toFixed(2)}`
+      : "—";
+
+  async function handleLogout() {
+    await onLogout();
+    router.refresh();
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      <Topbar
+        userName={user.contactoNombre}
+        onOpenProfile={() => setProfileOpen(true)}
+      />
+
+      <ProfileDrawer
+        open={profileOpen}
+        user={user}
+        onClose={() => setProfileOpen(false)}
+        onLogout={handleLogout}
+      />
+
+      <KpiRow
+        counts={counts}
+        activeFilters={filt}
+        onSelectTotal={handleSelectTotal}
+        onToggleFilter={handleToggleFilter}
+        onImportClick={() => setQrOpen(true)}
+        importing={false}
+      />
+
+      <div className="grid grid-cols-[2fr_1fr] flex-1 overflow-hidden">
+        <ContactsTable
+          contacts={visibleContacts}
+          selected={sel}
+          onToggleRow={handleToggleRow}
+          onToggleAll={handleToggleAll}
+          modo24h={modo24h}
+        />
+        <CampaignPanel
+          templates={templates}
+          selectedTplId={tplId}
+          onSelectTpl={handleSelectTpl}
+          isCreatingNew={isCreatingNew}
+          onStartNewTpl={handleStartNewTpl}
+          onCancelNewTpl={handleCancelNewTpl}
+          newTplContent={newTplContent}
+          onNewTplContentChange={setNewTplContent}
+          newTplName={newTplName}
+          onNewTplNameChange={setNewTplName}
+          onSendToMeta={handleSendToMeta}
+          selectedCount={sel.size}
+          costEstimate={costEstimate}
+          status={status}
+          onEnviar={handleEnviar}
+          modo24h={modo24h}
+          freeTextValue={freeText}
+          onFreeTextChange={setFreeText}
+        />
+      </div>
+
+      <Footer
+        selectedCount={sel.size}
+        onClearSel={handleClearSel}
+        lists={lists}
+        onLoadList={(id) => {
+          const list = lists.find((l) => l.id === id);
+          if (!list) return;
+          setSel(new Set(list.contactosIds));
+          setStatus("need-tpl");
+          addMsg(`Lista "${list.nombre}" cargada con ${list.contactosIds.length} contactos.`);
+        }}
+        onSaveList={() => setSaveModal("lista")}
+        onConfirmList={async () => {
+          if (sel.size === 0) return;
+          const nombreAuto = `Lista ${new Date().toLocaleDateString("es-AR")} (${sel.size} contactos)`;
+          const result = await saveListAction(nombreAuto, Array.from(sel));
+          if (result.error) {
+            addMsg(`⚠️ No se pudo guardar la lista: ${result.error}`, "error");
+          } else {
+            addMsg(`Lista guardada con ${sel.size} contactos. ✓`);
+            router.refresh();
+          }
+        }}
+        campaigns={campaigns}
+        onLoadCampaign={(id) => {
+          const camp = campaigns.find((c) => c.id === id);
+          if (!camp) return;
+          addMsg(`Campaña "${camp.nombre}" cargada.`);
+        }}
+        onSaveCampaign={() => setSaveModal("campaña")}
+      />
+
+      <AiChatBar messages={messages} onSend={handleChatSend} modo24h={modo24h} />
+
+      <QrImportModal
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        status="connected"
+      />
+
+      <SaveModal
+        open={saveModal !== null}
+        context={saveModal}
+        selectedCount={sel.size}
+        onClose={() => setSaveModal(null)}
+        onSave={async (name) => {
+          if (saveModal === "lista") {
+            if (sel.size === 0) {
+              addMsg("⚠️ Seleccioná contactos antes de guardar la lista.", "error");
+              setSaveModal(null);
+              return;
+            }
+            const result = await saveListAction(name, Array.from(sel));
+            if (result.error) {
+              addMsg(`⚠️ No se pudo guardar la lista: ${result.error}`, "error");
+            } else {
+              addMsg(`"${name}" guardada con ${sel.size} contactos ✓`);
+              router.refresh();
+            }
+          } else if (saveModal === "campaña") {
+            if (!tplId) {
+              addMsg("⚠️ Elegí un template antes de guardar la campaña.", "error");
+              setSaveModal(null);
+              return;
+            }
+            const result = await saveCampaignAction(
+              name,
+              null,
+              tplId,
+              Array.from(sel),
+            );
+            if (result.error) {
+              addMsg(`⚠️ No se pudo guardar la campaña: ${result.error}`, "error");
+            } else {
+              addMsg(`Campaña "${name}" guardada ✓`);
+              router.refresh();
+            }
+          }
+          setSaveModal(null);
+        }}
+      />
+    </div>
+  );
+}

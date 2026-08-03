@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --ys-bg: #0a0a0b;
+  --ys-card: #1a1a1d;
+  --ys-el: #141416;
+  --ys-el2: #0f0f11;
+  --ys-text: #fafafa;
+  --ys-muted: #71717a;
+  --ys-dim: #3f3f46;
+  --ys-dimmer: #2a2a2e;
+  --ys-red: #ff3d3d;
+  --ys-red-bg: rgba(255, 61, 61, 0.08);
+  --ys-green: #22c55e;
+  --ys-green-bg: rgba(34, 197, 94, 0.08);
+  --ys-warn: #f59e0b;
+  --ys-blue: #3b82f6;
+  --ys-border: rgba(255, 255, 255, 0.07);
+  --ys-border2: rgba(255, 255, 255, 0.13);
+}
+
+@theme inline {
+  --color-ys-bg: var(--ys-bg);
+  --color-ys-card: var(--ys-card);
+  --color-ys-el: var(--ys-el);
+  --color-ys-el2: var(--ys-el2);
+  --color-ys-text: var(--ys-text);
+  --color-ys-muted: var(--ys-muted);
+  --color-ys-dim: var(--ys-dim);
+  --color-ys-dimmer: var(--ys-dimmer);
+  --color-ys-red: var(--ys-red);
+  --color-ys-red-bg: var(--ys-red-bg);
+  --color-ys-green: var(--ys-green);
+  --color-ys-green-bg: var(--ys-green-bg);
+  --color-ys-warn: var(--ys-warn);
+  --color-ys-blue: var(--ys-blue);
+  --color-ys-border: var(--ys-border);
+  --color-ys-border2: var(--ys-border2);
+  --font-display: var(--font-space-grotesk), sans-serif;
+  --font-body: var(--font-dm-sans), sans-serif;
+}
+
+body {
+  background: var(--ys-bg);
+  color: var(--ys-text);
+  font-family: var(--font-body);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--ys-el);
+}
+::-webkit-scrollbar-thumb {
+  background: #2e2e32;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a3e;
+}
+
+@keyframes ys-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+@keyframes ys-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+@keyframes ys-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes ys-typing {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+  30% { opacity: 1; transform: scale(1); }
+}
+@keyframes ys-toast-in {
+  from { transform: translateY(10px); opacity: 0; }
+  to { opacity: 1; transform: none; }
+}

@@ -1,0 +1,157 @@
+import type {
+  AppUser,
+  Campaign,
+  Contact,
+  ContactList,
+  Template,
+} from "./types";
+
+export const mockUser: AppUser = {
+  id: "5491125239189",
+  tenantId: "5491125239189",
+  contactoNombre: "Pato",
+  contactoEmail: "pato@yamasend.com",
+  ventasTel: "5491125239189",
+  plan: "starter",
+  trialEnd: "2026-04-13",
+  credito: 0,
+};
+
+export const mockContacts: Contact[] = [
+  {
+    id: "5491125239189_5491135776205",
+    nombre: "Francisco",
+    tel: "5491135776205",
+    score: "frio",
+    aiScore: 0,
+    etapa: "contacto",
+    mensajes: 0,
+    ultimo: "30/03",
+    bloqueado: false,
+    en24h: false,
+    enListaAI: false,
+  },
+  {
+    id: "5491125239189_5491125239408",
+    nombre: "Patricio",
+    tel: "5491125239408",
+    score: "frio",
+    aiScore: 0,
+    etapa: "contacto",
+    mensajes: 0,
+    ultimo: "",
+    bloqueado: false,
+    en24h: false,
+    enListaAI: false,
+  },
+  {
+    id: "5491125239189_35575298007251",
+    nombre: "Santi",
+    tel: "35575298007251",
+    score: "frio",
+    aiScore: 0,
+    etapa: "contacto",
+    mensajes: 0,
+    ultimo: "",
+    bloqueado: false,
+    en24h: false,
+    enListaAI: false,
+  },
+  {
+    id: "5491125239189_5491125904221",
+    nombre: "",
+    tel: "5491125904221",
+    score: "frio",
+    aiScore: 0,
+    etapa: "contacto",
+    mensajes: 0,
+    ultimo: "",
+    bloqueado: false,
+    en24h: false,
+    enListaAI: false,
+  },
+  {
+    id: "5491125239189_251191179100264",
+    nombre: "Federico",
+    tel: "251191179100264",
+    score: "frio",
+    aiScore: 0,
+    etapa: "contacto",
+    mensajes: 0,
+    ultimo: "",
+    bloqueado: false,
+    en24h: false,
+    enListaAI: false,
+  },
+  {
+    id: "5491125239189_5491130633222",
+    nombre: "Nelson",
+    tel: "5491130633222",
+    score: "caliente",
+    aiScore: 0,
+    etapa: "contacto",
+    mensajes: 18,
+    ultimo: "01/04",
+    bloqueado: false,
+    en24h: false,
+    enListaAI: false,
+  },
+];
+
+export const mockTemplates: Template[] = [
+  {
+    id: "promo",
+    nombre: "Promo especial",
+    contenido:
+      "🎉 Oferta especial para vos\n\nHola {{nombre}}, este mes tenemos 20% de descuento en botellones 20 lts para nuevos abonos.\n\n¿Te interesa sumarte?",
+    status: "APPROVED",
+    tipo: "marketing",
+    precio: "0.0618",
+  },
+  {
+    id: "reactivar",
+    nombre: "Reactivación",
+    contenido:
+      "Hola, ¿todo bien? 👋\n\nHola {{nombre}}, hace un tiempo que no hablamos.\n\nTenemos novedades y precios actualizados para vos.",
+    status: "APPROVED",
+    tipo: "marketing",
+    precio: "0.0618",
+  },
+  {
+    id: "precios",
+    nombre: "Nueva lista de precios",
+    contenido:
+      "📋 Nueva lista de precios 2026\n\nHola {{nombre}}, a partir del 1° de abril entran los nuevos precios.",
+    status: "APPROVED",
+    tipo: "utility",
+    precio: "0.0618",
+  },
+];
+
+export const mockLists: ContactList[] = [
+  {
+    id: "abonados",
+    nombre: "Abonados CABA",
+    contactosIds: mockContacts.slice(0, 8).map((c) => c.id),
+  },
+  {
+    id: "premium",
+    nombre: "Interesados premium",
+    contactosIds: mockContacts.slice(0, 5).map((c) => c.id),
+  },
+  {
+    id: "inactivos",
+    nombre: "Inactivos +30 días",
+    contactosIds: mockContacts.map((c) => c.id),
+  },
+];
+
+export const mockCampaigns: Campaign[] = [
+  { id: "c1", nombre: "Promo marzo", listaId: "abonados", templateId: "promo" },
+  {
+    id: "c2",
+    nombre: "Reactivación feb",
+    listaId: "inactivos",
+    templateId: "reactivar",
+  },
+];
