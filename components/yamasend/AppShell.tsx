@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   AppUser,
@@ -22,6 +22,13 @@ import AiChatBar from "./AiChatBar";
 import QrImportModal from "./QrImportModal";
 import SaveModal from "./SaveModal";
 import { saveListAction, saveCampaignAction } from "@/lib/actions/write";
+import { createClient } from "@/lib/supabase/client";
+
+// URL del workflow de n8n que genera/consulta la sesión de WhatsApp (WAHA).
+// Devuelve una imagen PNG (QR para escanear) o un JSON { status: "WORKING", ... }
+// si la sesión ya está conectada.
+const WAHA_QR_WEBHOOK_URL =
+  "https://yamasai.app.n8n.cloud/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
 
 interface AppShellProps {
   user: AppUser;
@@ -57,7 +64,89 @@ export default function AppShell({
   const [status, setStatus] = useState<StatusState>("idle");
 
   const [qrOpen, setQrOpen] = useState(false);
+  const [qrStatus, setQrStatus] = useState<
+    "loading" | "waiting" | "connected" | "error"
+  >("loading");
+  const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
+  const qrPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qrObjectUrlRef = useRef<string | null>(null);
   const [saveModal, setSaveModal] = useState<"lista" | "campaña" | null>(null);
+
+  const fetchQrStatus = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setQrStatus("error");
+        return;
+      }
+
+      const res = await fetch(WAHA_QR_WEBHOOK_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      if (!res.ok) {
+        setQrStatus("error");
+        // reintentar igual, puede ser un error transitorio de WAHA
+        qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+        return;
+      }
+
+      const contentType = res.headers.get("content-type") || "";
+
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        if (data.status === "WORKING") {
+          setQrStatus("connected");
+          return; // conectado: dejamos de pollear
+        }
+        // otro estado no contemplado, seguimos consultando
+        qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+        return;
+      }
+
+      // Si no es JSON, asumimos que es la imagen del QR (image/png)
+      const blob = await res.blob();
+      if (qrObjectUrlRef.current) {
+        URL.revokeObjectURL(qrObjectUrlRef.current);
+      }
+      const objectUrl = URL.createObjectURL(blob);
+      qrObjectUrlRef.current = objectUrl;
+      setQrImageUrl(objectUrl);
+      setQrStatus("waiting");
+
+      // seguimos consultando para detectar cuándo se escanea y pasa a WORKING
+      qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+    } catch {
+      setQrStatus("error");
+      qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!qrOpen) {
+      if (qrPollTimeoutRef.current) clearTimeout(qrPollTimeoutRef.current);
+      return;
+    }
+
+    setQrStatus("loading");
+    setQrImageUrl(null);
+    fetchQrStatus();
+
+    return () => {
+      if (qrPollTimeoutRef.current) clearTimeout(qrPollTimeoutRef.current);
+      if (qrObjectUrlRef.current) {
+        URL.revokeObjectURL(qrObjectUrlRef.current);
+        qrObjectUrlRef.current = null;
+      }
+    };
+  }, [qrOpen, fetchQrStatus]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -365,7 +454,8 @@ export default function AppShell({
       <QrImportModal
         open={qrOpen}
         onClose={() => setQrOpen(false)}
-        status="connected"
+        status={qrStatus}
+        qrImageUrl={qrImageUrl}
       />
 
       <SaveModal
