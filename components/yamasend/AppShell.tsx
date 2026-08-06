@@ -87,8 +87,11 @@ export default function AppShell({
       const res = await fetch(WAHA_QR_WEBHOOK_URL, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${session.access_token}`,
+          // text/plain evita que el navegador dispare un preflight OPTIONS
+          // (n8n Cloud no responde bien ese preflight con headers custom)
+          "Content-Type": "text/plain",
         },
+        body: session.access_token,
       });
 
       if (!res.ok) {
