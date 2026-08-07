@@ -28,7 +28,7 @@ import { createClient } from "@/lib/supabase/client";
 // Devuelve una imagen PNG (QR para escanear) o un JSON { status: "WORKING", ... }
 // si la sesión ya está conectada.
 const WAHA_QR_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
+  "https://yamasai.app.n8n.cloud/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
 
 interface AppShellProps {
   user: AppUser;
