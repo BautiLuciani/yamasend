@@ -33,7 +33,7 @@ export default function KpiRow({
 
   return (
     <div
-      className={`flex gap-1.5 px-4 py-2 border-b border-ys-border flex-shrink-0 overflow-x-auto md:overflow-visible [&::-webkit-scrollbar]:hidden ${
+      className={`flex flex-nowrap gap-1.5 px-4 py-2 border-b border-ys-border flex-shrink-0 overflow-x-auto md:overflow-visible scroll-smooth snap-x snap-proximity [&::-webkit-scrollbar]:hidden ${
         importing ? "[&>*]:opacity-35 [&>*]:pointer-events-none [&>*]:grayscale" : ""
       }`}
     >
@@ -145,7 +145,7 @@ function Kpi({
             : undefined,
         backgroundColor: active ? "var(--ys-red-bg)" : undefined,
       }}
-      className="flex-none w-[76px] md:w-auto md:flex-1 rounded-lg border border-ys-border bg-ys-card px-3 py-2.5 text-left select-none transition-colors hover:border-ys-border2 cursor-pointer"
+      className="flex-none w-[76px] md:w-auto md:flex-1 snap-start rounded-lg border border-ys-border bg-ys-card px-3 py-2.5 text-left select-none transition-colors hover:border-ys-border2 cursor-pointer"
     >
       <div
         className="font-display text-xl font-bold leading-none"

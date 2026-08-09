@@ -492,7 +492,7 @@ export default function AppShell({
             <button
               onClick={() => setQrOpen(true)}
               title="Importar contactos de WhatsApp"
-              className="absolute right-4 bottom-4 w-12 h-12 rounded-full bg-ys-red border border-ys-red text-white flex items-center justify-center shadow-[0_4px_14px_rgba(255,61,61,.35)] cursor-pointer"
+              className="absolute right-4 bottom-4 min-w-[56px] px-2.5 py-2 rounded-2xl bg-ys-red border border-ys-red text-white flex flex-col items-center justify-center gap-0.5 shadow-[0_4px_14px_rgba(255,61,61,.35)] cursor-pointer"
             >
               <svg
                 width="18"
@@ -507,6 +507,9 @@ export default function AppShell({
                 <rect x="5" y="2" width="14" height="20" rx="2" />
                 <circle cx="12" cy="17" r="1" fill="white" />
               </svg>
+              <span className="text-[9px] font-semibold leading-none">
+                Importar
+              </span>
             </button>
           </div>
         )}
