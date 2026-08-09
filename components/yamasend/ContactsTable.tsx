@@ -49,8 +49,48 @@ export default function ContactsTable({
     visibleSelectable.every((c) => selected.has(c.id));
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0 border-r border-ys-border">
-      <div className="flex-1 overflow-y-auto min-h-0">
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0 md:border-r border-ys-border">
+      {/* ── Vista mobile: tarjetas ── */}
+      <div className="flex-1 overflow-y-auto min-h-0 md:hidden">
+        {contacts.map((c) => {
+          const bloq = !modo24h && c.bloqueado;
+          const isSel = selected.has(c.id) && !bloq;
+          return (
+            <div
+              key={c.id}
+              onClick={() => !bloq && onToggleRow(c.id)}
+              className={`flex items-center gap-3 px-4 py-3 border-b border-ys-border ${
+                isSel ? "bg-ys-red-bg" : ""
+              } ${bloq ? "opacity-35 pointer-events-none" : "cursor-pointer active:bg-white/[.02]"}`}
+            >
+              <input
+                type="checkbox"
+                checked={isSel}
+                disabled={bloq}
+                onChange={() => onToggleRow(c.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="accent-ys-red w-4 h-4 flex-shrink-0 cursor-pointer"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[13px] font-semibold truncate">
+                    {c.nombre || (
+                      <span className="text-ys-muted font-normal">—</span>
+                    )}
+                  </span>
+                </div>
+                <div className="text-[11px] text-ys-muted truncate mt-0.5">
+                  {c.tel || "—"} · {c.etapa}
+                </div>
+              </div>
+              <Badge score={c.score} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Vista desktop: tabla ── */}
+      <div className="flex-1 overflow-y-auto min-h-0 hidden md:block">
         <table className="w-full border-collapse table-fixed">
           <thead>
             <tr>

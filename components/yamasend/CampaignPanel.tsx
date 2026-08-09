@@ -22,6 +22,8 @@ interface CampaignPanelProps {
   modo24h: boolean;
   freeTextValue: string;
   onFreeTextChange: (v: string) => void;
+  /** true = visible en mobile (usado dentro del tab "Campaña"); false (default) = oculto en mobile, visible solo en desktop */
+  showOnMobile?: boolean;
 }
 
 export default function CampaignPanel({
@@ -43,6 +45,7 @@ export default function CampaignPanel({
   modo24h,
   freeTextValue,
   onFreeTextChange,
+  showOnMobile = false,
 }: CampaignPanelProps) {
   const [tipo, setTipo] = useState("marketing");
   const [idioma, setIdioma] = useState("es_AR");
@@ -60,7 +63,9 @@ export default function CampaignPanel({
         : "Enviar campaña";
 
   return (
-    <div className="flex flex-col overflow-hidden min-h-0">
+    <div
+      className={`${showOnMobile ? "flex" : "hidden"} md:flex flex-col overflow-hidden min-h-0`}
+    >
       <div className="text-[9px] font-semibold text-ys-dim uppercase tracking-[0.8px] px-[18px] pt-2.5 pb-1.5 flex-shrink-0">
         Campaña
       </div>

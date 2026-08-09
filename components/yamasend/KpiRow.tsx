@@ -33,14 +33,14 @@ export default function KpiRow({
 
   return (
     <div
-      className={`flex gap-1.5 px-4 py-2 border-b border-ys-border flex-shrink-0 ${
+      className={`flex gap-1.5 px-4 py-2 border-b border-ys-border flex-shrink-0 overflow-x-auto md:overflow-visible [&::-webkit-scrollbar]:hidden ${
         importing ? "[&>*]:opacity-35 [&>*]:pointer-events-none [&>*]:grayscale" : ""
       }`}
     >
       <button
         onClick={onImportClick}
         title="Importar contactos de WhatsApp"
-        className="flex-none w-[72px] flex flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-ys-dim hover:border-ys-muted cursor-pointer transition-colors"
+        className="hidden md:flex flex-none w-[72px] flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-ys-dim hover:border-ys-muted cursor-pointer transition-colors"
       >
         <svg
           width="16"
@@ -60,7 +60,7 @@ export default function KpiRow({
         </div>
       </button>
 
-      <div className="w-px bg-ys-border my-1" />
+      <div className="hidden md:block w-px bg-ys-border my-1" />
 
       <Kpi
         n={counts.total}
@@ -76,7 +76,7 @@ export default function KpiRow({
         onClick={() => onToggleFilter("cliente")}
       />
 
-      <div className="w-px bg-ys-border my-1" />
+      <div className="hidden md:block w-px bg-ys-border my-1" />
 
       <Kpi
         n={counts.ai}
@@ -145,7 +145,7 @@ function Kpi({
             : undefined,
         backgroundColor: active ? "var(--ys-red-bg)" : undefined,
       }}
-      className="flex-1 rounded-lg border border-ys-border bg-ys-card px-3 py-2.5 text-left select-none transition-colors hover:border-ys-border2 cursor-pointer"
+      className="flex-none w-[76px] md:w-auto md:flex-1 rounded-lg border border-ys-border bg-ys-card px-3 py-2.5 text-left select-none transition-colors hover:border-ys-border2 cursor-pointer"
     >
       <div
         className="font-display text-xl font-bold leading-none"

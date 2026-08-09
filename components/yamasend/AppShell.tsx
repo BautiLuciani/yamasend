@@ -17,10 +17,11 @@ import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
 import CampaignPanel from "./CampaignPanel";
-import Footer from "./Footer";
+import Footer, { ListActionsBar, CampaignActionsBar } from "./Footer";
 import AiChatBar from "./AiChatBar";
 import QrImportModal from "./QrImportModal";
 import SaveModal from "./SaveModal";
+import MobileBottomNav, { type MobileTab } from "./MobileBottomNav";
 import { saveListAction, saveCampaignAction } from "@/lib/actions/write";
 import { createClient } from "@/lib/supabase/client";
 
@@ -71,6 +72,7 @@ export default function AppShell({
   const qrPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrObjectUrlRef = useRef<string | null>(null);
   const [saveModal, setSaveModal] = useState<"lista" | "campaña" | null>(null);
+  const [mobileTab, setMobileTab] = useState<MobileTab>("inicio");
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -390,7 +392,8 @@ export default function AppShell({
         importing={false}
       />
 
-      <div className="grid grid-cols-[2fr_1fr] flex-1 overflow-hidden">
+      {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
+      <div className="hidden md:grid md:grid-cols-[2fr_1fr] flex-1 overflow-hidden">
         <ContactsTable
           contacts={visibleContacts}
           selected={sel}
@@ -419,6 +422,147 @@ export default function AppShell({
           onFreeTextChange={setFreeText}
         />
       </div>
+
+      {/* ── Contenido mobile: un tab visible a la vez, misma lógica y handlers ── */}
+      <div className="flex md:hidden flex-col flex-1 overflow-hidden min-h-0">
+        {mobileTab === "inicio" && (
+          <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
+            <div>
+              <div className="text-[9px] font-semibold text-ys-dim uppercase tracking-[0.8px] mb-2">
+                Selección actual
+              </div>
+              <div className="rounded-lg border border-ys-border bg-ys-card px-4 py-3 flex items-center justify-between">
+                <span className="text-sm">
+                  <strong className="text-ys-text">{sel.size}</strong>{" "}
+                  <span className="text-ys-muted">contactos seleccionados</span>
+                </span>
+                {sel.size > 0 && (
+                  <button
+                    onClick={() => setMobileTab("campana")}
+                    className="rounded-md bg-ys-red text-white px-3 py-1.5 text-xs font-semibold cursor-pointer"
+                  >
+                    Armar campaña
+                  </button>
+                )}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] font-semibold text-ys-dim uppercase tracking-[0.8px] mb-2">
+                Listas guardadas
+              </div>
+              <ListActionsBar
+                selectedCount={sel.size}
+                onClearSel={handleClearSel}
+                lists={lists}
+                onLoadList={(id) => {
+                  const list = lists.find((l) => l.id === id);
+                  if (!list) return;
+                  setSel(new Set(list.contactosIds));
+                  setStatus("need-tpl");
+                  addMsg(
+                    `Lista "${list.nombre}" cargada con ${list.contactosIds.length} contactos.`,
+                  );
+                }}
+                onSaveList={() => setSaveModal("lista")}
+                onConfirmList={async () => {
+                  if (sel.size === 0) return;
+                  const nombreAuto = `Lista ${new Date().toLocaleDateString("es-AR")} (${sel.size} contactos)`;
+                  const result = await saveListAction(nombreAuto, Array.from(sel));
+                  if (result.error) {
+                    addMsg(`⚠️ No se pudo guardar la lista: ${result.error}`, "error");
+                  } else {
+                    addMsg(`Lista guardada con ${sel.size} contactos. ✓`);
+                    router.refresh();
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {mobileTab === "contactos" && (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
+            <ContactsTable
+              contacts={visibleContacts}
+              selected={sel}
+              onToggleRow={handleToggleRow}
+              onToggleAll={handleToggleAll}
+              modo24h={modo24h}
+            />
+            <button
+              onClick={() => setQrOpen(true)}
+              title="Importar contactos de WhatsApp"
+              className="absolute right-4 bottom-4 w-12 h-12 rounded-full bg-ys-red border border-ys-red text-white flex items-center justify-center shadow-[0_4px_14px_rgba(255,61,61,.35)] cursor-pointer"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="white"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="5" y="2" width="14" height="20" rx="2" />
+                <circle cx="12" cy="17" r="1" fill="white" />
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {mobileTab === "campana" && (
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+            <CampaignPanel
+              templates={templates}
+              selectedTplId={tplId}
+              onSelectTpl={handleSelectTpl}
+              isCreatingNew={isCreatingNew}
+              onStartNewTpl={handleStartNewTpl}
+              onCancelNewTpl={handleCancelNewTpl}
+              newTplContent={newTplContent}
+              onNewTplContentChange={setNewTplContent}
+              newTplName={newTplName}
+              onNewTplNameChange={setNewTplName}
+              onSendToMeta={handleSendToMeta}
+              selectedCount={sel.size}
+              costEstimate={costEstimate}
+              status={status}
+              onEnviar={handleEnviar}
+              modo24h={modo24h}
+              freeTextValue={freeText}
+              onFreeTextChange={setFreeText}
+              showOnMobile
+            />
+            <div className="px-[18px] py-2.5 border-t border-ys-border">
+              <CampaignActionsBar
+                campaigns={campaigns}
+                onLoadCampaign={(id) => {
+                  const camp = campaigns.find((c) => c.id === id);
+                  if (!camp) return;
+                  addMsg(`Campaña "${camp.nombre}" cargada.`);
+                }}
+                onSaveCampaign={() => setSaveModal("campaña")}
+              />
+            </div>
+          </div>
+        )}
+
+        {mobileTab === "chat" && (
+          <AiChatBar
+            messages={messages}
+            onSend={handleChatSend}
+            modo24h={modo24h}
+            fullHeight
+          />
+        )}
+      </div>
+
+      <MobileBottomNav
+        active={mobileTab}
+        onChange={setMobileTab}
+        selectedCount={sel.size}
+      />
 
       <Footer
         selectedCount={sel.size}
@@ -452,7 +596,9 @@ export default function AppShell({
         onSaveCampaign={() => setSaveModal("campaña")}
       />
 
-      <AiChatBar messages={messages} onSend={handleChatSend} modo24h={modo24h} />
+      <div className="hidden md:block">
+        <AiChatBar messages={messages} onSend={handleChatSend} modo24h={modo24h} />
+      </div>
 
       <QrImportModal
         open={qrOpen}

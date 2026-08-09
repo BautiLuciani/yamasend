@@ -7,12 +7,14 @@ interface AiChatBarProps {
   messages: ChatMessage[];
   onSend: (text: string) => void;
   modo24h: boolean;
+  fullHeight?: boolean;
 }
 
 export default function AiChatBar({
   messages,
   onSend,
   modo24h,
+  fullHeight = false,
 }: AiChatBarProps) {
   const [value, setValue] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -31,10 +33,16 @@ export default function AiChatBar({
   }
 
   return (
-    <div className="flex-shrink-0 border-t border-ys-border">
+    <div
+      className={`border-t border-ys-border ${fullHeight ? "flex-1 flex flex-col min-h-0" : "flex-shrink-0"}`}
+    >
       <div
         ref={scrollRef}
-        className={`h-[115px] min-h-[115px] max-h-[115px] overflow-y-auto flex flex-col gap-1 px-[18px] py-2 bg-ys-el border-b box-border scroll-smooth ${
+        className={`overflow-y-auto flex flex-col gap-1 px-[18px] py-2 bg-ys-el border-b box-border scroll-smooth ${
+          fullHeight
+            ? "flex-1 min-h-0"
+            : "h-[115px] min-h-[115px] max-h-[115px]"
+        } ${
           modo24h
             ? "border-2 border-ys-green shadow-[0_0_8px_rgba(34,197,94,.2)]"
             : "border-ys-border"
