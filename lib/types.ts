@@ -5,6 +5,7 @@ export interface Contact {
   nombre: string;
   tel: string;
   score: ScoreTemp;
+  scoreManual: ScoreTemp; // override del vendedor, "" si no hay override
   aiScore: number;
   etapa: string;
   mensajes: number;
@@ -12,6 +13,16 @@ export interface Contact {
   bloqueado: boolean; // recibió marketing en últimas 24h
   en24h: boolean; // último mensaje en últimas 24h (ventana gratuita)
   enListaAI: boolean;
+  // Campos del análisis de IA (yamas_send_leads) — opcionales porque un
+  // contacto recién sincronizado (sin analizar) puede no tenerlos todavía.
+  necesidad?: string;
+  resumen?: string;
+  productoServicio?: string;
+  urgencia?: "baja" | "media" | "alta" | "";
+  sentimiento?: "positivo" | "neutral" | "negativo" | "";
+  keywords?: string[];
+  diasInactivo?: number | null;
+  consultaUsada?: string | null;
 }
 
 export type PlanKey = "starter" | "pro" | "uso";
@@ -73,3 +84,20 @@ export type StatusState =
   | "approving-check"
   | "ready"
   | "rejected";
+
+export interface SyncConfig {
+  diasAnalisis: number;
+  limiteContactos: number;
+  consulta: string;
+}
+
+export interface SyncResult {
+  success: boolean;
+  contactosProcesados: number;
+  contactosAnalizados: number;
+  contactosOmitidos: number;
+  leadsIdentificados: number;
+  erroresGuardado: number;
+  mensaje?: string;
+  error?: string;
+}

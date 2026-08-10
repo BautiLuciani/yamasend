@@ -37,10 +37,13 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
 }
 
 /**
- * Carga los contactos reales de un tenant desde yamas_inmo_clientesdeclientes,
- * replicando la lógica de transformación del HTML original (loadContactos()):
- * - bloqueado: recibió marketing en las últimas 24hs (no se le puede reenviar template)
+ * Carga los contactos/leads reales de un tenant desde yamas_send_leads
+ * (poblada por el workflow "Yamasend: Sincronizar Contactos + Análisis de Chats").
+ * - bloqueado: no aplica todavía en este flujo (no hay envío de marketing propio
+ *   registrado por ahora), se deja en false.
  * - en24h: su último mensaje fue hace menos de 24hs (ventana de conversación gratuita)
+ * - score: usa temperatura_efectiva, que ya resuelve el override manual del
+ *   vendedor sobre la temperatura calculada por IA (ver columna generada en Supabase).
  */
 export async function getContactsForTenant(
   tenantId: string,
@@ -48,12 +51,13 @@ export async function getContactsForTenant(
   const supabase = await createClient();
 
   const { data: rows, error } = await supabase
-    .from("yamas_inmo_clientesdeclientes")
+    .from("yamas_send_leads")
     .select(
-      "id, nombre, tel, etiqueta, etiqueta_ai_score, mensajes_count, ult_mensaje, estado_clie, marketingsent, updated_at",
+      "id, telefono, nombre, temperatura, temperatura_manual, temperatura_efectiva, score_interes, interes_nivel, producto_servicio, necesidad, resumen, sentimiento, urgencia, keywords_detectados, conversaciones_count, ultimo_mensaje_at, dias_inactivo, consulta_usada, activo",
     )
-    .eq("account_id", tenantId)
-    .order("updated_at", { ascending: false })
+    .eq("tenant_id", tenantId)
+    .eq("activo", true)
+    .order("ultimo_mensaje_at", { ascending: false, nullsFirst: false })
     .limit(500);
 
   if (error || !rows) return [];
@@ -61,46 +65,45 @@ export async function getContactsForTenant(
   const ahora = Date.now();
   const hace24hMs = ahora - 24 * 60 * 60 * 1000;
 
-  return rows.map((r): Contact => {
-    const idPart = r.id ? r.id.split("_")[1] : "";
-    const tel = r.tel ? String(r.tel) : idPart || "";
+  const esScoreValido = (v: string | null): v is "caliente" | "tibio" | "frio" =>
+    v === "caliente" || v === "tibio" || v === "frio";
 
+  return rows.map((r): Contact => {
     let ultimoFormateado = "";
-    if (r.ult_mensaje) {
-      const d = new Date(r.ult_mensaje);
-      if (!isNaN(d.getTime())) {
-        ultimoFormateado = `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
-      }
+    const ultMsgDate = r.ultimo_mensaje_at ? new Date(r.ultimo_mensaje_at) : null;
+    if (ultMsgDate && !isNaN(ultMsgDate.getTime())) {
+      ultimoFormateado = `${String(ultMsgDate.getDate()).padStart(2, "0")}/${String(
+        ultMsgDate.getMonth() + 1,
+      ).padStart(2, "0")}`;
     }
 
-    const scoreRaw = (r.etiqueta ?? "").toLowerCase();
-    const score = (["caliente", "tibio", "frio"] as const).includes(
-      scoreRaw as "caliente" | "tibio" | "frio",
-    )
-      ? (scoreRaw as "caliente" | "tibio" | "frio")
-      : "";
+    const score = esScoreValido(r.temperatura_efectiva) ? r.temperatura_efectiva : "";
+    const scoreManual = esScoreValido(r.temperatura_manual) ? r.temperatura_manual : "";
 
-    const marketingDate = r.marketingsent ? new Date(r.marketingsent) : null;
-    const bloqueado = !!marketingDate && marketingDate.getTime() > hace24hMs;
-
-    const ultMsgDate = r.ult_mensaje ? new Date(r.ult_mensaje) : null;
     const en24h =
-      !!ultMsgDate &&
-      !isNaN(ultMsgDate.getTime()) &&
-      ultMsgDate.getTime() > hace24hMs;
+      !!ultMsgDate && !isNaN(ultMsgDate.getTime()) && ultMsgDate.getTime() > hace24hMs;
 
     return {
       id: r.id,
       nombre: r.nombre ?? "",
-      tel,
+      tel: r.telefono ?? "",
       score,
-      aiScore: r.etiqueta_ai_score ? parseInt(r.etiqueta_ai_score, 10) || 0 : 0,
-      etapa: r.estado_clie ?? "contacto",
-      mensajes: r.mensajes_count ? Number(r.mensajes_count) : 0,
+      scoreManual,
+      aiScore: r.score_interes ?? 0,
+      etapa: r.interes_nivel ?? "contacto",
+      mensajes: r.conversaciones_count ?? 0,
       ultimo: ultimoFormateado,
-      bloqueado,
+      bloqueado: false,
       en24h,
       enListaAI: false,
+      necesidad: r.necesidad ?? undefined,
+      resumen: r.resumen ?? undefined,
+      productoServicio: r.producto_servicio ?? undefined,
+      urgencia: (r.urgencia as Contact["urgencia"]) ?? "",
+      sentimiento: (r.sentimiento as Contact["sentimiento"]) ?? "",
+      keywords: r.keywords_detectados ?? [],
+      diasInactivo: r.dias_inactivo,
+      consultaUsada: r.consulta_usada,
     };
   });
 }

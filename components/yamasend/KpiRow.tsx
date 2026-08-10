@@ -18,6 +18,7 @@ interface KpiRowProps {
   onSelectTotal: () => void;
   onToggleFilter: (key: KpiFilterKey) => void;
   onImportClick: () => void;
+  onAnalyzeClick: () => void;
   importing: boolean;
 }
 
@@ -27,6 +28,7 @@ export default function KpiRow({
   onSelectTotal,
   onToggleFilter,
   onImportClick,
+  onAnalyzeClick,
   importing,
 }: KpiRowProps) {
   const isTotalOn = activeFilters.size === 0;
@@ -57,6 +59,17 @@ export default function KpiRow({
         </svg>
         <div className="text-[8px] text-ys-muted uppercase tracking-[0.4px]">
           importar
+        </div>
+      </button>
+
+      <button
+        onClick={onAnalyzeClick}
+        title="Analizar conversaciones con IA"
+        className="hidden md:flex flex-none w-[72px] flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-ys-dim hover:border-ys-muted cursor-pointer transition-colors"
+      >
+        <span className="text-[16px] leading-none">🔎</span>
+        <div className="text-[8px] text-ys-muted uppercase tracking-[0.4px]">
+          analizar
         </div>
       </button>
 

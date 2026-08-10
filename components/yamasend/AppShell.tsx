@@ -20,9 +20,11 @@ import CampaignPanel from "./CampaignPanel";
 import Footer, { ListActionsBar, CampaignActionsBar } from "./Footer";
 import AiChatBar from "./AiChatBar";
 import QrImportModal from "./QrImportModal";
+import SyncConfigModal from "./SyncConfigModal";
 import SaveModal from "./SaveModal";
 import MobileBottomNav, { type MobileTab } from "./MobileBottomNav";
 import { saveListAction, saveCampaignAction } from "@/lib/actions/write";
+import { syncAndAnalyzeAction } from "@/lib/actions/sync";
 import { createClient } from "@/lib/supabase/client";
 
 // URL del workflow de n8n que genera/consulta la sesión de WhatsApp (WAHA).
@@ -73,6 +75,7 @@ export default function AppShell({
   const qrObjectUrlRef = useRef<string | null>(null);
   const [saveModal, setSaveModal] = useState<"lista" | "campaña" | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("inicio");
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -109,6 +112,12 @@ export default function AppShell({
         const data = await res.json();
         if (data.status === "WORKING") {
           setQrStatus("connected");
+          // Le damos un instante al usuario para ver el "✅ Conectado" antes
+          // de pasar automáticamente al modal de configuración del análisis.
+          setTimeout(() => {
+            setQrOpen(false);
+            setSyncModalOpen(true);
+          }, 1200);
           return; // conectado: dejamos de pollear
         }
         // otro estado no contemplado, seguimos consultando
@@ -389,6 +398,7 @@ export default function AppShell({
         onSelectTotal={handleSelectTotal}
         onToggleFilter={handleToggleFilter}
         onImportClick={() => setQrOpen(true)}
+        onAnalyzeClick={() => setSyncModalOpen(true)}
         importing={false}
       />
 
@@ -489,28 +499,40 @@ export default function AppShell({
               onToggleAll={handleToggleAll}
               modo24h={modo24h}
             />
-            <button
-              onClick={() => setQrOpen(true)}
-              title="Importar contactos de WhatsApp"
-              className="absolute right-4 bottom-4 min-w-[56px] px-2.5 py-2 rounded-2xl bg-ys-red border border-ys-red text-white flex flex-col items-center justify-center gap-0.5 shadow-[0_4px_14px_rgba(255,61,61,.35)] cursor-pointer"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="white"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+            <div className="absolute right-4 bottom-4 flex flex-col gap-2 items-end">
+              <button
+                onClick={() => setSyncModalOpen(true)}
+                title="Analizar conversaciones con IA"
+                className="min-w-[56px] px-2.5 py-2 rounded-2xl bg-ys-el border border-ys-border2 text-ys-text flex flex-col items-center justify-center gap-0.5 shadow-[0_4px_14px_rgba(0,0,0,.35)] cursor-pointer"
               >
-                <rect x="5" y="2" width="14" height="20" rx="2" />
-                <circle cx="12" cy="17" r="1" fill="white" />
-              </svg>
-              <span className="text-[9px] font-semibold leading-none">
-                Importar
-              </span>
-            </button>
+                <span className="text-[16px] leading-none">🔎</span>
+                <span className="text-[9px] font-semibold leading-none">
+                  Analizar
+                </span>
+              </button>
+              <button
+                onClick={() => setQrOpen(true)}
+                title="Importar contactos de WhatsApp"
+                className="min-w-[56px] px-2.5 py-2 rounded-2xl bg-ys-red border border-ys-red text-white flex flex-col items-center justify-center gap-0.5 shadow-[0_4px_14px_rgba(255,61,61,.35)] cursor-pointer"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="5" y="2" width="14" height="20" rx="2" />
+                  <circle cx="12" cy="17" r="1" fill="white" />
+                </svg>
+                <span className="text-[9px] font-semibold leading-none">
+                  Importar
+                </span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -608,6 +630,26 @@ export default function AppShell({
         onClose={() => setQrOpen(false)}
         status={qrStatus}
         qrImageUrl={qrImageUrl}
+      />
+
+      <SyncConfigModal
+        open={syncModalOpen}
+        onClose={() => setSyncModalOpen(false)}
+        onRun={async (config) => {
+          const result = await syncAndAnalyzeAction(config);
+          if (result.success) {
+            addMsg(
+              `✅ Analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés. Ya podés verlos en tu lista de contactos.`,
+            );
+            router.refresh();
+          } else {
+            addMsg(
+              `⚠️ No pude completar el análisis: ${result.error ?? "error desconocido"}`,
+              "error",
+            );
+          }
+          return result;
+        }}
       />
 
       <SaveModal
