@@ -7,6 +7,7 @@ interface ContactsTableProps {
   selected: Set<string>;
   onToggleRow: (id: string) => void;
   onToggleAll: (checked: boolean) => void;
+  onOpenDetail: (contact: Contact) => void;
   modo24h: boolean;
 }
 
@@ -41,6 +42,7 @@ export default function ContactsTable({
   selected,
   onToggleRow,
   onToggleAll,
+  onOpenDetail,
   modo24h,
 }: ContactsTableProps) {
   const visibleSelectable = contacts.filter((c) => !c.bloqueado || modo24h);
@@ -58,10 +60,10 @@ export default function ContactsTable({
           return (
             <div
               key={c.id}
-              onClick={() => !bloq && onToggleRow(c.id)}
+              onClick={() => onOpenDetail(c)}
               className={`flex items-center gap-3 px-4 py-3 border-b border-ys-border ${
                 isSel ? "bg-ys-red-bg" : ""
-              } ${bloq ? "opacity-35 pointer-events-none" : "cursor-pointer active:bg-white/[.02]"}`}
+              } cursor-pointer active:bg-white/[.02] ${bloq ? "opacity-70" : ""}`}
             >
               <input
                 type="checkbox"
@@ -126,10 +128,10 @@ export default function ContactsTable({
               return (
                 <tr
                   key={c.id}
-                  onClick={() => !bloq && onToggleRow(c.id)}
+                  onClick={() => onOpenDetail(c)}
                   className={`border-b border-ys-border hover:[&>td]:bg-white/[.02] ${
                     isSel ? "[&>td]:bg-ys-red-bg" : ""
-                  } ${bloq ? "opacity-35 pointer-events-none" : "cursor-pointer"}`}
+                  } cursor-pointer ${bloq ? "opacity-70" : ""}`}
                 >
                   <td className="px-3 py-[9px] align-middle">
                     <input

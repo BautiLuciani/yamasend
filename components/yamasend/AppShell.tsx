@@ -21,10 +21,11 @@ import Footer, { ListActionsBar, CampaignActionsBar } from "./Footer";
 import AiChatBar from "./AiChatBar";
 import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
+import ContactDetailModal from "./ContactDetailModal";
 import SaveModal from "./SaveModal";
 import MobileBottomNav, { type MobileTab } from "./MobileBottomNav";
 import { saveListAction, saveCampaignAction } from "@/lib/actions/write";
-import { syncAndAnalyzeAction } from "@/lib/actions/sync";
+import { syncAndAnalyzeAction, setTemperaturaManualAction } from "@/lib/actions/sync";
 import { createClient } from "@/lib/supabase/client";
 
 // URL del workflow de n8n que genera/consulta la sesión de WhatsApp (WAHA).
@@ -76,6 +77,7 @@ export default function AppShell({
   const [saveModal, setSaveModal] = useState<"lista" | "campaña" | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("inicio");
   const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [detailContact, setDetailContact] = useState<Contact | null>(null);
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -409,6 +411,7 @@ export default function AppShell({
           selected={sel}
           onToggleRow={handleToggleRow}
           onToggleAll={handleToggleAll}
+          onOpenDetail={setDetailContact}
           modo24h={modo24h}
         />
         <CampaignPanel
@@ -497,6 +500,7 @@ export default function AppShell({
               selected={sel}
               onToggleRow={handleToggleRow}
               onToggleAll={handleToggleAll}
+              onOpenDetail={setDetailContact}
               modo24h={modo24h}
             />
             <div className="absolute right-4 bottom-4 flex flex-col gap-2 items-end">
@@ -649,6 +653,26 @@ export default function AppShell({
             );
           }
           return result;
+        }}
+      />
+
+      <ContactDetailModal
+        contact={detailContact}
+        onClose={() => setDetailContact(null)}
+        onSetTemperaturaManual={async (contactId, temperatura) => {
+          const result = await setTemperaturaManualAction(contactId, temperatura);
+          if (result.error) {
+            addMsg(`⚠️ No se pudo guardar el ajuste: ${result.error}`, "error");
+            return;
+          }
+          // Actualización optimista en el modal abierto, así el cambio se ve
+          // al instante sin esperar el refresh del servidor.
+          setDetailContact((prev) =>
+            prev && prev.id === contactId
+              ? { ...prev, scoreManual: temperatura ?? "", score: temperatura ?? prev.score }
+              : prev,
+          );
+          router.refresh();
         }}
       />
 
