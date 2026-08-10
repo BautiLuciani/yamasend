@@ -4,9 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import type { SyncConfig, SyncResult } from "@/lib/types";
 
 // Webhook del workflow "Yamasend: Sincronizar Contactos + Análisis de Chats (v2)"
-// en n8n. Recibe el access_token del usuario en el body (texto plano, mismo
-// patrón que WAHA_QR_WEBHOOK_URL) para evitar el preflight CORS que rompe en
-// n8n Cloud cuando se manda un Authorization header custom.
+// en n8n. El nodo "0. Resolver auth.uid" del workflow espera el token en el
+// header Authorization real de la request entrante (lee $json.headers.authorization).
+// Como este fetch corre server-side (Server Action, no en el browser), no hay
+// problema de preflight CORS acá — ese es un tema exclusivo de fetch desde el
+// cliente (ver WAHA_QR_WEBHOOK_URL en AppShell.tsx, que sí corre en el browser).
 const SYNC_ANALIZAR_WEBHOOK_URL =
   "https://yamasai.app.n8n.cloud/webhook/yamasend-sync-analizar";
 
@@ -39,9 +41,11 @@ export async function syncAndAnalyzeAction(
   try {
     const res = await fetch(SYNC_ANALIZAR_WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
       body: JSON.stringify({
-        authorization: `Bearer ${session.access_token}`,
         dias_analisis: config.diasAnalisis,
         limite_contactos: config.limiteContactos,
         consulta: config.consulta,
