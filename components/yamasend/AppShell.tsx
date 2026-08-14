@@ -22,6 +22,8 @@ import GroupDetailModal from "./GroupDetailModal";
 import Templates from "./Templates";
 import TemplateCreateModal from "./TemplateCreateModal";
 import TemplateDetailModal from "./TemplateDetailModal";
+import Campanas from "./Campanas";
+import CampaignWizardModal from "./CampaignWizardModal";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -109,6 +111,7 @@ export default function AppShell({
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -470,8 +473,14 @@ export default function AppShell({
         </div>
       )}
 
+      {activeSection === "campanas" && (
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
+          <Campanas onNewCampaign={() => setWizardOpen(true)} />
+        </div>
+      )}
+
       {/* ── Placeholder "próximamente" para secciones aún sin construir en este bloque ── */}
-      {(activeSection === "campanas" || activeSection === "ia") && (
+      {activeSection === "ia" && (
         <div className="flex-1 min-w-0 flex items-center justify-center pt-[58px] md:pt-0">
           <div className="flex flex-col items-center gap-3">
             <div className="w-[52px] h-[52px] rounded-2xl bg-ys-el2 flex items-center justify-center">
@@ -820,6 +829,24 @@ export default function AppShell({
       />
 
       <TemplateDetailModal template={detailTemplate} onClose={() => setDetailTemplate(null)} />
+
+      <CampaignWizardModal
+        open={wizardOpen}
+        lists={lists}
+        templates={templates}
+        costPerMsg={COST_PER_MSG}
+        onClose={() => setWizardOpen(false)}
+        onConfirm={async ({ nombre, listaId, templateId, contactosIds }) => {
+          const result = await saveCampaignAction(nombre, listaId, templateId, contactosIds);
+          if (!result.error) {
+            addMsg(
+              `✅ Campaña "${nombre}" enviada a ${contactosIds.length} contactos.`,
+            );
+            router.refresh();
+          }
+          return { error: result.error };
+        }}
+      />
 
       <CreateGroupModal
         open={createGroupOpen}
