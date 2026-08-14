@@ -24,6 +24,7 @@ import TemplateCreateModal from "./TemplateCreateModal";
 import TemplateDetailModal from "./TemplateDetailModal";
 import Campanas from "./Campanas";
 import CampaignWizardModal from "./CampaignWizardModal";
+import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -479,24 +480,8 @@ export default function AppShell({
         </div>
       )}
 
-      {/* ── Placeholder "próximamente" para secciones aún sin construir en este bloque ── */}
       {activeSection === "ia" && (
-        <div className="flex-1 min-w-0 flex items-center justify-center pt-[58px] md:pt-0">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-[52px] h-[52px] rounded-2xl bg-ys-el2 flex items-center justify-center">
-              <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="5.5" stroke="#9aa19c" strokeWidth="1.5" />
-                <path d="M8 5v3.2l2.2 1.3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <div className="text-[19px] font-extrabold text-ys-text tracking-[-0.02em] capitalize">
-              {activeSection}
-            </div>
-            <div className="text-sm text-ys-muted font-medium">
-              Esta sección todavía está en construcción.
-            </div>
-          </div>
-        </div>
+        <IA userName={user.contactoNombre} messages={messages} onSend={handleChatSend} />
       )}
 
       {activeSection === "contactos" && (
