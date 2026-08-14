@@ -76,6 +76,15 @@ export type KpiFilterKey =
   | "tibio"
   | "frio";
 
+/** Secciones de navegación del sidebar / drawer mobile (diseño Claude Design). */
+export type AppSection =
+  | "dashboard"
+  | "contactos"
+  | "grupos"
+  | "templates"
+  | "campanas"
+  | "ia";
+
 export type StatusState =
   | "idle"
   | "need-tpl"

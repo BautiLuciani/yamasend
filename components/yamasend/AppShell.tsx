@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
+  AppSection,
   AppUser,
   Campaign,
   ChatMessage,
@@ -12,7 +13,9 @@ import type {
   StatusState,
   Template,
 } from "@/lib/types";
-import Topbar from "./Topbar";
+import Sidebar from "./Sidebar";
+import MobileHeader from "./MobileHeader";
+import MobileDrawer from "./MobileDrawer";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -23,10 +26,15 @@ import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
 import ContactDetailModal from "./ContactDetailModal";
 import SaveModal from "./SaveModal";
-import MobileBottomNav, { type MobileTab } from "./MobileBottomNav";
 import { saveListAction, saveCampaignAction } from "@/lib/actions/write";
 import { syncAndAnalyzeAction, setTemperaturaManualAction } from "@/lib/actions/sync";
 import { createClient } from "@/lib/supabase/client";
+
+const PLAN_LABELS: Record<string, string> = {
+  starter: "Starter",
+  pro: "Pro",
+  uso: "Por mensaje",
+};
 
 // URL del workflow de n8n que genera/consulta la sesión de WhatsApp (WAHA).
 // Devuelve una imagen PNG (QR para escanear) o un JSON { status: "WORKING", ... }
@@ -54,6 +62,8 @@ export default function AppShell({
   onLogout,
 }: AppShellProps) {
   const router = useRouter();
+  const [activeSection, setActiveSection] = useState<AppSection>("contactos");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
@@ -75,7 +85,9 @@ export default function AppShell({
   const qrPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrObjectUrlRef = useRef<string | null>(null);
   const [saveModal, setSaveModal] = useState<"lista" | "campaña" | null>(null);
-  const [mobileTab, setMobileTab] = useState<MobileTab>("inicio");
+  const [mobileTab, setMobileTab] = useState<
+    "inicio" | "contactos" | "campana" | "chat"
+  >("contactos");
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
 
@@ -380,11 +392,27 @@ export default function AppShell({
     router.refresh();
   }
 
+  const planLabel = PLAN_LABELS[user.plan] || user.plan;
+
   return (
-    <div className="flex flex-col h-full">
-      <Topbar
+    <div className="flex h-full bg-ys-bg">
+      <Sidebar
+        active={activeSection}
+        onNavigate={setActiveSection}
         userName={user.contactoNombre}
-        onOpenProfile={() => setProfileOpen(true)}
+        planLabel={planLabel}
+        onLogout={handleLogout}
+      />
+
+      <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} />
+      <MobileDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        active={activeSection}
+        onNavigate={setActiveSection}
+        userName={user.contactoNombre}
+        planLabel={planLabel}
+        onLogout={handleLogout}
       />
 
       <ProfileDrawer
@@ -394,6 +422,32 @@ export default function AppShell({
         onLogout={handleLogout}
       />
 
+      {/* ── Placeholder "próximamente" para secciones aún sin construir en este bloque ── */}
+      {(activeSection === "dashboard" ||
+        activeSection === "grupos" ||
+        activeSection === "templates" ||
+        activeSection === "campanas" ||
+        activeSection === "ia") && (
+        <div className="flex-1 min-w-0 flex items-center justify-center pt-[58px] md:pt-0">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-[52px] h-[52px] rounded-2xl bg-ys-el2 flex items-center justify-center">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="5.5" stroke="#9aa19c" strokeWidth="1.5" />
+                <path d="M8 5v3.2l2.2 1.3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <div className="text-[19px] font-extrabold text-ys-text tracking-[-0.02em] capitalize">
+              {activeSection}
+            </div>
+            <div className="text-sm text-ys-muted font-medium">
+              Esta sección todavía está en construcción.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeSection === "contactos" && (
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
       <KpiRow
         counts={counts}
         activeFilters={filt}
@@ -434,6 +488,36 @@ export default function AppShell({
           freeTextValue={freeText}
           onFreeTextChange={setFreeText}
         />
+      </div>
+
+      {/* ── Selector de vista mobile (reemplaza al bottom-nav; la navegación entre
+           SECCIONES ahora vive en el drawer superior) ── */}
+      <div className="flex md:hidden items-center gap-1 px-4 py-2 border-b border-ys-border-softest overflow-x-auto">
+        {(
+          [
+            { key: "inicio", label: "Inicio" },
+            { key: "contactos", label: "Contactos" },
+            { key: "campana", label: "Campaña" },
+            { key: "chat", label: "AI chat" },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setMobileTab(t.key)}
+            className={`relative flex-none rounded-lg px-3 py-1.5 text-[12.5px] font-semibold cursor-pointer transition-colors ${
+              mobileTab === t.key
+                ? "bg-ys-green-bg text-ys-green-text"
+                : "text-ys-muted"
+            }`}
+          >
+            {t.label}
+            {t.key === "contactos" && sel.size > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-[3px] rounded-full bg-ys-green text-white text-[9px] font-semibold flex items-center justify-center leading-none">
+                {sel.size}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* ── Contenido mobile: un tab visible a la vez, misma lógica y handlers ── */}
@@ -587,12 +671,6 @@ export default function AppShell({
         )}
       </div>
 
-      <MobileBottomNav
-        active={mobileTab}
-        onChange={setMobileTab}
-        selectedCount={sel.size}
-      />
-
       <Footer
         selectedCount={sel.size}
         onClearSel={handleClearSel}
@@ -628,6 +706,8 @@ export default function AppShell({
       <div className="hidden md:block">
         <AiChatBar messages={messages} onSend={handleChatSend} modo24h={modo24h} />
       </div>
+      </div>
+      )}
 
       <QrImportModal
         open={qrOpen}

@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, DM_Sans } from "next/font/google";
+import { Manrope, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
-  weight: ["500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
 });
 
-const dmSans = DM_Sans({
-  variable: "--font-dm-sans",
+const ibmPlexMono = IBM_Plex_Mono({
+  variable: "--font-ibm-plex-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
-  title: "Yamas.AI — YamaSend",
+  title: "YamaSend — Mensajería masiva por IA",
   description: "YamaSend — AI mass messaging para WhatsApp Business",
 };
 
@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${spaceGrotesk.variable} ${dmSans.variable} h-full antialiased`}
+      className={`${manrope.variable} ${ibmPlexMono.variable} h-full antialiased`}
       data-theme="yamasend"
     >
       <body className="h-full flex flex-col overflow-hidden bg-ys-bg text-ys-text">
