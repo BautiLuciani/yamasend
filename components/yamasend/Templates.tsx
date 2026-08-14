@@ -1,0 +1,218 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import type { Template } from "@/lib/types";
+
+interface TemplatesProps {
+  templates: Template[];
+  onNewTemplate: () => void;
+  onOpenTemplate: (tpl: Template) => void;
+}
+
+const CATEGORIA_LABEL: Record<string, string> = {
+  marketing: "Marketing",
+  utility: "Utilidad",
+  authentication: "Autenticación",
+  service: "Servicio",
+};
+
+function StatusBadge({ status }: { status: Template["status"] }) {
+  if (status === "APPROVED")
+    return (
+      <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-green-text bg-ys-green-bg rounded-full px-2.5 py-1">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+          <path d="m3 8.4 3.4 3L13 4.6" stroke="#067647" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Aprobado
+      </span>
+    );
+  if (status === "PENDING")
+    return (
+      <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-warn-text bg-ys-warn-bg rounded-full px-2.5 py-1">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6" stroke="#c07a12" strokeWidth="1.8" />
+          <path d="M8 4.6v3.6l2.2 1.3" stroke="#c07a12" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+        En revisión
+      </span>
+    );
+  return (
+    <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-red-text bg-ys-red-bg rounded-full px-2.5 py-1">
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+        <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="#a8443b" strokeWidth="2.2" strokeLinecap="round" />
+      </svg>
+      Rechazado
+    </span>
+  );
+}
+
+export default function Templates({ templates, onNewTemplate, onOpenTemplate }: TemplatesProps) {
+  const [query, setQuery] = useState("");
+  const [estado, setEstado] = useState<"todos" | "APPROVED" | "PENDING" | "REJECTED">("todos");
+
+  const counts = useMemo(
+    () => ({
+      total: templates.length,
+      aprobados: templates.filter((t) => t.status === "APPROVED").length,
+      revision: templates.filter((t) => t.status === "PENDING").length,
+      rechazados: templates.filter((t) => t.status === "REJECTED").length,
+    }),
+    [templates],
+  );
+
+  const filtered = templates.filter((t) => {
+    if (estado !== "todos" && t.status !== estado) return false;
+    if (query && !t.nombre.toLowerCase().includes(query.toLowerCase())) return false;
+    return true;
+  });
+
+  return (
+    <div className="flex-1 min-w-0 bg-ys-bg px-4 md:px-[38px] pt-3 md:pt-[34px] pb-7 md:pb-10 flex flex-col gap-[18px] md:gap-[22px] overflow-y-auto">
+      <div className="flex items-end gap-5 flex-wrap">
+        <div className="flex flex-col gap-1.5">
+          <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
+            Templates
+          </div>
+          <div className="text-sm md:text-[15px] text-ys-muted font-medium">
+            Creá y administrá tus mensajes de WhatsApp.
+          </div>
+        </div>
+        <button
+          onClick={onNewTemplate}
+          className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+          </svg>
+          Nuevo template
+        </button>
+      </div>
+
+      {templates.length > 0 && (
+        <div className="flex items-center gap-3.5 flex-wrap text-[13px] text-ys-muted font-semibold">
+          <span>
+            <span className="font-mono text-ys-text">{counts.total}</span> templates
+          </span>
+          <span className="w-px h-3.5 bg-[#e2e5e3]" />
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-[7px] h-[7px] rounded-full bg-ys-green" />
+            <span className="font-mono text-ys-text">{counts.aprobados}</span> aprobados
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-[7px] h-[7px] rounded-full border-[1.5px]" style={{ borderColor: "#c07a12", background: "linear-gradient(90deg,#c07a12 50%,transparent 50%)" }} />
+            <span className="font-mono text-ys-text">{counts.revision}</span> en revisión
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-[7px] h-[7px] rounded-full bg-[#c9584f]" />
+            <span className="font-mono text-ys-text">{counts.rechazados}</span> rechazado
+          </span>
+        </div>
+      )}
+
+      {templates.length > 0 && (
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2.5 bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 w-full md:w-[260px]">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
+              <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar template..."
+              className="flex-1 min-w-0 border-none outline-none bg-transparent text-[13.5px] font-semibold text-ys-text"
+            />
+          </div>
+          <div className="flex gap-[3px] bg-ys-el2 rounded-[10px] p-[3px] overflow-x-auto">
+            {(
+              [
+                { key: "todos", label: "Todos" },
+                { key: "APPROVED", label: "Aprobados" },
+                { key: "PENDING", label: "En revisión" },
+                { key: "REJECTED", label: "Rechazados" },
+              ] as const
+            ).map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setEstado(f.key)}
+                className={`flex-none text-[12.5px] rounded-lg px-3.5 py-[7px] cursor-pointer transition-colors ${
+                  estado === f.key
+                    ? "font-bold text-ys-text bg-white shadow-[0_1px_2px_rgba(16,24,20,0.07)]"
+                    : "font-semibold text-[#7b837e]"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {templates.length === 0 && (
+        <div className="bg-white border border-ys-border rounded-2xl py-16 px-6 flex flex-col items-center gap-3.5">
+          <div className="w-[58px] h-[58px] rounded-[18px] bg-ys-green-bg flex items-center justify-center">
+            <svg width="26" height="26" viewBox="0 0 16 16" fill="none">
+              <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="#12B76A" strokeWidth="1.5" />
+              <path d="M2.5 6h11M6 6v7.5" stroke="#12B76A" strokeWidth="1.5" />
+            </svg>
+          </div>
+          <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
+            Creá tu primer template
+          </div>
+          <div className="text-sm text-ys-muted font-medium text-center max-w-[420px]">
+            Los templates son los mensajes que vas a utilizar para comunicarte con tus contactos.
+          </div>
+          <button
+            onClick={onNewTemplate}
+            className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+            Crear template
+          </button>
+        </div>
+      )}
+
+      {templates.length > 0 && filtered.length === 0 && (
+        <div className="bg-white border border-ys-border rounded-2xl py-[52px] px-6 flex flex-col items-center gap-2.5">
+          <div className="text-base font-extrabold text-ys-text">Sin resultados</div>
+          <div className="text-[13.5px] text-ys-muted font-medium">
+            Probá con otro nombre o cambiá los filtros.
+          </div>
+        </div>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => onOpenTemplate(t)}
+              className="text-left bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] hover:border-ys-green-border"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <div className="font-mono text-sm text-ys-text truncate">{t.nombre}</div>
+                  <div className="text-xs text-ys-dim font-semibold">
+                    {CATEGORIA_LABEL[t.tipo ?? "marketing"] ?? "Marketing"}
+                  </div>
+                </div>
+                <StatusBadge status={t.status} />
+              </div>
+              <div className="bg-[#fbfcfb] border border-ys-border-soft rounded-xl px-3.5 py-3 text-[13px] text-[#3f4844] leading-[1.5] font-medium line-clamp-3">
+                {t.contenido}
+              </div>
+              <div className="flex items-center justify-between border-t border-ys-border-softer pt-3">
+                <div className="text-xs text-ys-dimmer font-semibold">
+                  USD {t.precio ?? "0.0618"} / msj
+                </div>
+                <div className="text-[12.5px] font-bold text-ys-faint">Ver detalle →</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

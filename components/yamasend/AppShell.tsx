@@ -19,6 +19,9 @@ import MobileDrawer from "./MobileDrawer";
 import Dashboard from "./Dashboard";
 import Grupos from "./Grupos";
 import GroupDetailModal from "./GroupDetailModal";
+import Templates from "./Templates";
+import TemplateCreateModal from "./TemplateCreateModal";
+import TemplateDetailModal from "./TemplateDetailModal";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -104,6 +107,8 @@ export default function AppShell({
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [addToGroupOpen, setAddToGroupOpen] = useState(false);
   const [openGroupId, setOpenGroupId] = useState<string | null>(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -352,6 +357,7 @@ export default function AppShell({
     setNewTplContent("");
     setNewTplName("");
     setStatus("editing-tpl");
+    setTemplateModalOpen(true);
     addMsg(
       `Avisame si necesitás ayuda para escribir el template. Puedo sugerirte un texto pensado para tus ${sel.size} contactos.`,
     );
@@ -361,6 +367,7 @@ export default function AppShell({
     setIsCreatingNew(false);
     setNewTplContent("");
     setNewTplName("");
+    setTemplateModalOpen(false);
     setStatus(sel.size > 0 ? "need-tpl" : "idle");
   }
 
@@ -373,6 +380,7 @@ export default function AppShell({
     setTimeout(() => {
       setStatus("ready");
       setIsCreatingNew(false);
+      setTemplateModalOpen(false);
       addMsg(
         "✅ Template aprobado por Meta. Ya podés enviar la campaña. Presioná Enviar campaña.",
       );
@@ -452,10 +460,18 @@ export default function AppShell({
         </div>
       )}
 
+      {activeSection === "templates" && (
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
+          <Templates
+            templates={templates}
+            onNewTemplate={handleStartNewTpl}
+            onOpenTemplate={setDetailTemplate}
+          />
+        </div>
+      )}
+
       {/* ── Placeholder "próximamente" para secciones aún sin construir en este bloque ── */}
-      {(activeSection === "templates" ||
-        activeSection === "campanas" ||
-        activeSection === "ia") && (
+      {(activeSection === "campanas" || activeSection === "ia") && (
         <div className="flex-1 min-w-0 flex items-center justify-center pt-[58px] md:pt-0">
           <div className="flex flex-col items-center gap-3">
             <div className="w-[52px] h-[52px] rounded-2xl bg-ys-el2 flex items-center justify-center">
@@ -791,6 +807,19 @@ export default function AppShell({
           return result;
         }}
       />
+
+      <TemplateCreateModal
+        open={templateModalOpen}
+        content={newTplContent}
+        onContentChange={setNewTplContent}
+        name={newTplName}
+        onNameChange={setNewTplName}
+        onCancel={handleCancelNewTpl}
+        onSendToMeta={handleSendToMeta}
+        sending={status === "approving"}
+      />
+
+      <TemplateDetailModal template={detailTemplate} onClose={() => setDetailTemplate(null)} />
 
       <CreateGroupModal
         open={createGroupOpen}
