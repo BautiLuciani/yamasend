@@ -14,61 +14,59 @@ interface ContactDetailModalProps {
 
 const TEMP_CONFIG: Record<
   "caliente" | "tibio" | "frio",
-  { label: string; emoji: string; bg: string; text: string; border: string }
+  { label: string; dotColor: string; text: string; bg: string; border: string }
 > = {
   caliente: {
     label: "Caliente",
-    emoji: "🔥",
-    bg: "bg-[rgba(255,61,61,.15)]",
-    text: "text-[#ff7070]",
-    border: "border-[#ff7070]",
+    dotColor: "#12B76A",
+    text: "text-ys-green-text",
+    bg: "bg-ys-green-bg",
+    border: "border-ys-green",
   },
   tibio: {
     label: "Tibio",
-    emoji: "🌡️",
-    bg: "bg-[rgba(245,158,11,.15)]",
-    text: "text-ys-warn",
+    dotColor: "#c07a12",
+    text: "text-ys-warn-text",
+    bg: "bg-ys-warn-bg",
     border: "border-ys-warn",
   },
   frio: {
     label: "Frío",
-    emoji: "❄️",
-    bg: "bg-[rgba(59,130,246,.15)]",
-    text: "text-ys-blue",
-    border: "border-ys-blue",
+    dotColor: "#8a908c",
+    text: "text-[#5d6560]",
+    bg: "bg-ys-el2",
+    border: "border-[#8a908c]",
   },
 };
 
 function TemperaturaBadgeGrande({ score }: { score: ScoreTemp }) {
   if (!score || !(score in TEMP_CONFIG)) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold bg-[rgba(113,113,122,.12)] text-ys-muted">
+      <span className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-bold text-ys-dimmer bg-ys-el2">
         Sin analizar
       </span>
     );
   }
   const cfg = TEMP_CONFIG[score as "caliente" | "tibio" | "frio"];
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold ${cfg.bg} ${cfg.text}`}
-    >
-      {cfg.emoji} {cfg.label}
+    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-bold ${cfg.bg} ${cfg.text}`}>
+      <span className="w-2 h-2 rounded-full" style={{ background: cfg.dotColor }} />
+      {cfg.label}
     </span>
   );
 }
 
 function ScoreBar({ score }: { score: number }) {
-  const color =
-    score >= 70 ? "#ff7070" : score >= 40 ? "var(--ys-warn)" : "var(--ys-blue)";
+  const color = score >= 70 ? "#12B76A" : score >= 40 ? "#c07a12" : "#3b82f6";
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full bg-ys-el overflow-hidden">
+    <div className="flex items-center gap-2.5">
+      <div className="flex-1 h-1.5 rounded-full bg-ys-border-softest overflow-hidden">
         <div
           className="h-full rounded-full transition-all"
           style={{ width: `${Math.min(100, Math.max(0, score))}%`, backgroundColor: color }}
         />
       </div>
-      <span className="text-[11px] font-semibold text-ys-muted w-8 text-right">
+      <span className="font-mono text-[12px] font-medium text-ys-muted w-8 text-right">
         {score}
       </span>
     </div>
@@ -77,8 +75,8 @@ function ScoreBar({ score }: { score: number }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <div className="text-[10px] font-semibold text-ys-dim uppercase tracking-[0.5px] mb-1">
+    <div className="flex flex-col gap-1">
+      <div className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-dimmer">
         {label}
       </div>
       {children}
@@ -100,8 +98,6 @@ export default function ContactDetailModal({
   async function handleOverride(temp: "caliente" | "tibio" | "frio") {
     if (!contact) return;
     setSavingOverride(true);
-    // Si ya está seleccionada esa misma temperatura como override, lo limpiamos
-    // (vuelve a mostrar el valor calculado por la IA).
     const nuevoValor = contact.scoreManual === temp ? null : temp;
     await onSetTemperaturaManual(contact.id, nuevoValor);
     setSavingOverride(false);
@@ -110,124 +106,125 @@ export default function ContactDetailModal({
   return (
     <div
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-[1000] px-4"
+      className="fixed inset-0 bg-black/[.34] flex items-center justify-center z-[100] px-4"
+      style={{ animation: "ys-fade .16s ease both" }}
     >
-      <div className="rounded-2xl border border-ys-border2 bg-ys-card p-6 max-w-[440px] w-full max-h-[85vh] overflow-y-auto">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[460px] max-h-[85vh] overflow-y-auto bg-white rounded-[18px] px-7 py-[22px] flex flex-col gap-5 shadow-[var(--shadow-modal)]"
+        style={{ animation: "ys-modal .19s cubic-bezier(.4,0,.2,1) both" }}
+      >
         {/* Header */}
-        <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="font-display text-lg font-bold truncate">
+            <h3 className="text-lg font-extrabold tracking-[-0.015em] text-ys-text truncate">
               {contact.nombre || "Sin nombre"}
             </h3>
-            <div className="text-[13px] text-ys-muted mt-0.5">{contact.tel || "—"}</div>
+            <div className="font-mono text-[13px] text-ys-muted mt-0.5">
+              {contact.tel || "—"}
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="flex-shrink-0 text-ys-muted hover:text-ys-text transition-colors cursor-pointer text-xl leading-none"
+            className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-ys-dimmer hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer text-xl leading-none"
           >
             ×
           </button>
         </div>
 
         {/* Temperatura + score */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between">
           <TemperaturaBadgeGrande score={contact.score} />
           {overrideActivo && (
-            <span className="text-[10px] text-ys-muted italic">
+            <span className="text-[11px] text-ys-dim italic font-medium">
               ajustado manualmente
             </span>
           )}
         </div>
 
         {contact.aiScore > 0 && (
-          <div className="mb-5">
-            <Field label="Score de interés">
-              <ScoreBar score={contact.aiScore} />
-            </Field>
-          </div>
+          <Field label="Score de interés">
+            <ScoreBar score={contact.aiScore} />
+          </Field>
         )}
 
-        {/* Resumen */}
         {contact.resumen && (
-          <div className="mb-4">
-            <Field label="Resumen">
-              <p className="text-[13px] leading-relaxed">{contact.resumen}</p>
-            </Field>
-          </div>
+          <Field label="Resumen">
+            <p className="text-[13px] leading-[1.55] text-[#2c3531] font-medium">
+              {contact.resumen}
+            </p>
+          </Field>
         )}
 
-        {/* Necesidad */}
         {contact.necesidad && (
-          <div className="mb-4">
-            <Field label="Necesidad detectada">
-              <p className="text-[13px] leading-relaxed text-ys-muted">
-                {contact.necesidad}
-              </p>
-            </Field>
-          </div>
+          <Field label="Necesidad detectada">
+            <p className="text-[13px] leading-[1.55] text-ys-muted font-medium">
+              {contact.necesidad}
+            </p>
+          </Field>
         )}
 
-        {/* Grid de metadatos */}
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3.5">
           {contact.productoServicio && (
             <Field label="Producto / servicio">
-              <span className="text-[13px]">{contact.productoServicio}</span>
+              <span className="text-[13px] font-semibold text-ys-text">
+                {contact.productoServicio}
+              </span>
             </Field>
           )}
           <Field label="Etapa de interés">
-            <span className="text-[13px] capitalize">{contact.etapa || "—"}</span>
+            <span className="text-[13px] font-semibold text-ys-text capitalize">
+              {contact.etapa || "—"}
+            </span>
           </Field>
           {contact.sentimiento && (
             <Field label="Sentimiento">
-              <span className="text-[13px] capitalize">{contact.sentimiento}</span>
+              <span className="text-[13px] font-semibold text-ys-text capitalize">
+                {contact.sentimiento}
+              </span>
             </Field>
           )}
           {contact.urgencia && (
             <Field label="Urgencia">
-              <span className="text-[13px] capitalize">{contact.urgencia}</span>
+              <span className="text-[13px] font-semibold text-ys-text capitalize">
+                {contact.urgencia}
+              </span>
             </Field>
           )}
         </div>
 
-        {/* Keywords */}
         {contact.keywords && contact.keywords.length > 0 && (
-          <div className="mb-4">
-            <Field label="Palabras clave">
-              <div className="flex flex-wrap gap-1.5">
-                {contact.keywords.map((kw) => (
-                  <span
-                    key={kw}
-                    className="rounded-full px-2 py-0.5 text-[11px] bg-ys-el border border-ys-border text-ys-muted"
-                  >
-                    {kw}
-                  </span>
-                ))}
-              </div>
-            </Field>
-          </div>
+          <Field label="Palabras clave">
+            <div className="flex flex-wrap gap-1.5">
+              {contact.keywords.map((kw) => (
+                <span
+                  key={kw}
+                  className="rounded-full px-2.5 py-1 text-[11px] font-semibold bg-ys-el2 text-[#5d6560]"
+                >
+                  {kw}
+                </span>
+              ))}
+            </div>
+          </Field>
         )}
 
-        {/* Actividad */}
-        <div className="grid grid-cols-2 gap-3 mb-5">
+        <div className="grid grid-cols-2 gap-3.5">
           <Field label="Mensajes analizados">
-            <span className="text-[13px]">{contact.mensajes}</span>
+            <span className="text-[13px] font-semibold text-ys-text">{contact.mensajes}</span>
           </Field>
           <Field label="Último mensaje">
-            <span className="text-[13px]">
+            <span className="text-[13px] font-semibold text-ys-text">
               {contact.ultimo || "—"}
               {typeof contact.diasInactivo === "number" && (
-                <span className="text-ys-muted">
-                  {" "}
-                  · hace {contact.diasInactivo}d
-                </span>
+                <span className="text-ys-muted font-medium"> · hace {contact.diasInactivo}d</span>
               )}
             </span>
           </Field>
         </div>
 
         {/* Override manual */}
-        <div className="border-t border-ys-border pt-4">
-          <div className="text-[10px] font-semibold text-ys-dim uppercase tracking-[0.5px] mb-2">
+        <div className="border-t border-ys-border-soft pt-4 flex flex-col gap-2.5">
+          <div className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-dimmer">
             ¿No estás de acuerdo con la clasificación?
           </div>
           <div className="flex gap-2">
@@ -239,20 +236,20 @@ export default function ContactDetailModal({
                   key={temp}
                   disabled={savingOverride}
                   onClick={() => handleOverride(temp)}
-                  className={`flex-1 rounded-lg border px-2 py-2 text-[12px] font-medium transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  className={`flex-1 rounded-[10px] border px-2 py-2 text-[12px] font-bold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 ${
                     active
                       ? `${cfg.border} ${cfg.bg} ${cfg.text}`
-                      : "border-ys-border text-ys-muted hover:border-ys-border2 hover:text-ys-text"
+                      : "border-ys-border text-ys-muted hover:border-ys-green-border hover:bg-[#f7fbf9]"
                   }`}
                 >
-                  {cfg.emoji} {cfg.label}
+                  <span className="w-2 h-2 rounded-full" style={{ background: cfg.dotColor }} />
+                  {cfg.label}
                 </button>
               );
             })}
           </div>
-          <p className="text-[11px] text-ys-muted mt-2 leading-relaxed">
-            Tu ajuste queda guardado y se prioriza sobre el cálculo de la IA. Click de
-            nuevo en la misma opción para volver a usar el valor automático.
+          <p className="text-[11px] text-ys-dim font-medium leading-[1.5]">
+            Tu ajuste queda guardado y se prioriza sobre el cálculo de la IA. Click de nuevo en la misma opción para volver a usar el valor automático.
           </p>
         </div>
       </div>

@@ -18,56 +18,83 @@ export default function QrImportModal({
   return (
     <div
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-[2000]"
+      className="fixed inset-0 bg-black/[.34] flex items-center justify-center z-[100] px-4"
+      style={{ animation: "ys-fade .16s ease both" }}
     >
-      <div className="rounded-2xl border border-ys-border2 bg-ys-card px-8 py-7 w-[340px] flex flex-col items-center gap-4">
-        <div className="font-display text-base font-bold">
-          📲 Importar contactos
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[440px] bg-white rounded-[18px] px-7 py-[22px] flex flex-col gap-[18px] shadow-[var(--shadow-modal)]"
+        style={{ animation: "ys-modal .19s cubic-bezier(.4,0,.2,1) both" }}
+      >
+        <div className="flex flex-col gap-1.5">
+          <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
+            Vinculá tu WhatsApp
+          </div>
+          <div className="text-[13.5px] text-ys-muted font-medium leading-[1.5]">
+            Escaneá este código QR desde WhatsApp para conectar tu cuenta.
+          </div>
         </div>
-        <div className="text-xs text-ys-muted text-center leading-relaxed">
-          Escaneá el código QR con tu WhatsApp para conectar tu cuenta e
-          importar tus contactos automáticamente.
-        </div>
-        <div className="w-[200px] h-[200px] rounded-[10px] bg-ys-el border border-ys-border flex items-center justify-center">
+
+        <div className="self-center w-[196px] h-[196px] rounded-[14px] border border-dashed border-[#cfd8d3] bg-[#fbfcfb] flex items-center justify-center overflow-hidden">
           {status === "loading" && (
-            <div className="w-3 h-3 rounded-full border-2 border-ys-border border-t-ys-red animate-spin" />
+            <div className="w-8 h-8 rounded-full border-[3px] border-ys-green-bg border-t-ys-green animate-spin" />
           )}
           {status === "waiting" && qrImageUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={qrImageUrl}
-              alt="QR"
-              className="w-[200px] h-[200px] rounded-[10px]"
-            />
+            <img src={qrImageUrl} alt="QR" className="w-[196px] h-[196px]" />
           )}
           {status === "connected" && (
-            <div className="text-[56px] text-center">✅</div>
+            <div className="w-14 h-14 rounded-full bg-ys-green-bg flex items-center justify-center">
+              <svg width="26" height="26" viewBox="0 0 16 16" fill="none">
+                <path d="m3 8.4 3.4 3L13 4.6" stroke="#12B76A" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
           )}
           {status === "error" && (
             <div className="text-[36px] text-center">⚠️</div>
           )}
         </div>
+
         <div
-          className={`text-[11px] flex items-center gap-1.5 ${
-            status === "connected"
-              ? "text-[#34d399]"
-              : status === "error"
-                ? "text-[#ef4444]"
-                : "text-ys-muted"
-          }`}
+          className="text-center text-[13px] font-semibold"
+          style={{
+            color:
+              status === "connected"
+                ? "#067647"
+                : status === "error"
+                  ? "#a8443b"
+                  : "#6b736e",
+          }}
         >
           {status === "loading" && "Generando QR..."}
           {status === "waiting" && "Escaneá con tu WhatsApp → Vincular dispositivo"}
-          {status === "connected" && "✅ ¡Conectado!"}
+          {status === "connected" && "¡Conectado!"}
           {status === "error" && "Error al obtener QR. Reintentando..."}
         </div>
+
+        <div className="bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-4 py-3.5 flex flex-col gap-2.5">
+          <Step n={1} texto="Abrí WhatsApp en tu celular." />
+          <Step n={2} texto="Entrá a Dispositivos vinculados." />
+          <Step n={3} texto="Tocá “Vincular un dispositivo”." />
+          <Step n={4} texto="Escaneá este código." />
+        </div>
+
         <button
           onClick={onClose}
-          className="w-full mt-1 rounded-lg border border-ys-border text-ys-muted text-xs py-[7px] hover:border-ys-border2 hover:text-ys-text transition-colors cursor-pointer"
+          className="self-end text-[13.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
         >
-          Cerrar
+          Cancelar
         </button>
       </div>
+    </div>
+  );
+}
+
+function Step({ n, texto }: { n: number; texto: string }) {
+  return (
+    <div className="flex gap-2.5 text-[13px] text-[#3f4844] font-semibold">
+      <span className="font-mono text-ys-green-text">{n}.</span>
+      {texto}
     </div>
   );
 }

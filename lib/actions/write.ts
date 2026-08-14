@@ -52,6 +52,176 @@ export async function saveListAction(
 }
 
 /**
+ * Suma contactos a un grupo (yamas_send_listas) ya existente, sin duplicar
+ * los que ya estuvieran en contactos_ids. Usado desde la barra flotante de
+ * Contactos → "Agregar a grupo existente".
+ */
+export async function addContactsToListAction(
+  listaId: string,
+  contactosIds: string[],
+): Promise<SaveResult> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { id: null, error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { id: null, error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { data: lista, error: fetchError } = await supabase
+    .from("yamas_send_listas")
+    .select("contactos_ids")
+    .eq("id", listaId)
+    .eq("tenant_id", cliente.tenant_id)
+    .maybeSingle();
+
+  if (fetchError || !lista) {
+    return { id: null, error: "No se pudo encontrar el grupo." };
+  }
+
+  const actuales: string[] = lista.contactos_ids ?? [];
+  const nuevos = Array.from(new Set([...actuales, ...contactosIds]));
+
+  const { error } = await supabase
+    .from("yamas_send_listas")
+    .update({ contactos_ids: nuevos })
+    .eq("id", listaId)
+    .eq("tenant_id", cliente.tenant_id);
+
+  if (error) return { id: null, error: error.message };
+  return { id: listaId, error: null };
+}
+
+/**
+ * Renombra un grupo (yamas_send_listas) ya existente.
+ */
+export async function renameListAction(
+  listaId: string,
+  nombre: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { error } = await supabase
+    .from("yamas_send_listas")
+    .update({ nombre })
+    .eq("id", listaId)
+    .eq("tenant_id", cliente.tenant_id);
+
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+/**
+ * Quita contactos puntuales de un grupo (yamas_send_listas) ya existente.
+ */
+export async function removeContactsFromListAction(
+  listaId: string,
+  contactosIds: string[],
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { data: lista, error: fetchError } = await supabase
+    .from("yamas_send_listas")
+    .select("contactos_ids")
+    .eq("id", listaId)
+    .eq("tenant_id", cliente.tenant_id)
+    .maybeSingle();
+
+  if (fetchError || !lista) {
+    return { error: "No se pudo encontrar el grupo." };
+  }
+
+  const actuales: string[] = lista.contactos_ids ?? [];
+  const restantes = actuales.filter((id) => !contactosIds.includes(id));
+
+  const { error } = await supabase
+    .from("yamas_send_listas")
+    .update({ contactos_ids: restantes })
+    .eq("id", listaId)
+    .eq("tenant_id", cliente.tenant_id);
+
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+/**
+ * Elimina un grupo (yamas_send_listas) por completo. El llamador debe pedir
+ * confirmación explícita al usuario antes de invocar esta acción.
+ */
+export async function deleteListAction(
+  listaId: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { error } = await supabase
+    .from("yamas_send_listas")
+    .delete()
+    .eq("id", listaId)
+    .eq("tenant_id", cliente.tenant_id);
+
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+/**
  * Guarda una campaña asociada a una lista y un template ya existentes.
  * Requiere ycloud_api y waba_id del tenant (campos NOT NULL en el esquema);
  * si el tenant todavía no los configuró, se informa el error en vez de

@@ -11,29 +11,58 @@ interface ContactsTableProps {
   modo24h: boolean;
 }
 
-function Badge({ score }: { score: ScoreTemp }) {
+function initialsOf(nombre: string): string {
+  const parts = nombre.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "—";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+function ScoreBadge({ score }: { score: ScoreTemp }) {
   if (score === "caliente")
     return (
-      <span className="inline-flex rounded-full px-[7px] py-[2px] text-[10px] font-semibold bg-[rgba(255,61,61,.15)] text-[#ff7070]">
-        🔥 cal
+      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-ys-green-text bg-ys-green-bg">
+        <span className="w-[7px] h-[7px] rounded-full bg-ys-green" />
+        Caliente
       </span>
     );
   if (score === "tibio")
     return (
-      <span className="inline-flex rounded-full px-[7px] py-[2px] text-[10px] font-semibold bg-[rgba(245,158,11,.15)] text-ys-warn">
-        🌡️ tib
+      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-ys-warn-text bg-ys-warn-bg">
+        <span
+          className="w-[7px] h-[7px] rounded-full border-[1.5px]"
+          style={{ borderColor: "#c07a12", background: "linear-gradient(90deg,#c07a12 50%,transparent 50%)" }}
+        />
+        Tibio
       </span>
     );
   if (score === "frio")
     return (
-      <span className="inline-flex rounded-full px-[7px] py-[2px] text-[10px] font-semibold bg-[rgba(59,130,246,.15)] text-ys-blue">
-        ❄️ frío
+      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-[#5d6560] bg-ys-el2">
+        <span className="w-[7px] h-[7px] rounded-full border-[1.5px] border-[#8a908c]" />
+        Frío
       </span>
     );
   return (
-    <span className="inline-flex rounded-full px-[7px] py-[2px] text-[10px] font-semibold bg-[rgba(113,113,122,.12)] text-ys-muted">
-      —
+    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-ys-dimmer bg-ys-el2">
+      Sin analizar
     </span>
+  );
+}
+
+function Checkbox({ checked, disabled }: { checked: boolean; disabled?: boolean }) {
+  return (
+    <div
+      className={`w-[19px] h-[19px] rounded-[6px] border-[1.5px] flex items-center justify-center flex-shrink-0 transition-colors ${
+        checked ? "bg-ys-green border-ys-green" : "bg-white border-ys-border2"
+      } ${disabled ? "opacity-50" : ""}`}
+    >
+      {checked && (
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+          <path d="m3 8.4 3.4 3L13 4.6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </div>
   );
 }
 
@@ -50,9 +79,26 @@ export default function ContactsTable({
     visibleSelectable.length > 0 &&
     visibleSelectable.every((c) => selected.has(c.id));
 
+  if (contacts.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 py-16 px-6">
+        <div className="w-11 h-11 rounded-2xl bg-ys-el2 flex items-center justify-center">
+          <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+            <circle cx="6" cy="5.5" r="2.5" stroke="#9aa19c" strokeWidth="1.5" />
+            <path d="M2 13.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </div>
+        <div className="text-sm font-bold text-ys-text">No hay contactos para mostrar</div>
+        <div className="text-[13px] text-ys-muted font-medium text-center">
+          Vinculá tu WhatsApp e importá tus contactos para empezar.
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0 md:border-r border-ys-border">
-      {/* ── Vista mobile: tarjetas ── */}
+    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+      {/* ── Vista mobile: solo avatar/iniciales + nombre ── */}
       <div className="flex-1 overflow-y-auto min-h-0 md:hidden">
         {contacts.map((c) => {
           const bloq = !modo24h && c.bloqueado;
@@ -61,31 +107,26 @@ export default function ContactsTable({
             <div
               key={c.id}
               onClick={() => onOpenDetail(c)}
-              className={`flex items-center gap-3 px-4 py-3 border-b border-ys-border ${
-                isSel ? "bg-ys-red-bg" : ""
-              } cursor-pointer active:bg-white/[.02] ${bloq ? "opacity-70" : ""}`}
+              className={`flex items-center gap-3 px-4 py-3 border-b border-ys-border-softer cursor-pointer transition-colors active:bg-[#f7fbf9] ${
+                isSel ? "bg-ys-green-bg" : ""
+              } ${bloq ? "opacity-60" : ""}`}
             >
-              <input
-                type="checkbox"
-                checked={isSel}
-                disabled={bloq}
-                onChange={() => onToggleRow(c.id)}
-                onClick={(e) => e.stopPropagation()}
-                className="accent-ys-red w-4 h-4 flex-shrink-0 cursor-pointer"
-              />
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!bloq) onToggleRow(c.id);
+                }}
+              >
+                <Checkbox checked={isSel} disabled={bloq} />
+              </div>
+              <div className="w-[34px] h-[34px] flex-none rounded-full bg-ys-el2 text-[#5d6560] text-[11.5px] font-extrabold flex items-center justify-center">
+                {initialsOf(c.nombre)}
+              </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[13px] font-semibold truncate">
-                    {c.nombre || (
-                      <span className="text-ys-muted font-normal">—</span>
-                    )}
-                  </span>
-                </div>
-                <div className="text-[11px] text-ys-muted truncate mt-0.5">
-                  {c.tel || "—"} · {c.etapa}
+                <div className="text-[14px] font-bold text-ys-text truncate">
+                  {c.nombre || <span className="text-ys-muted font-normal">Sin nombre</span>}
                 </div>
               </div>
-              <Badge score={c.score} />
             </div>
           );
         })}
@@ -93,83 +134,61 @@ export default function ContactsTable({
 
       {/* ── Vista desktop: tabla ── */}
       <div className="flex-1 overflow-y-auto min-h-0 hidden md:block">
-        <table className="w-full border-collapse table-fixed">
-          <thead>
-            <tr>
-              <th className="sticky top-0 z-[2] bg-ys-el border-t border-b border-ys-border px-3 py-2 text-left w-[34px]">
-                <input
-                  type="checkbox"
-                  checked={allChecked}
-                  onChange={(e) => onToggleAll(e.target.checked)}
-                  className="accent-ys-red w-3.5 h-3.5 cursor-pointer"
-                />
-              </th>
-              {[
-                { label: "Nombre", align: "text-left" },
-                { label: "Tel", align: "text-left" },
-                { label: "Score", align: "text-left" },
-                { label: "Etapa", align: "text-left" },
-                { label: "Msjs", align: "text-right" },
-                { label: "Último", align: "text-right" },
-              ].map(({ label, align }) => (
-                <th
-                  key={label}
-                  className={`sticky top-0 z-[2] bg-ys-el border-t border-b border-ys-border px-3 py-2 ${align} text-[9px] font-semibold text-ys-dim uppercase tracking-[0.5px]`}
-                >
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {contacts.map((c) => {
-              const bloq = !modo24h && c.bloqueado;
-              const isSel = selected.has(c.id) && !bloq;
-              return (
-                <tr
-                  key={c.id}
-                  onClick={() => onOpenDetail(c)}
-                  className={`border-b border-ys-border hover:[&>td]:bg-white/[.02] ${
-                    isSel ? "[&>td]:bg-ys-red-bg" : ""
-                  } cursor-pointer ${bloq ? "opacity-70" : ""}`}
-                >
-                  <td className="px-3 py-[9px] align-middle">
-                    <input
-                      type="checkbox"
-                      checked={isSel}
-                      disabled={bloq}
-                      onChange={() => onToggleRow(c.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="accent-ys-red w-3.5 h-3.5 cursor-pointer"
-                    />
-                  </td>
-                  <td className="px-3 py-[9px] text-[13px] truncate">
-                    {c.nombre ? (
-                      <strong>{c.nombre}</strong>
-                    ) : (
-                      <span className="text-ys-muted">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-[9px] text-[13px] text-ys-muted truncate">
-                    {c.tel || "—"}
-                  </td>
-                  <td className="px-3 py-[9px] text-[13px]">
-                    <Badge score={c.score} />
-                  </td>
-                  <td className="px-3 py-[9px] text-[13px] text-ys-muted truncate">
-                    {c.etapa}
-                  </td>
-                  <td className="px-3 py-[9px] text-[13px] text-ys-muted text-right truncate">
-                    {c.mensajes}
-                  </td>
-                  <td className="px-3 py-[9px] text-[13px] text-ys-muted text-right truncate">
-                    {c.ultimo}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <div className="grid grid-cols-[44px_1.7fr_1fr_.8fr_.5fr_.6fr] items-center px-6 py-2.5 bg-ys-bg border-t border-b border-ys-border-soft text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer sticky top-0 z-[2]">
+          <div>
+            <div onClick={() => onToggleAll(!allChecked)} className="cursor-pointer inline-flex">
+              <Checkbox checked={allChecked} />
+            </div>
+          </div>
+          <div>Nombre</div>
+          <div>Tel.</div>
+          <div>Score</div>
+          <div className="text-right">Msjs</div>
+          <div className="text-right">Último</div>
+        </div>
+
+        {contacts.map((c) => {
+          const bloq = !modo24h && c.bloqueado;
+          const isSel = selected.has(c.id) && !bloq;
+          return (
+            <div
+              key={c.id}
+              onClick={() => onOpenDetail(c)}
+              className={`grid grid-cols-[44px_1.7fr_1fr_.8fr_.5fr_.6fr] items-center px-6 py-[13px] border-b border-ys-border-softer cursor-pointer transition-colors hover:bg-[#f7fbf9] ${
+                isSel ? "bg-ys-green-bg" : ""
+              } ${bloq ? "opacity-60" : ""}`}
+            >
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!bloq) onToggleRow(c.id);
+                }}
+              >
+                <Checkbox checked={isSel} disabled={bloq} />
+              </div>
+              <div className="flex items-center gap-[11px] min-w-0">
+                <div className="w-8 h-8 flex-none rounded-full bg-ys-green-bg text-ys-green-text text-[11.5px] font-extrabold flex items-center justify-center">
+                  {initialsOf(c.nombre)}
+                </div>
+                <div className="text-sm font-bold text-ys-text truncate">
+                  {c.nombre || <span className="text-ys-muted font-normal">Sin nombre</span>}
+                </div>
+              </div>
+              <div className="font-mono text-[12.5px] text-ys-muted truncate">
+                {c.tel || "—"}
+              </div>
+              <div>
+                <ScoreBadge score={c.score} />
+              </div>
+              <div className="text-right font-mono text-[13px] text-[#3f4844]">
+                {c.mensajes}
+              </div>
+              <div className="text-right font-mono text-[12.5px] text-ys-dim">
+                {c.ultimo || "—"}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

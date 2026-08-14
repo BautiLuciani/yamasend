@@ -35,140 +35,192 @@ export default function KpiRow({
 
   return (
     <div
-      className={`flex flex-nowrap gap-1.5 px-4 py-2 border-b border-ys-border flex-shrink-0 overflow-x-auto md:overflow-visible scroll-smooth snap-x snap-proximity [&::-webkit-scrollbar]:hidden ${
-        importing ? "[&>*]:opacity-35 [&>*]:pointer-events-none [&>*]:grayscale" : ""
+      className={`px-4 md:px-[38px] pt-3 md:pt-[34px] pb-4 flex flex-col gap-4 md:gap-5 ${
+        importing ? "opacity-40 pointer-events-none grayscale" : ""
       }`}
     >
-      <button
-        onClick={onImportClick}
-        title="Importar contactos de WhatsApp"
-        className="hidden md:flex flex-none w-[72px] flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-ys-dim hover:border-ys-muted cursor-pointer transition-colors"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="var(--ys-muted)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {/* Acciones principales */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+        <button
+          onClick={onImportClick}
+          className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left cursor-pointer transition-colors hover:border-ys-green-border"
         >
-          <rect x="5" y="2" width="14" height="20" rx="2" />
-          <circle cx="12" cy="17" r="1" fill="var(--ys-muted)" />
-        </svg>
-        <div className="text-[8px] text-ys-muted uppercase tracking-[0.4px]">
-          importar
-        </div>
-      </button>
+          <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-green-bg flex items-center justify-center">
+            <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+              <path d="M14 7.5c0 3-2.7 5.2-6 5.2-.7 0-1.4-.1-2-.3L2.5 13.5l.8-2.5A5 5 0 0 1 2 7.5C2 4.5 4.7 2.3 8 2.3s6 2.2 6 5.2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+            <div className="text-sm font-extrabold text-ys-text">Vincular WhatsApp</div>
+            <div className="text-[12.5px] text-ys-dim font-medium truncate">
+              Conectá tu celular para importar y analizar tus conversaciones.
+            </div>
+          </div>
+          <span className="flex-none text-[13px] font-bold text-white bg-ys-green rounded-[10px] px-4 py-2.5">
+            Vincular
+          </span>
+        </button>
 
-      <button
-        onClick={onAnalyzeClick}
-        title="Analizar conversaciones con IA"
-        className="hidden md:flex flex-none w-[72px] flex-col items-center justify-center gap-1 rounded-lg border-[1.5px] border-dashed border-ys-dim hover:border-ys-muted cursor-pointer transition-colors"
-      >
-        <span className="text-[16px] leading-none">🔎</span>
-        <div className="text-[8px] text-ys-muted uppercase tracking-[0.4px]">
-          analizar
-        </div>
-      </button>
+        <button
+          onClick={onAnalyzeClick}
+          className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left cursor-pointer transition-colors hover:border-ys-green-border"
+        >
+          <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-dark flex items-center justify-center">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
+              <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#3ddb8f" strokeWidth="1.4" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+            <div className="text-sm font-extrabold text-ys-text">Analizar conversaciones</div>
+            <div className="text-[12.5px] text-ys-dim font-medium truncate">
+              Usá IA para detectar oportunidades comerciales entre tus contactos.
+            </div>
+          </div>
+          <span className="flex-none text-[13px] font-bold text-ys-text bg-white border border-ys-green-border rounded-[10px] px-4 py-2.5">
+            Analizar
+          </span>
+        </button>
+      </div>
 
-      <div className="hidden md:block w-px bg-ys-border my-1" />
+      {/* Métricas — también funcionan como filtros (funcionalidad real) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+        <MetricCard
+          value={counts.total}
+          label="Contactos"
+          active={isTotalOn}
+          onClick={onSelectTotal}
+          icon={
+            <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+              <circle cx="6" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M2 13.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              <path d="M11 4.2a2.5 2.5 0 0 1 0 4.6M12.5 13.5c0-1.5-.5-2.6-1.4-3.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          }
+          iconBg="bg-ys-el2"
+          iconColor="text-[#5d6560]"
+        />
+        <MetricCard
+          value={counts.caliente}
+          label="Leads calientes"
+          active={activeFilters.has("caliente")}
+          onClick={() => onToggleFilter("caliente")}
+          icon={
+            <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+              <path d="M8 13.8a3.7 3.7 0 0 0 3.7-3.7c0-3.2-3.7-7.9-3.7-7.9S4.3 6.9 4.3 10.1A3.7 3.7 0 0 0 8 13.8Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
+            </svg>
+          }
+          iconBg="bg-ys-green-bg"
+          iconColor="text-ys-green-text"
+        />
+        <MetricCard
+          value={counts.tibio}
+          label="Leads tibios"
+          active={activeFilters.has("tibio")}
+          onClick={() => onToggleFilter("tibio")}
+          icon={
+            <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="2.9" stroke="#c07a12" strokeWidth="1.5" />
+              <path d="M8 1.4v1.6M8 13v1.6M1.4 8h1.6M13 8h1.6M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M12.7 3.3l-1.2 1.2M4.5 11.5l-1.2 1.2" stroke="#c07a12" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          }
+          iconBg="bg-ys-warn-bg"
+          iconColor="text-ys-warn-text"
+        />
+        <MetricCard
+          value={counts.frio}
+          label="Leads fríos"
+          active={activeFilters.has("frio")}
+          onClick={() => onToggleFilter("frio")}
+          icon={
+            <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+              <path d="M8 1.6v12.8M2.5 4.8l11 6.4M13.5 4.8l-11 6.4M6.4 3.2 8 4.8l1.6-1.6M6.4 12.8 8 11.2l1.6 1.6M3.6 7.1l-1 .9 1 .9M12.4 7.1l1 .9-1 .9" stroke="#8a908c" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          }
+          iconBg="bg-ys-el2"
+          iconColor="text-ys-dim"
+        />
+      </div>
 
-      <Kpi
-        n={counts.total}
-        label="Total"
-        active={isTotalOn}
-        onClick={onSelectTotal}
-      />
-      <Kpi
-        n={counts.clientes}
-        label="Clientes"
-        color="var(--ys-green)"
-        active={activeFilters.has("cliente")}
-        onClick={() => onToggleFilter("cliente")}
-      />
-
-      <div className="hidden md:block w-px bg-ys-border my-1" />
-
-      <Kpi
-        n={counts.ai}
-        label="🤖 AI"
-        color="#34d399"
-        active={activeFilters.has("ai")}
-        onClick={() => onToggleFilter("ai")}
-        borderTint="rgba(52,211,153,.2)"
-      />
-      <Kpi
-        n={counts.h24}
-        label="⏱️ 24hs"
-        color="#a78bfa"
-        active={activeFilters.has("24h")}
-        onClick={() => onToggleFilter("24h")}
-        borderTint="rgba(167,139,250,.3)"
-      />
-      <Kpi
-        n={counts.caliente}
-        label="🔥 Calientes"
-        color="var(--ys-red)"
-        active={activeFilters.has("caliente")}
-        onClick={() => onToggleFilter("caliente")}
-      />
-      <Kpi
-        n={counts.tibio}
-        label="🌡️ Tibios"
-        color="var(--ys-warn)"
-        active={activeFilters.has("tibio")}
-        onClick={() => onToggleFilter("tibio")}
-      />
-      <Kpi
-        n={counts.frio}
-        label="❄️ Fríos"
-        color="var(--ys-blue)"
-        active={activeFilters.has("frio")}
-        onClick={() => onToggleFilter("frio")}
-      />
+      {/* Filtros adicionales reales (Clientes / lista AI / ventana 24h) — no
+          tienen equivalente visual en el diseño de Contactos, se integran
+          como chips secundarios para no perder funcionalidad existente. */}
+      <div className="flex flex-wrap gap-2">
+        <FilterChip
+          label={`Clientes (${counts.clientes})`}
+          active={activeFilters.has("cliente")}
+          onClick={() => onToggleFilter("cliente")}
+        />
+        <FilterChip
+          label={`En lista de IA (${counts.ai})`}
+          active={activeFilters.has("ai")}
+          onClick={() => onToggleFilter("ai")}
+        />
+        <FilterChip
+          label={`Ventana 24hs (${counts.h24})`}
+          active={activeFilters.has("24h")}
+          onClick={() => onToggleFilter("24h")}
+        />
+      </div>
     </div>
   );
 }
 
-function Kpi({
-  n,
+function MetricCard({
+  value,
   label,
-  color,
+  icon,
+  iconBg,
+  iconColor,
   active,
   onClick,
-  borderTint,
 }: {
-  n: number;
+  value: number;
   label: string;
-  color?: string;
+  icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
   active?: boolean;
   onClick: () => void;
-  borderTint?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      style={{
-        borderColor: active
-          ? "var(--ys-red)"
-          : borderTint
-            ? borderTint
-            : undefined,
-        backgroundColor: active ? "var(--ys-red-bg)" : undefined,
-      }}
-      className="flex-none w-[76px] md:w-auto md:flex-1 snap-start rounded-lg border border-ys-border bg-ys-card px-3 py-2.5 text-left select-none transition-colors hover:border-ys-border2 cursor-pointer"
+      className={`text-left bg-white border rounded-2xl px-4 md:px-5 py-[18px] flex items-center gap-3 md:gap-[13px] cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
+        active ? "border-ys-green" : "border-ys-border"
+      }`}
     >
-      <div
-        className="font-display text-xl font-bold leading-none"
-        style={{ color }}
-      >
-        {n}
+      <div className={`w-10 h-10 flex-none rounded-[13px] flex items-center justify-center ${iconBg} ${iconColor}`}>
+        {icon}
       </div>
-      <div className="text-[9px] text-ys-muted mt-1 uppercase tracking-[0.4px]">
-        {label}
+      <div className="flex flex-col gap-0.5 min-w-0">
+        <div className="font-mono text-xl md:text-2xl font-medium tracking-[-0.03em] text-ys-text">
+          {value}
+        </div>
+        <div className="text-[12.5px] text-ys-muted font-semibold truncate">{label}</div>
       </div>
+    </button>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`text-[12.5px] font-bold rounded-full px-3.5 py-2 cursor-pointer transition-colors ${
+        active
+          ? "bg-ys-green text-white"
+          : "bg-white border border-ys-border text-[#3f4844] hover:border-ys-green-border"
+      }`}
+    >
+      {label}
     </button>
   );
 }

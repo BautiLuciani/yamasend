@@ -17,6 +17,8 @@ import Sidebar from "./Sidebar";
 import MobileHeader from "./MobileHeader";
 import MobileDrawer from "./MobileDrawer";
 import Dashboard from "./Dashboard";
+import Grupos from "./Grupos";
+import GroupDetailModal from "./GroupDetailModal";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -27,7 +29,15 @@ import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
 import ContactDetailModal from "./ContactDetailModal";
 import SaveModal from "./SaveModal";
-import { saveListAction, saveCampaignAction } from "@/lib/actions/write";
+import { CreateGroupModal, AddToGroupModal } from "./GroupModals";
+import {
+  saveListAction,
+  saveCampaignAction,
+  addContactsToListAction,
+  renameListAction,
+  removeContactsFromListAction,
+  deleteListAction,
+} from "@/lib/actions/write";
 import { syncAndAnalyzeAction, setTemperaturaManualAction } from "@/lib/actions/sync";
 import { createClient } from "@/lib/supabase/client";
 
@@ -91,6 +101,9 @@ export default function AppShell({
   >("contactos");
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
+  const [createGroupOpen, setCreateGroupOpen] = useState(false);
+  const [addToGroupOpen, setAddToGroupOpen] = useState(false);
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -429,9 +442,18 @@ export default function AppShell({
         </div>
       )}
 
+      {activeSection === "grupos" && (
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
+          <Grupos
+            lists={lists}
+            contacts={contacts}
+            onOpenGroup={(group) => setOpenGroupId(group.id)}
+          />
+        </div>
+      )}
+
       {/* ── Placeholder "próximamente" para secciones aún sin construir en este bloque ── */}
-      {(activeSection === "grupos" ||
-        activeSection === "templates" ||
+      {(activeSection === "templates" ||
         activeSection === "campanas" ||
         activeSection === "ia") && (
         <div className="flex-1 min-w-0 flex items-center justify-center pt-[58px] md:pt-0">
@@ -465,15 +487,47 @@ export default function AppShell({
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
-      <div className="hidden md:grid md:grid-cols-[2fr_1fr] flex-1 overflow-hidden">
-        <ContactsTable
-          contacts={visibleContacts}
-          selected={sel}
-          onToggleRow={handleToggleRow}
-          onToggleAll={handleToggleAll}
-          onOpenDetail={setDetailContact}
-          modo24h={modo24h}
-        />
+      <div className="hidden md:grid md:grid-cols-[2fr_1fr] flex-1 overflow-hidden relative">
+        <div className="flex flex-col overflow-hidden md:border-r border-ys-border relative">
+          <ContactsTable
+            contacts={visibleContacts}
+            selected={sel}
+            onToggleRow={handleToggleRow}
+            onToggleAll={handleToggleAll}
+            onOpenDetail={setDetailContact}
+            modo24h={modo24h}
+          />
+          {sel.size > 0 && (
+            <div
+              className="absolute bottom-4 left-4 right-4 z-[9] bg-ys-dark rounded-2xl pl-[18px] pr-3.5 py-3 flex items-center gap-3.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
+              style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
+            >
+              <div className="text-[13.5px] font-bold text-white">
+                {sel.size} contacto{sel.size === 1 ? "" : "s"} seleccionado{sel.size === 1 ? "" : "s"}
+              </div>
+              <button
+                onClick={handleClearSel}
+                className="text-[12.5px] font-semibold text-[#9aa9a3] hover:text-white transition-colors cursor-pointer"
+              >
+                Deseleccionar
+              </button>
+              <div className="ml-auto flex items-center gap-2.5">
+                <button
+                  onClick={() => setAddToGroupOpen(true)}
+                  className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
+                >
+                  Agregar a grupo existente
+                </button>
+                <button
+                  onClick={() => setCreateGroupOpen(true)}
+                  className="text-[13px] font-extrabold text-[#0b1310] bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-[#3ddb8f] hover:-translate-y-px"
+                >
+                  Crear nuevo grupo
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <CampaignPanel
           templates={templates}
           selectedTplId={tplId}
@@ -593,40 +647,36 @@ export default function AppShell({
               onOpenDetail={setDetailContact}
               modo24h={modo24h}
             />
-            <div className="absolute right-4 bottom-4 flex flex-col gap-2 items-end">
-              <button
-                onClick={() => setSyncModalOpen(true)}
-                title="Analizar conversaciones con IA"
-                className="min-w-[56px] px-2.5 py-2 rounded-2xl bg-ys-el border border-ys-border2 text-ys-text flex flex-col items-center justify-center gap-0.5 shadow-[0_4px_14px_rgba(0,0,0,.35)] cursor-pointer"
+            {sel.size > 0 && (
+              <div
+                className="absolute bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
+                style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
               >
-                <span className="text-[16px] leading-none">🔎</span>
-                <span className="text-[9px] font-semibold leading-none">
-                  Analizar
-                </span>
-              </button>
-              <button
-                onClick={() => setQrOpen(true)}
-                title="Importar contactos de WhatsApp"
-                className="min-w-[56px] px-2.5 py-2 rounded-2xl bg-ys-red border border-ys-red text-white flex flex-col items-center justify-center gap-0.5 shadow-[0_4px_14px_rgba(255,61,61,.35)] cursor-pointer"
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+                <div className="text-[13px] font-bold text-white">
+                  {sel.size} sel.
+                </div>
+                <button
+                  onClick={handleClearSel}
+                  className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
                 >
-                  <rect x="5" y="2" width="14" height="20" rx="2" />
-                  <circle cx="12" cy="17" r="1" fill="white" />
-                </svg>
-                <span className="text-[9px] font-semibold leading-none">
-                  Importar
-                </span>
-              </button>
-            </div>
+                  Deseleccionar
+                </button>
+                <div className="w-full flex items-center gap-2 mt-1">
+                  <button
+                    onClick={() => setAddToGroupOpen(true)}
+                    className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
+                  >
+                    Agregar a grupo
+                  </button>
+                  <button
+                    onClick={() => setCreateGroupOpen(true)}
+                    className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
+                  >
+                    Crear grupo
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -739,6 +789,78 @@ export default function AppShell({
             );
           }
           return result;
+        }}
+      />
+
+      <CreateGroupModal
+        open={createGroupOpen}
+        selectedCount={sel.size}
+        onClose={() => setCreateGroupOpen(false)}
+        onCreate={async (nombre) => {
+          const result = await saveListAction(nombre, Array.from(sel));
+          if (result.error) {
+            addMsg(`⚠️ No se pudo crear el grupo: ${result.error}`, "error");
+          } else {
+            addMsg(`Grupo "${nombre}" creado con ${sel.size} contactos ✓`);
+            router.refresh();
+            setCreateGroupOpen(false);
+            handleClearSel();
+          }
+        }}
+      />
+
+      <AddToGroupModal
+        open={addToGroupOpen}
+        lists={lists}
+        selectedCount={sel.size}
+        onClose={() => setAddToGroupOpen(false)}
+        onAdd={async (listaId) => {
+          const result = await addContactsToListAction(listaId, Array.from(sel));
+          if (result.error) {
+            addMsg(`⚠️ No se pudo agregar al grupo: ${result.error}`, "error");
+          } else {
+            const grupo = lists.find((l) => l.id === listaId);
+            addMsg(
+              `${sel.size} contacto${sel.size === 1 ? "" : "s"} agregado${sel.size === 1 ? "" : "s"} a "${grupo?.nombre ?? "grupo"}" ✓`,
+            );
+            router.refresh();
+            setAddToGroupOpen(false);
+            handleClearSel();
+          }
+        }}
+      />
+
+      <GroupDetailModal
+        group={lists.find((l) => l.id === openGroupId) ?? null}
+        contacts={contacts}
+        onClose={() => setOpenGroupId(null)}
+        onRename={async (id, nombre) => {
+          const result = await renameListAction(id, nombre);
+          if (result.error) {
+            addMsg(`⚠️ No se pudo renombrar el grupo: ${result.error}`, "error");
+          } else {
+            addMsg(`Grupo renombrado a "${nombre}" ✓`);
+            router.refresh();
+          }
+        }}
+        onRemoveContacts={async (id, contactIds) => {
+          const result = await removeContactsFromListAction(id, contactIds);
+          if (result.error) {
+            addMsg(`⚠️ No se pudo quitar el contacto del grupo: ${result.error}`, "error");
+          } else {
+            router.refresh();
+          }
+        }}
+        onDelete={async (id) => {
+          const grupo = lists.find((l) => l.id === id);
+          const result = await deleteListAction(id);
+          if (result.error) {
+            addMsg(`⚠️ No se pudo eliminar el grupo: ${result.error}`, "error");
+          } else {
+            addMsg(`Grupo "${grupo?.nombre ?? ""}" eliminado ✓`);
+            router.refresh();
+            setOpenGroupId(null);
+          }
         }}
       />
 
