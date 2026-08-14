@@ -16,6 +16,7 @@ import type {
 import Sidebar from "./Sidebar";
 import MobileHeader from "./MobileHeader";
 import MobileDrawer from "./MobileDrawer";
+import Dashboard from "./Dashboard";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -62,7 +63,7 @@ export default function AppShell({
   onLogout,
 }: AppShellProps) {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<AppSection>("contactos");
+  const [activeSection, setActiveSection] = useState<AppSection>("dashboard");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -422,9 +423,14 @@ export default function AppShell({
         onLogout={handleLogout}
       />
 
+      {activeSection === "dashboard" && (
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
+          <Dashboard userName={user.contactoNombre} />
+        </div>
+      )}
+
       {/* ── Placeholder "próximamente" para secciones aún sin construir en este bloque ── */}
-      {(activeSection === "dashboard" ||
-        activeSection === "grupos" ||
+      {(activeSection === "grupos" ||
         activeSection === "templates" ||
         activeSection === "campanas" ||
         activeSection === "ia") && (
