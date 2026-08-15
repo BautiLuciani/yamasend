@@ -28,13 +28,9 @@ import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
-import CampaignPanel from "./CampaignPanel";
-import Footer, { ListActionsBar, CampaignActionsBar } from "./Footer";
-import AiChatBar from "./AiChatBar";
 import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
 import ContactDetailModal from "./ContactDetailModal";
-import SaveModal from "./SaveModal";
 import { CreateGroupModal, AddToGroupModal } from "./GroupModals";
 import {
   saveListAction,
@@ -90,7 +86,6 @@ export default function AppShell({
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newTplContent, setNewTplContent] = useState("");
   const [newTplName, setNewTplName] = useState("");
-  const [freeText, setFreeText] = useState("");
 
   const [status, setStatus] = useState<StatusState>("idle");
 
@@ -101,10 +96,6 @@ export default function AppShell({
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
   const qrPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrObjectUrlRef = useRef<string | null>(null);
-  const [saveModal, setSaveModal] = useState<"lista" | "campaña" | null>(null);
-  const [mobileTab, setMobileTab] = useState<
-    "inicio" | "contactos" | "campana" | "chat"
-  >("contactos");
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
@@ -331,28 +322,12 @@ export default function AppShell({
     setIsCreatingNew(false);
     setNewTplContent("");
     setNewTplName("");
-    setFreeText("");
     setFilt(new Set());
     setModo24h(false);
     setStatus("idle");
     addMsg(
       "Hola 👋 Seleccioná contactos usando los KPIs, o pedime que arme una lista. Puedo ayudarte en cada paso.",
     );
-  }
-
-  function handleSelectTpl(id: string | null) {
-    setTplId(id);
-    setIsCreatingNew(false);
-    if (id && sel.size > 0) {
-      setStatus("ready");
-      addMsg(
-        `✅ Todo listo para enviar. ${sel.size} contactos · ${templates.find((t) => t.id === id)?.nombre ?? "template"}. Cuando quieras presioná Enviar campaña.`,
-      );
-    } else if (sel.size > 0) {
-      setStatus("need-tpl");
-    } else {
-      setStatus("idle");
-    }
   }
 
   function handleStartNewTpl() {
@@ -391,13 +366,6 @@ export default function AppShell({
     }, 3000);
   }
 
-  function handleEnviar() {
-    if (status !== "ready") return;
-    const cost = modo24h ? "Gratis" : `USD ${(sel.size * COST_PER_MSG).toFixed(2)}`;
-    addMsg(`✅ Campaña enviada. ${sel.size} contactos · ${cost}.`);
-    handleClearSel();
-  }
-
   function handleChatSend(text: string) {
     addMsg(text, "user");
     setTimeout(() => {
@@ -406,12 +374,6 @@ export default function AppShell({
       );
     }, 500);
   }
-
-  const costEstimate = modo24h
-    ? "Gratis"
-    : tplId || isCreatingNew
-      ? `USD ${(sel.size * COST_PER_MSG).toFixed(2)}`
-      : "—";
 
   async function handleLogout() {
     await onLogout();
@@ -497,8 +459,8 @@ export default function AppShell({
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
-      <div className="hidden md:grid md:grid-cols-[2fr_1fr] flex-1 overflow-hidden relative">
-        <div className="flex flex-col overflow-hidden md:border-r border-ys-border relative">
+      <div className="hidden md:flex flex-1 overflow-hidden relative">
+        <div className="flex flex-col overflow-hidden flex-1 relative">
           <ContactsTable
             contacts={visibleContacts}
             selected={sel}
@@ -538,239 +500,48 @@ export default function AppShell({
             </div>
           )}
         </div>
-        <CampaignPanel
-          templates={templates}
-          selectedTplId={tplId}
-          onSelectTpl={handleSelectTpl}
-          isCreatingNew={isCreatingNew}
-          onStartNewTpl={handleStartNewTpl}
-          onCancelNewTpl={handleCancelNewTpl}
-          newTplContent={newTplContent}
-          onNewTplContentChange={setNewTplContent}
-          newTplName={newTplName}
-          onNewTplNameChange={setNewTplName}
-          onSendToMeta={handleSendToMeta}
-          selectedCount={sel.size}
-          costEstimate={costEstimate}
-          status={status}
-          onEnviar={handleEnviar}
-          modo24h={modo24h}
-          freeTextValue={freeText}
-          onFreeTextChange={setFreeText}
-        />
       </div>
 
-      {/* ── Selector de vista mobile (reemplaza al bottom-nav; la navegación entre
-           SECCIONES ahora vive en el drawer superior) ── */}
-      <div className="flex md:hidden items-center gap-1 px-4 py-2 border-b border-ys-border-softest overflow-x-auto">
-        {(
-          [
-            { key: "inicio", label: "Inicio" },
-            { key: "contactos", label: "Contactos" },
-            { key: "campana", label: "Campaña" },
-            { key: "chat", label: "AI chat" },
-          ] as const
-        ).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setMobileTab(t.key)}
-            className={`relative flex-none rounded-lg px-3 py-1.5 text-[12.5px] font-semibold cursor-pointer transition-colors ${
-              mobileTab === t.key
-                ? "bg-ys-green-bg text-ys-green-text"
-                : "text-ys-muted"
-            }`}
-          >
-            {t.label}
-            {t.key === "contactos" && sel.size > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-[3px] rounded-full bg-ys-green text-white text-[9px] font-semibold flex items-center justify-center leading-none">
-                {sel.size}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Contenido mobile: un tab visible a la vez, misma lógica y handlers ── */}
+      {/* ── Contenido mobile: misma tabla + barra flotante que en desktop ── */}
       <div className="flex md:hidden flex-col flex-1 overflow-hidden min-h-0">
-        {mobileTab === "inicio" && (
-          <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4">
-            <div>
-              <div className="text-[9px] font-semibold text-ys-dim uppercase tracking-[0.8px] mb-2">
-                Selección actual
-              </div>
-              <div className="rounded-lg border border-ys-border bg-ys-card px-4 py-3 flex items-center justify-between">
-                <span className="text-sm">
-                  <strong className="text-ys-text">{sel.size}</strong>{" "}
-                  <span className="text-ys-muted">contactos seleccionados</span>
-                </span>
-                {sel.size > 0 && (
-                  <button
-                    onClick={() => setMobileTab("campana")}
-                    className="rounded-md bg-ys-red text-white px-3 py-1.5 text-xs font-semibold cursor-pointer"
-                  >
-                    Armar campaña
-                  </button>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="text-[9px] font-semibold text-ys-dim uppercase tracking-[0.8px] mb-2">
-                Listas guardadas
-              </div>
-              <ListActionsBar
-                selectedCount={sel.size}
-                onClearSel={handleClearSel}
-                lists={lists}
-                onLoadList={(id) => {
-                  const list = lists.find((l) => l.id === id);
-                  if (!list) return;
-                  setSel(new Set(list.contactosIds));
-                  setStatus("need-tpl");
-                  addMsg(
-                    `Lista "${list.nombre}" cargada con ${list.contactosIds.length} contactos.`,
-                  );
-                }}
-                onSaveList={() => setSaveModal("lista")}
-                onConfirmList={async () => {
-                  if (sel.size === 0) return;
-                  const nombreAuto = `Lista ${new Date().toLocaleDateString("es-AR")} (${sel.size} contactos)`;
-                  const result = await saveListAction(nombreAuto, Array.from(sel));
-                  if (result.error) {
-                    addMsg(`⚠️ No se pudo guardar la lista: ${result.error}`, "error");
-                  } else {
-                    addMsg(`Lista guardada con ${sel.size} contactos. ✓`);
-                    router.refresh();
-                  }
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {mobileTab === "contactos" && (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
-            <ContactsTable
-              contacts={visibleContacts}
-              selected={sel}
-              onToggleRow={handleToggleRow}
-              onToggleAll={handleToggleAll}
-              onOpenDetail={setDetailContact}
-              modo24h={modo24h}
-            />
-            {sel.size > 0 && (
-              <div
-                className="absolute bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
-                style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
-              >
-                <div className="text-[13px] font-bold text-white">
-                  {sel.size} sel.
-                </div>
-                <button
-                  onClick={handleClearSel}
-                  className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
-                >
-                  Deseleccionar
-                </button>
-                <div className="w-full flex items-center gap-2 mt-1">
-                  <button
-                    onClick={() => setAddToGroupOpen(true)}
-                    className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
-                  >
-                    Agregar a grupo
-                  </button>
-                  <button
-                    onClick={() => setCreateGroupOpen(true)}
-                    className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
-                  >
-                    Crear grupo
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {mobileTab === "campana" && (
-          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <CampaignPanel
-              templates={templates}
-              selectedTplId={tplId}
-              onSelectTpl={handleSelectTpl}
-              isCreatingNew={isCreatingNew}
-              onStartNewTpl={handleStartNewTpl}
-              onCancelNewTpl={handleCancelNewTpl}
-              newTplContent={newTplContent}
-              onNewTplContentChange={setNewTplContent}
-              newTplName={newTplName}
-              onNewTplNameChange={setNewTplName}
-              onSendToMeta={handleSendToMeta}
-              selectedCount={sel.size}
-              costEstimate={costEstimate}
-              status={status}
-              onEnviar={handleEnviar}
-              modo24h={modo24h}
-              freeTextValue={freeText}
-              onFreeTextChange={setFreeText}
-              showOnMobile
-            />
-            <div className="px-[18px] py-2.5 border-t border-ys-border">
-              <CampaignActionsBar
-                campaigns={campaigns}
-                onLoadCampaign={(id) => {
-                  const camp = campaigns.find((c) => c.id === id);
-                  if (!camp) return;
-                  addMsg(`Campaña "${camp.nombre}" cargada.`);
-                }}
-                onSaveCampaign={() => setSaveModal("campaña")}
-              />
-            </div>
-          </div>
-        )}
-
-        {mobileTab === "chat" && (
-          <AiChatBar
-            messages={messages}
-            onSend={handleChatSend}
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
+          <ContactsTable
+            contacts={visibleContacts}
+            selected={sel}
+            onToggleRow={handleToggleRow}
+            onToggleAll={handleToggleAll}
+            onOpenDetail={setDetailContact}
             modo24h={modo24h}
-            fullHeight
           />
-        )}
-      </div>
-
-      <Footer
-        selectedCount={sel.size}
-        onClearSel={handleClearSel}
-        lists={lists}
-        onLoadList={(id) => {
-          const list = lists.find((l) => l.id === id);
-          if (!list) return;
-          setSel(new Set(list.contactosIds));
-          setStatus("need-tpl");
-          addMsg(`Lista "${list.nombre}" cargada con ${list.contactosIds.length} contactos.`);
-        }}
-        onSaveList={() => setSaveModal("lista")}
-        onConfirmList={async () => {
-          if (sel.size === 0) return;
-          const nombreAuto = `Lista ${new Date().toLocaleDateString("es-AR")} (${sel.size} contactos)`;
-          const result = await saveListAction(nombreAuto, Array.from(sel));
-          if (result.error) {
-            addMsg(`⚠️ No se pudo guardar la lista: ${result.error}`, "error");
-          } else {
-            addMsg(`Lista guardada con ${sel.size} contactos. ✓`);
-            router.refresh();
-          }
-        }}
-        campaigns={campaigns}
-        onLoadCampaign={(id) => {
-          const camp = campaigns.find((c) => c.id === id);
-          if (!camp) return;
-          addMsg(`Campaña "${camp.nombre}" cargada.`);
-        }}
-        onSaveCampaign={() => setSaveModal("campaña")}
-      />
-
-      <div className="hidden md:block">
-        <AiChatBar messages={messages} onSend={handleChatSend} modo24h={modo24h} />
+          {sel.size > 0 && (
+            <div
+              className="absolute bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
+              style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
+            >
+              <div className="text-[13px] font-bold text-white">{sel.size} sel.</div>
+              <button
+                onClick={handleClearSel}
+                className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
+              >
+                Deseleccionar
+              </button>
+              <div className="w-full flex items-center gap-2 mt-1">
+                <button
+                  onClick={() => setAddToGroupOpen(true)}
+                  className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
+                >
+                  Agregar a grupo
+                </button>
+                <button
+                  onClick={() => setCreateGroupOpen(true)}
+                  className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
+                >
+                  Crear grupo
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       </div>
       )}
@@ -922,48 +693,6 @@ export default function AppShell({
               : prev,
           );
           router.refresh();
-        }}
-      />
-
-      <SaveModal
-        open={saveModal !== null}
-        context={saveModal}
-        selectedCount={sel.size}
-        onClose={() => setSaveModal(null)}
-        onSave={async (name) => {
-          if (saveModal === "lista") {
-            if (sel.size === 0) {
-              addMsg("⚠️ Seleccioná contactos antes de guardar la lista.", "error");
-              setSaveModal(null);
-              return;
-            }
-            const result = await saveListAction(name, Array.from(sel));
-            if (result.error) {
-              addMsg(`⚠️ No se pudo guardar la lista: ${result.error}`, "error");
-            } else {
-              addMsg(`"${name}" guardada con ${sel.size} contactos ✓`);
-              router.refresh();
-            }
-          } else if (saveModal === "campaña") {
-            if (!tplId) {
-              addMsg("⚠️ Elegí un template antes de guardar la campaña.", "error");
-              setSaveModal(null);
-              return;
-            }
-            const result = await saveCampaignAction(
-              name,
-              null,
-              tplId,
-              Array.from(sel),
-            );
-            if (result.error) {
-              addMsg(`⚠️ No se pudo guardar la campaña: ${result.error}`, "error");
-            } else {
-              addMsg(`Campaña "${name}" guardada ✓`);
-              router.refresh();
-            }
-          }
-          setSaveModal(null);
         }}
       />
     </div>
