@@ -56,6 +56,7 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
   const [liErr, setLiErr] = useState("");
   const [liLoading, setLiLoading] = useState(false);
   const [liFocused, setLiFocused] = useState<"email" | "pw" | null>(null);
+  const [liRecordar, setLiRecordar] = useState(false);
 
   // register state
   const [regNombre, setRegNombre] = useState("");
@@ -71,6 +72,11 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
   const pwValid = regPw.length >= 8;
   const pwHasUpper = /[A-Z]/.test(regPw);
   const pwHasNumber = /[0-9]/.test(regPw);
+  const paso1Valido =
+    regNombre.trim().length > 0 &&
+    emailValid &&
+    regWa.trim().length > 0 &&
+    pwValid;
 
   async function handleLogin() {
     setLiErr("");
@@ -140,7 +146,7 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-[#fbfcfb] overflow-y-auto overflow-x-hidden flex items-center justify-center py-8 px-4 md:py-12">
+    <div className="fixed inset-0 bg-[#fbfcfb] overflow-y-auto overflow-x-hidden flex items-start md:items-center justify-center py-10 md:py-12 px-4">
       <div
         className="absolute -top-[90px] -left-[70px] w-[320px] h-[320px] rounded-full pointer-events-none"
         style={{ background: "#12B76A", opacity: 0.06, filter: "blur(60px)" }}
@@ -261,6 +267,14 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
                   <div className="flex flex-col gap-[7px]">
                     <div className="flex items-center gap-2.5">
                       <div className="text-[12.5px] font-extrabold text-ys-text">Contraseña</div>
+                      <button
+                        type="button"
+                        disabled
+                        title="Disponible próximamente"
+                        className="ml-auto text-[12.5px] font-bold text-ys-green-text cursor-not-allowed opacity-70"
+                      >
+                        ¿Olvidaste tu contraseña?
+                      </button>
                     </div>
                     <div
                       className="flex items-center gap-2.5 border rounded-[10px] px-[13px] py-[11px] transition-colors"
@@ -299,6 +313,27 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
                       </button>
                     </div>
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setLiRecordar((v) => !v)}
+                    className="flex items-center gap-[9px] cursor-pointer self-start"
+                  >
+                    <div
+                      className="w-[17px] h-[17px] rounded-[5px] border-[1.5px] flex items-center justify-center transition-colors"
+                      style={{
+                        borderColor: liRecordar ? "#12B76A" : "#d8ded9",
+                        background: liRecordar ? "#12B76A" : "transparent",
+                      }}
+                    >
+                      {liRecordar && (
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                          <path d="m3 8.4 3.4 3L13 4.6" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </div>
+                    <div className="text-[13px] text-ys-muted font-semibold">Recordarme</div>
+                  </button>
 
                   {liLoading ? (
                     <div className="flex items-center justify-center gap-2.5 bg-ys-green-hover text-white text-sm font-bold py-[13px] rounded-[11px]">
@@ -469,7 +504,12 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
 
                       <button
                         onClick={handleContinuarPaso1}
-                        className="mt-1 flex items-center justify-center gap-2 bg-ys-green text-white text-sm font-bold py-[13px] rounded-[11px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+                        disabled={!paso1Valido}
+                        className={`mt-1 flex items-center justify-center gap-2 text-sm font-bold py-[13px] rounded-[11px] transition-all ${
+                          paso1Valido
+                            ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+                            : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+                        }`}
                       >
                         Continuar →
                       </button>
