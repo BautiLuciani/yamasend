@@ -52,7 +52,7 @@ export default function SyncConfigModal({
         style={{ animation: "ys-fade .16s ease both" }}
       >
         <div
-          className="w-full max-w-[440px] bg-white rounded-[18px] px-[30px] py-9 flex flex-col items-center gap-4 shadow-[var(--shadow-modal)]"
+          className="w-full max-w-[440px] bg-white rounded-[18px] px-6 sm:px-[30px] py-9 flex flex-col items-center gap-4 shadow-[var(--shadow-modal)]"
           style={{ animation: "ys-modal .19s cubic-bezier(.4,0,.2,1) both" }}
         >
           <div className="w-[46px] h-[46px] rounded-full border-[3px] border-ys-green-bg border-t-ys-green animate-spin" />
@@ -143,9 +143,9 @@ export default function SyncConfigModal({
                       Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 1)),
                     )
                   }
-                  className="w-[120px] border border-ys-border rounded-[10px] px-3.5 py-[11px] font-mono text-sm text-ys-text outline-none transition-colors focus:border-ys-green"
+                  className="w-[100px] flex-none border border-ys-border rounded-[10px] px-3.5 py-[11px] font-mono text-sm text-ys-text outline-none transition-colors focus:border-ys-green"
                 />
-                <div className="text-xs text-ys-dim font-medium">
+                <div className="min-w-0 text-xs text-ys-dim font-medium">
                   Priorizamos los contactos con mensajes más recientes primero.
                 </div>
               </div>

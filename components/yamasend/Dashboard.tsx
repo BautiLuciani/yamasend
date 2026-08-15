@@ -155,12 +155,12 @@ export default function Dashboard({ userName }: DashboardProps) {
                 <path d="M8 4.8v6.4M6.3 6.4h3.1a1.3 1.3 0 0 1 0 2.6H6.6a1.3 1.3 0 0 0 0 2.6h3.1" stroke="#12B76A" strokeWidth="1.4" strokeLinecap="round" />
               </svg>
             </div>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-0.5 min-w-0">
               <div className="flex items-baseline gap-1.5">
-                <div className="font-mono text-2xl font-medium tracking-[-0.03em] text-ys-text">3.200</div>
-                <div className="font-mono text-[13px] text-ys-dimmer">/ 50.000</div>
+                <div className="font-mono text-xl md:text-2xl font-medium tracking-[-0.03em] text-ys-text">3.200</div>
+                <div className="font-mono text-xs md:text-[13px] text-ys-dimmer">/ 50.000</div>
               </div>
-              <div className="text-[12.5px] text-ys-muted font-semibold">Créditos disponibles</div>
+              <div className="text-[12.5px] text-ys-muted font-semibold truncate">Créditos disponibles</div>
             </div>
           </div>
           <div className="flex items-center gap-3">

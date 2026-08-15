@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { AppUser } from "@/lib/types";
 
 interface ProfileDrawerProps {
@@ -15,16 +16,9 @@ const PLAN_LABELS: Record<string, string> = {
   uso: "Por mensaje",
 };
 
-const PLAN_STYLES: Record<string, string> = {
-  starter: "bg-[rgba(59,130,246,.1)] border-[rgba(59,130,246,.3)] text-[#60a5fa]",
-  pro: "bg-[rgba(168,85,247,.1)] border-[rgba(168,85,247,.3)] text-[#c084fc]",
-  uso: "bg-[rgba(251,191,36,.1)] border-[rgba(251,191,36,.3)] text-[#fbbf24]",
-};
-
-function isTrial(trialEnd: string): boolean {
-  const end = new Date(trialEnd);
-  const now = new Date();
-  const in7 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+function isTrial(trialEnd: string, now: number): boolean {
+  const end = new Date(trialEnd).getTime();
+  const in7 = now + 7 * 24 * 60 * 60 * 1000;
   return end > now && end <= in7;
 }
 
@@ -34,118 +28,117 @@ export default function ProfileDrawer({
   onClose,
   onLogout,
 }: ProfileDrawerProps) {
-  const trial = isTrial(user.trialEnd);
+  const [now] = useState(() => Date.now());
+  const trial = isTrial(user.trialEnd, now);
   const planLabel = PLAN_LABELS[user.plan] || user.plan;
-  const planStyle = trial
-    ? "bg-ys-green-bg border-[rgba(34,197,94,.3)] text-ys-green"
-    : PLAN_STYLES[user.plan];
-
   const daysLeft = Math.max(
     0,
-    Math.ceil((new Date(user.trialEnd).getTime() - Date.now()) / 86400000),
+    Math.ceil((new Date(user.trialEnd).getTime() - now) / 86400000),
   );
+  const initials = user.contactoNombre
+    .split(" ")
+    .map((p) => p[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 
   return (
     <>
       <div
         onClick={onClose}
-        className={`fixed inset-0 bg-black/50 backdrop-blur-[2px] z-[8000] transition-opacity ${
+        className={`fixed inset-0 bg-black/[.34] z-[8000] transition-opacity ${
           open ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
       />
       <div
-        className={`fixed top-0 right-0 h-full w-[380px] bg-ys-card border-l border-ys-border2 z-[8001] flex flex-col transition-transform duration-200 ease-[cubic-bezier(.4,0,.2,1)] ${
+        className={`fixed top-0 right-0 h-full w-full max-w-[380px] bg-white border-l border-ys-border z-[8001] flex flex-col shadow-[var(--shadow-modal)] transition-transform duration-200 ease-[cubic-bezier(.4,0,.2,1)] ${
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
-        <div className="px-[18px] pt-3.5 pb-3 border-b border-ys-border flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full bg-ys-red-bg border-[1.5px] border-[rgba(255,61,61,.3)] flex items-center justify-center text-base flex-shrink-0">
-            👤
+        <div className="px-5 pt-5 pb-4 border-b border-ys-border-soft flex items-start gap-3">
+          <div className="w-11 h-11 rounded-full bg-ys-green-bg text-ys-green-text text-sm font-extrabold flex items-center justify-center flex-shrink-0">
+            {initials || "?"}
           </div>
           <div className="flex-1 min-w-0">
-            <div className="font-display text-[15px] font-bold truncate">
+            <div className="text-[15px] font-extrabold text-ys-text truncate">
               {user.contactoNombre}
             </div>
-            <div className="text-[11px] text-ys-muted mt-px truncate">
+            <div className="text-[12.5px] text-ys-muted font-medium mt-0.5 truncate">
               {user.contactoEmail}
             </div>
             {user.ventasTel && (
-              <div className="text-[11px] text-ys-dim mt-px">
-                📱 {user.ventasTel}
+              <div className="font-mono text-[11.5px] text-ys-dim mt-0.5 truncate">
+                {user.ventasTel}
               </div>
             )}
           </div>
           <button
             onClick={onClose}
-            className="flex-shrink-0 text-ys-muted hover:bg-ys-el hover:text-ys-text rounded-md p-1 transition-colors cursor-pointer"
+            className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-ys-dimmer hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer text-xl leading-none"
           >
-            <svg
-              width="16"
-              height="16"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+            ×
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-[18px] pb-4">
-          <div className="pt-3">
-            <div className="text-[9px] font-semibold text-ys-dim uppercase tracking-[0.6px] mb-1.5">
+        <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[11px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">
               Suscripción
             </div>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold font-display ${planStyle}`}
-            >
-              {trial ? "⏳ Trial · " : ""}
-              {planLabel}
-            </span>
-            <div className="text-xs text-ys-muted mt-2">
-              {!trial && "✓ Activo"}
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full text-[12px] font-bold px-3 py-1.5 bg-ys-green-bg text-ys-green-text">
+                {trial ? "Trial · " : ""}
+                {planLabel}
+              </span>
+              {!trial && (
+                <span className="text-xs text-ys-muted font-semibold">Activo</span>
+              )}
             </div>
           </div>
 
           {trial && (
-            <div className="pt-3">
-              <div className="flex gap-2 mb-4">
-                <div className="rounded-lg border border-ys-border bg-ys-el px-2.5 py-2.5 text-center flex-none">
-                  <div className="font-display text-[30px] font-bold text-ys-green leading-none">
-                    {daysLeft}
-                  </div>
-                  <div className="text-[11px] text-ys-muted mt-[3px]">
-                    días restantes
-                  </div>
+            <div className="flex gap-2.5">
+              <div className="rounded-xl border border-ys-border bg-[#fbfcfb] px-3.5 py-3 text-center flex-none">
+                <div className="font-mono text-2xl font-medium text-ys-green leading-none">
+                  {daysLeft}
                 </div>
-                <div className="rounded-lg border border-ys-border bg-ys-el px-2.5 py-2.5 flex flex-col justify-center">
-                  <div className="text-[11px] text-ys-muted">
-                    Elegí tu plan para continuar con acceso completo.
-                  </div>
+                <div className="text-[11px] text-ys-dim font-semibold mt-1.5 whitespace-nowrap">
+                  días restantes
+                </div>
+              </div>
+              <div className="rounded-xl border border-ys-border bg-[#fbfcfb] px-3.5 py-3 flex flex-col justify-center">
+                <div className="text-[12.5px] text-ys-muted font-medium leading-[1.45]">
+                  Elegí tu plan para continuar con acceso completo.
                 </div>
               </div>
             </div>
           )}
+
+          <div className="flex flex-col gap-0.5 border-t border-ys-border-softest pt-3.5">
+            <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M3 13.5c0-2.4 2.2-3.8 5-3.8s5 1.4 5 3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              Mi perfil
+            </div>
+            <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M8 1.8v1.6M8 12.6v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9 12 12M12 4l-1.1 1.1M5.1 10.9 4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              Configuración
+            </div>
+          </div>
         </div>
 
-        <div className="px-[18px] py-2.5 border-t border-ys-border">
+        <div className="px-5 py-3.5 border-t border-ys-border-soft">
           <button
             onClick={onLogout}
-            className="w-full rounded-lg border border-[rgba(255,61,61,.2)] text-ys-muted py-2.5 text-[13px] flex items-center justify-center gap-2 hover:bg-ys-red-bg hover:text-ys-red hover:border-[rgba(255,61,61,.4)] transition-colors cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 text-[13.5px] font-bold text-ys-orange border border-ys-border rounded-[10px] py-2.5 cursor-pointer transition-colors hover:bg-ys-warn-bg"
           >
-            <svg
-              width="14"
-              height="14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <path d="M6.5 2.5H4a1.5 1.5 0 0 0-1.5 1.5v8A1.5 1.5 0 0 0 4 13.5h2.5M10 5l3 3-3 3M13 8H6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Cerrar sesión
           </button>

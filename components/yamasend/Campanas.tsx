@@ -193,7 +193,9 @@ export default function Campanas({ onNewCampaign }: CampanasProps) {
                 </div>
                 <div className="min-w-0 flex flex-col gap-0.5">
                   <div className="text-sm font-bold text-ys-text truncate">{c.nombre}</div>
-                  <div className="font-mono text-[11.5px] text-ys-dimmer">{c.dest} destinatarios</div>
+                  <div className="hidden md:block font-mono text-[11.5px] text-ys-dimmer">
+                    {c.dest} destinatarios
+                  </div>
                 </div>
                 <div className="md:hidden ml-auto flex-none">
                   <EstadoBadge estado={c.estado} />

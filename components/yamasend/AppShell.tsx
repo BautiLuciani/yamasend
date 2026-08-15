@@ -383,7 +383,7 @@ export default function AppShell({
   const planLabel = PLAN_LABELS[user.plan] || user.plan;
 
   return (
-    <div className="flex h-full bg-ys-bg">
+    <div className="flex h-full bg-ys-bg overflow-x-hidden">
       <Sidebar
         active={activeSection}
         onNavigate={setActiveSection}
