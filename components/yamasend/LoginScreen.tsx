@@ -146,7 +146,7 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-[#fbfcfb] overflow-y-auto overflow-x-hidden flex items-start justify-center px-4 pt-12 pb-24">
+    <div className="fixed inset-0 bg-[#fbfcfb] overflow-y-auto overflow-x-hidden flex items-start justify-center px-4 py-12">
       <div
         className="absolute -top-[90px] -left-[70px] w-[320px] h-[320px] rounded-full pointer-events-none"
         style={{ background: "#12B76A", opacity: 0.06, filter: "blur(60px)" }}
