@@ -35,7 +35,7 @@ export default function KpiRow({
 
   return (
     <div
-      className={`px-4 md:px-[38px] pt-3 md:pt-[34px] pb-4 flex flex-col gap-4 md:gap-5 ${
+      className={`px-4 md:px-[38px] pt-4 md:pt-6 pb-4 flex flex-col gap-4 md:gap-5 ${
         importing ? "opacity-40 pointer-events-none grayscale" : ""
       }`}
     >
@@ -142,8 +142,11 @@ export default function KpiRow({
       </div>
 
       {/* Filtros adicionales reales (Clientes / lista AI / ventana 24h) — no
-          tienen equivalente visual en el diseño de Contactos, se integran
-          como chips secundarios para no perder funcionalidad existente. */}
+          tienen equivalente visual en el diseño de Contactos. Comentados a
+          pedido de Bauti (2026-08-16): no aportan valor visual en la nueva
+          UI, pero se dejan comentados por si Pato prefiere mantenerlos.
+          Para reactivarlos, descomentar el bloque de abajo. */}
+      {/*
       <div className="flex flex-wrap gap-2">
         <FilterChip
           label={`Clientes (${counts.clientes})`}
@@ -161,6 +164,7 @@ export default function KpiRow({
           onClick={() => onToggleFilter("24h")}
         />
       </div>
+      */}
     </div>
   );
 }
@@ -202,6 +206,7 @@ function MetricCard({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- se mantiene para reactivar los chips comentados arriba si Pato los quiere de vuelta
 function FilterChip({
   label,
   active,

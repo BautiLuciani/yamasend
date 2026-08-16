@@ -81,6 +81,7 @@ export default function AppShell({
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
   const [modo24h, setModo24h] = useState(false);
+  const [contactSearch, setContactSearch] = useState("");
 
   const [tplId, setTplId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -207,6 +208,7 @@ export default function AppShell({
 
   // ── filtrado combinado, replicando la lógica del original ──
   const visibleContacts = useMemo(() => {
+    const q = contactSearch.trim().toLowerCase();
     return contacts.filter((c) => {
       if (c.bloqueado && !modo24h) return false;
       if (filt.has("24h") && !c.en24h) return false;
@@ -217,9 +219,14 @@ export default function AppShell({
       );
       if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
         return false;
+      if (q) {
+        const nombre = (c.nombre || "").toLowerCase();
+        const tel = (c.tel || "").toLowerCase();
+        if (!nombre.includes(q) && !tel.includes(q)) return false;
+      }
       return true;
     });
-  }, [contacts, filt, modo24h]);
+  }, [contacts, filt, modo24h, contactSearch]);
 
   const counts = useMemo(
     () => ({
@@ -448,6 +455,15 @@ export default function AppShell({
 
       {activeSection === "contactos" && (
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
+      <div className="px-4 md:px-[38px] pt-3 md:pt-[34px] flex flex-col gap-1.5">
+        <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
+          Contactos
+        </div>
+        <div className="text-sm md:text-[15px] text-ys-dim font-medium">
+          Gestioná y analizá tus contactos de WhatsApp.
+        </div>
+      </div>
+
       <KpiRow
         counts={counts}
         activeFilters={filt}
@@ -459,8 +475,24 @@ export default function AppShell({
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
-      <div className="hidden md:flex flex-1 overflow-hidden relative">
-        <div className="flex flex-col overflow-hidden flex-1 relative">
+      <div className="hidden md:flex flex-1 overflow-hidden relative px-[38px] pb-[34px] min-h-0">
+        <div className="flex flex-col overflow-hidden flex-1 relative bg-white border border-ys-border rounded-2xl">
+          <div className="flex items-center gap-3 px-6 pt-[18px] pb-4 flex-none">
+            <div className="text-[15px] font-extrabold text-ys-text">Todos los contactos</div>
+            <div className="ml-auto flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 w-[250px] transition-colors focus-within:border-ys-green-border">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
+                <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
+                <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <input
+                type="text"
+                value={contactSearch}
+                onChange={(e) => setContactSearch(e.target.value)}
+                placeholder="Buscar contacto..."
+                className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
+              />
+            </div>
+          </div>
           <ContactsTable
             contacts={visibleContacts}
             selected={sel}
@@ -503,8 +535,24 @@ export default function AppShell({
       </div>
 
       {/* ── Contenido mobile: misma tabla + barra flotante que en desktop ── */}
-      <div className="flex md:hidden flex-col flex-1 overflow-hidden min-h-0">
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative">
+      <div className="flex md:hidden flex-col flex-1 overflow-hidden min-h-0 px-4 pb-4">
+        <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative bg-white border border-ys-border rounded-2xl">
+          <div className="px-4 pt-4 pb-3 flex-none">
+            <div className="text-sm font-extrabold text-ys-text mb-3">Todos los contactos</div>
+            <div className="flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 transition-colors focus-within:border-ys-green-border">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
+                <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
+                <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <input
+                type="text"
+                value={contactSearch}
+                onChange={(e) => setContactSearch(e.target.value)}
+                placeholder="Buscar contacto..."
+                className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
+              />
+            </div>
+          </div>
           <ContactsTable
             contacts={visibleContacts}
             selected={sel}
