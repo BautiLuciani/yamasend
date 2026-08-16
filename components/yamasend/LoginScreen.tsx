@@ -147,8 +147,8 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
 
   return (
     <div
-      className={`fixed inset-0 bg-[#fbfcfb] overflow-y-auto overflow-x-hidden flex justify-center px-4 py-12 ${
-        success ? "items-center" : "items-start"
+      className={`fixed inset-0 bg-[#fbfcfb] overflow-x-hidden flex justify-center px-4 py-12 ${
+        success ? "overflow-hidden items-center" : "overflow-y-auto items-start"
       }`}
     >
       <div
