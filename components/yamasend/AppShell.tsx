@@ -28,6 +28,7 @@ import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
+import ContactsPagination from "./ContactsPagination";
 import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
 import ContactDetailModal from "./ContactDetailModal";
@@ -82,6 +83,8 @@ export default function AppShell({
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
   const [modo24h, setModo24h] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
+  const [contactPage, setContactPage] = useState(1);
+  const CONTACTS_PER_PAGE = 15;
 
   const [tplId, setTplId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
@@ -228,6 +231,16 @@ export default function AppShell({
     });
   }, [contacts, filt, modo24h, contactSearch]);
 
+  const contactTotalPages = Math.max(
+    1,
+    Math.ceil(visibleContacts.length / CONTACTS_PER_PAGE),
+  );
+  const contactPageSafe = Math.min(contactPage, contactTotalPages);
+  const paginatedContacts = useMemo(() => {
+    const start = (contactPageSafe - 1) * CONTACTS_PER_PAGE;
+    return visibleContacts.slice(start, start + CONTACTS_PER_PAGE);
+  }, [visibleContacts, contactPageSafe]);
+
   const counts = useMemo(
     () => ({
       total: contacts.filter((c) => !c.bloqueado).length,
@@ -261,9 +274,15 @@ export default function AppShell({
     setSel(next);
   }
 
+  function handleContactSearchChange(value: string) {
+    setContactSearch(value);
+    setContactPage(1);
+  }
+
   function handleSelectTotal() {
     setFilt(new Set());
     setModo24h(false);
+    setContactPage(1);
     const next = new Set(contacts.filter((c) => !c.bloqueado).map((c) => c.id));
     setSel(next);
     setStatus(next.size > 0 ? "need-tpl" : "idle");
@@ -273,6 +292,7 @@ export default function AppShell({
   }
 
   function handleToggleFilter(key: KpiFilterKey) {
+    setContactPage(1);
     setFilt((prev) => {
       const next = new Set(prev);
       let next24h = modo24h;
@@ -331,6 +351,7 @@ export default function AppShell({
     setNewTplName("");
     setFilt(new Set());
     setModo24h(false);
+    setContactPage(1);
     setStatus("idle");
     addMsg(
       "Hola 👋 Seleccioná contactos usando los KPIs, o pedime que arme una lista. Puedo ayudarte en cada paso.",
@@ -475,8 +496,8 @@ export default function AppShell({
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
-      <div className="hidden md:flex flex-1 overflow-hidden relative px-[38px] pb-[34px] min-h-0">
-        <div className="flex flex-col overflow-hidden flex-1 relative bg-white border border-ys-border rounded-2xl">
+      <div className="hidden md:flex flex-1 overflow-y-auto relative px-[38px] pb-[34px] min-h-0">
+        <div className="flex flex-col flex-1 relative bg-white border border-ys-border rounded-2xl self-start">
           <div className="flex items-center gap-3 px-6 pt-[18px] pb-4 flex-none">
             <div className="text-[15px] font-extrabold text-ys-text">Todos los contactos</div>
             <div className="ml-auto flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 w-[250px] transition-colors focus-within:border-ys-green-border">
@@ -487,56 +508,65 @@ export default function AppShell({
               <input
                 type="text"
                 value={contactSearch}
-                onChange={(e) => setContactSearch(e.target.value)}
+                onChange={(e) => handleContactSearchChange(e.target.value)}
                 placeholder="Buscar contacto..."
                 className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
               />
             </div>
           </div>
-          <ContactsTable
-            contacts={visibleContacts}
-            selected={sel}
-            onToggleRow={handleToggleRow}
-            onToggleAll={handleToggleAll}
-            onOpenDetail={setDetailContact}
-            modo24h={modo24h}
+          <div className="overflow-hidden rounded-b-2xl">
+            <ContactsTable
+              contacts={paginatedContacts}
+              selected={sel}
+              onToggleRow={handleToggleRow}
+              onToggleAll={handleToggleAll}
+              onOpenDetail={setDetailContact}
+              modo24h={modo24h}
+            />
+          </div>
+          <ContactsPagination
+            page={contactPageSafe}
+            totalPages={contactTotalPages}
+            totalItems={visibleContacts.length}
+            perPage={CONTACTS_PER_PAGE}
+            onChange={setContactPage}
           />
-          {sel.size > 0 && (
-            <div
-              className="absolute bottom-4 left-4 right-4 z-[9] bg-ys-dark rounded-2xl pl-[18px] pr-3.5 py-3 flex items-center gap-3.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
-              style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
-            >
-              <div className="text-[13.5px] font-bold text-white">
-                {sel.size} contacto{sel.size === 1 ? "" : "s"} seleccionado{sel.size === 1 ? "" : "s"}
-              </div>
-              <button
-                onClick={handleClearSel}
-                className="text-[12.5px] font-semibold text-[#9aa9a3] hover:text-white transition-colors cursor-pointer"
-              >
-                Deseleccionar
-              </button>
-              <div className="ml-auto flex items-center gap-2.5">
-                <button
-                  onClick={() => setAddToGroupOpen(true)}
-                  className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
-                >
-                  Agregar a grupo existente
-                </button>
-                <button
-                  onClick={() => setCreateGroupOpen(true)}
-                  className="text-[13px] font-extrabold text-[#0b1310] bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-[#3ddb8f] hover:-translate-y-px"
-                >
-                  Crear nuevo grupo
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+      {sel.size > 0 && (
+        <div
+          className="hidden md:flex fixed bottom-6 left-[calc(248px+38px)] right-[38px] z-[9] bg-ys-dark rounded-2xl pl-[18px] pr-3.5 py-3 items-center gap-3.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
+          style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
+        >
+          <div className="text-[13.5px] font-bold text-white">
+            {sel.size} contacto{sel.size === 1 ? "" : "s"} seleccionado{sel.size === 1 ? "" : "s"}
+          </div>
+          <button
+            onClick={handleClearSel}
+            className="text-[12.5px] font-semibold text-[#9aa9a3] hover:text-white transition-colors cursor-pointer"
+          >
+            Deseleccionar
+          </button>
+          <div className="ml-auto flex items-center gap-2.5">
+            <button
+              onClick={() => setAddToGroupOpen(true)}
+              className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
+            >
+              Agregar a grupo existente
+            </button>
+            <button
+              onClick={() => setCreateGroupOpen(true)}
+              className="text-[13px] font-extrabold text-[#0b1310] bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-[#3ddb8f] hover:-translate-y-px"
+            >
+              Crear nuevo grupo
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Contenido mobile: misma tabla + barra flotante que en desktop ── */}
-      <div className="flex md:hidden flex-col flex-1 overflow-hidden min-h-0 px-4 pb-4">
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0 relative bg-white border border-ys-border rounded-2xl">
+      <div className="flex md:hidden flex-col flex-1 overflow-y-auto min-h-0 px-4 pb-4">
+        <div className="flex-1 flex flex-col relative bg-white border border-ys-border rounded-2xl">
           <div className="px-4 pt-4 pb-3 flex-none">
             <div className="text-sm font-extrabold text-ys-text mb-3">Todos los contactos</div>
             <div className="flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 transition-colors focus-within:border-ys-green-border">
@@ -547,50 +577,60 @@ export default function AppShell({
               <input
                 type="text"
                 value={contactSearch}
-                onChange={(e) => setContactSearch(e.target.value)}
+                onChange={(e) => handleContactSearchChange(e.target.value)}
                 placeholder="Buscar contacto..."
                 className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
               />
             </div>
           </div>
-          <ContactsTable
-            contacts={visibleContacts}
-            selected={sel}
-            onToggleRow={handleToggleRow}
-            onToggleAll={handleToggleAll}
-            onOpenDetail={setDetailContact}
-            modo24h={modo24h}
+          <div className="overflow-hidden rounded-b-2xl">
+            <ContactsTable
+              contacts={paginatedContacts}
+              selected={sel}
+              onToggleRow={handleToggleRow}
+              onToggleAll={handleToggleAll}
+              onOpenDetail={setDetailContact}
+              modo24h={modo24h}
+            />
+          </div>
+          <ContactsPagination
+            page={contactPageSafe}
+            totalPages={contactTotalPages}
+            totalItems={visibleContacts.length}
+            perPage={CONTACTS_PER_PAGE}
+            onChange={setContactPage}
+            compact
           />
-          {sel.size > 0 && (
-            <div
-              className="absolute bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
-              style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
-            >
-              <div className="text-[13px] font-bold text-white">{sel.size} sel.</div>
-              <button
-                onClick={handleClearSel}
-                className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
-              >
-                Deseleccionar
-              </button>
-              <div className="w-full flex items-center gap-2 mt-1">
-                <button
-                  onClick={() => setAddToGroupOpen(true)}
-                  className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
-                >
-                  Agregar a grupo
-                </button>
-                <button
-                  onClick={() => setCreateGroupOpen(true)}
-                  className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
-                >
-                  Crear grupo
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
+      {sel.size > 0 && (
+        <div
+          className="flex md:hidden fixed bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
+          style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
+        >
+          <div className="text-[13px] font-bold text-white">{sel.size} sel.</div>
+          <button
+            onClick={handleClearSel}
+            className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
+          >
+            Deseleccionar
+          </button>
+          <div className="w-full flex items-center gap-2 mt-1">
+            <button
+              onClick={() => setAddToGroupOpen(true)}
+              className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
+            >
+              Agregar a grupo
+            </button>
+            <button
+              onClick={() => setCreateGroupOpen(true)}
+              className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
+            >
+              Crear grupo
+            </button>
+          </div>
+        </div>
+      )}
       </div>
       )}
 

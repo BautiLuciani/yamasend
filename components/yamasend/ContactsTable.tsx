@@ -81,7 +81,7 @@ export default function ContactsTable({
 
   if (contacts.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 py-16 px-6">
+      <div className="flex flex-col items-center justify-center gap-3 py-16 px-6">
         <div className="w-11 h-11 rounded-2xl bg-ys-el2 flex items-center justify-center">
           <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
             <circle cx="6" cy="5.5" r="2.5" stroke="#9aa19c" strokeWidth="1.5" />
@@ -97,9 +97,9 @@ export default function ContactsTable({
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+    <div className="flex flex-col overflow-visible">
       {/* ── Vista mobile: solo avatar/iniciales + nombre ── */}
-      <div className="flex-1 overflow-y-auto min-h-0 md:hidden">
+      <div className="overflow-visible md:hidden">
         {contacts.map((c) => {
           const bloq = !modo24h && c.bloqueado;
           const isSel = selected.has(c.id) && !bloq;
@@ -133,8 +133,8 @@ export default function ContactsTable({
       </div>
 
       {/* ── Vista desktop: tabla ── */}
-      <div className="flex-1 overflow-y-auto min-h-0 hidden md:block">
-        <div className="grid grid-cols-[44px_1.7fr_1fr_.8fr_.5fr_.6fr] items-center px-6 py-2.5 bg-ys-bg border-t border-b border-ys-border-soft text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer sticky top-0 z-[2]">
+      <div className="overflow-visible hidden md:block">
+        <div className="grid grid-cols-[44px_1.7fr_1fr_.8fr_.5fr_.6fr] items-center px-6 py-2.5 bg-ys-bg border-t border-b border-ys-border-soft text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">
           <div>
             <div onClick={() => onToggleAll(!allChecked)} className="cursor-pointer inline-flex">
               <Checkbox checked={allChecked} />
