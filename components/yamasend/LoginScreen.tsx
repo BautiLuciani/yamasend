@@ -181,7 +181,7 @@ export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
         )}
 
         {success ? (
-          <div className="bg-white border border-ys-border rounded-[18px] p-7 sm:p-9 shadow-[var(--shadow-card)]">
+          <div className="bg-white border border-ys-border rounded-[18px] p-7 sm:p-9 shadow-[var(--shadow-card)] translate-y-3">
             <div className="text-center py-4">
               <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-ys-green-bg flex items-center justify-center">
                 <svg width="26" height="26" viewBox="0 0 16 16" fill="none">
