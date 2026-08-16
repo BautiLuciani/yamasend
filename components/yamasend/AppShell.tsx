@@ -144,13 +144,7 @@ export default function AppShell({
         const data = await res.json();
         if (data.status === "WORKING") {
           setQrStatus("connected");
-          // Le damos un instante al usuario para ver el "✅ Conectado" antes
-          // de pasar automáticamente al modal de configuración del análisis.
-          setTimeout(() => {
-            setQrOpen(false);
-            setSyncModalOpen(true);
-          }, 1200);
-          return; // conectado: dejamos de pollear
+          return; // conectado: dejamos de pollear, el usuario cierra el modal cuando quiera
         }
         // otro estado no contemplado, seguimos consultando
         qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);

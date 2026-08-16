@@ -83,7 +83,7 @@ export default function QrImportModal({
           onClick={onClose}
           className="self-end text-[13.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
         >
-          Cancelar
+          {status === "connected" ? "Listo" : "Cancelar"}
         </button>
       </div>
     </div>
