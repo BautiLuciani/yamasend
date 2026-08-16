@@ -475,7 +475,7 @@ export default function AppShell({
       )}
 
       {activeSection === "contactos" && (
-      <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
+      <div className="flex-1 min-w-0 flex flex-col overflow-y-auto pt-[58px] md:pt-0">
       <div className="px-4 md:px-[38px] pt-3 md:pt-[34px] flex flex-col gap-1.5">
         <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
           Contactos
@@ -496,8 +496,8 @@ export default function AppShell({
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
-      <div className="hidden md:flex flex-1 overflow-y-auto relative px-[38px] pb-[34px] min-h-0">
-        <div className="flex flex-col flex-1 relative bg-white border border-ys-border rounded-2xl self-start">
+      <div className="hidden md:flex relative px-[38px] pb-[34px]">
+        <div className="flex flex-col flex-1 relative bg-white border border-ys-border rounded-2xl">
           <div className="flex items-center gap-3 px-6 pt-[18px] pb-4 flex-none">
             <div className="text-[15px] font-extrabold text-ys-text">Todos los contactos</div>
             <div className="ml-auto flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 w-[250px] transition-colors focus-within:border-ys-green-border">
@@ -565,8 +565,8 @@ export default function AppShell({
       )}
 
       {/* ── Contenido mobile: misma tabla + barra flotante que en desktop ── */}
-      <div className="flex md:hidden flex-col flex-1 overflow-y-auto min-h-0 px-4 pb-4">
-        <div className="flex-1 flex flex-col relative bg-white border border-ys-border rounded-2xl">
+      <div className="flex md:hidden flex-col px-4 pb-4">
+        <div className="flex flex-col relative bg-white border border-ys-border rounded-2xl">
           <div className="px-4 pt-4 pb-3 flex-none">
             <div className="text-sm font-extrabold text-ys-text mb-3">Todos los contactos</div>
             <div className="flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 transition-colors focus-within:border-ys-green-border">
