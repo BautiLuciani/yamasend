@@ -1,32 +1,67 @@
 "use client";
 
 import { useState } from "react";
-import type { ContactList } from "@/lib/types";
+import type { Contact, ContactList } from "@/lib/types";
+import { ScoreBadge } from "./ContactsTable";
+
+function initialsOf(nombre: string): string {
+  const parts = nombre.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "—";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 interface CreateGroupModalProps {
   open: boolean;
-  selectedCount: number;
+  contacts: Contact[];
+  preselectedIds?: string[];
   onClose: () => void;
-  onCreate: (nombre: string) => Promise<void>;
+  onCreate: (nombre: string, contactIds: string[]) => Promise<void>;
+  onGoToContacts?: () => void;
 }
 
 export function CreateGroupModal({
   open,
-  selectedCount,
+  contacts,
+  preselectedIds,
   onClose,
   onCreate,
+  onGoToContacts,
 }: CreateGroupModalProps) {
   const [nombre, setNombre] = useState("");
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [err, setErr] = useState("");
   const [saving, setSaving] = useState(false);
+  // Guardamos qué preselección ya "sembramos" para no reinicializar en cada
+  // render mientras el modal permanece abierto (evita setState en efecto).
+  const [seededFor, setSeededFor] = useState<string | null>(null);
+
+  const seedKey = open ? (preselectedIds ?? []).join(",") : null;
+  if (open && seedKey !== seededFor) {
+    setSelected(new Set(preselectedIds ?? []));
+    setSeededFor(seedKey);
+  }
 
   if (!open) return null;
 
   function handleClose() {
     if (saving) return;
     setNombre("");
+    setQuery("");
+    setSelected(new Set());
+    setSeededFor(null);
     setErr("");
     onClose();
+  }
+
+  function toggleContact(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   async function handleCreate() {
@@ -37,10 +72,20 @@ export function CreateGroupModal({
     }
     setSaving(true);
     setErr("");
-    await onCreate(trimmed);
+    await onCreate(trimmed, Array.from(selected));
     setSaving(false);
     setNombre("");
+    setSelected(new Set());
+    setSeededFor(null);
   }
+
+  const filtered = contacts.filter(
+    (c) =>
+      c.nombre.toLowerCase().includes(query.toLowerCase()) ||
+      c.tel.includes(query),
+  );
+
+  const puedeCrear = nombre.trim().length > 0;
 
   return (
     <div
@@ -50,37 +95,102 @@ export function CreateGroupModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[420px] bg-white rounded-[18px] px-7 py-[22px] flex flex-col gap-[18px] shadow-[var(--shadow-modal)]"
+        className="w-full max-w-[520px] max-h-[calc(100vh-48px)] bg-white rounded-[18px] px-7 py-[22px] flex flex-col gap-[18px] shadow-[var(--shadow-modal)] overflow-hidden"
         style={{ animation: "ys-modal .19s cubic-bezier(.4,0,.2,1) both" }}
       >
-        <div className="flex flex-col gap-1.5">
+        <div className="flex-none flex flex-col gap-1.5">
           <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
-            Crear grupo
+            Crear nuevo grupo
           </div>
-          <div className="text-[13px] font-bold text-ys-green-text bg-ys-green-bg rounded-full px-3 py-1 self-start">
-            {selectedCount} contacto{selectedCount === 1 ? "" : "s"} seleccionado{selectedCount === 1 ? "" : "s"}
+          <div className="text-[13.5px] text-ys-muted font-medium">
+            Ponele un nombre y elegí los contactos que lo integran.
           </div>
         </div>
 
         {err && (
-          <div className="rounded-lg bg-ys-red-bg border border-ys-red-border text-ys-red-text px-3.5 py-2.5 text-[13px] font-medium">
+          <div className="flex-none rounded-lg bg-ys-red-bg border border-ys-red-border text-ys-red-text px-3.5 py-2.5 text-[13px] font-medium">
             {err}
           </div>
         )}
 
-        <div className="flex flex-col gap-[7px]">
+        <div className="flex-none flex flex-col gap-[7px]">
           <div className="text-[13px] font-extrabold text-ys-text">Nombre del grupo</div>
           <input
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleCreate()}
             placeholder="Ej: Clientes interesados"
             autoFocus
             className="border border-ys-border rounded-[10px] px-3.5 py-[11px] text-[13.5px] text-ys-text outline-none transition-colors focus:border-ys-green"
           />
         </div>
 
-        <div className="flex justify-end gap-2.5">
+        <div className="flex-1 min-h-0 flex flex-col gap-[9px]">
+          <div className="flex items-center gap-2.5">
+            <div className="text-[13px] font-extrabold text-ys-text">Seleccionar contactos</div>
+            <div className="ml-auto text-xs font-bold text-ys-green-text bg-ys-green-bg rounded-full px-2.5 py-1">
+              {selected.size} contacto{selected.size === 1 ? "" : "s"} seleccionado{selected.size === 1 ? "" : "s"}
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 border border-ys-border rounded-[10px] px-3.5 py-2.5">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
+              <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar contacto..."
+              className="flex-1 min-w-0 border-none outline-none bg-transparent text-[13.5px] font-semibold text-ys-text"
+            />
+          </div>
+
+          <div className="flex-1 min-h-[120px] max-h-[246px] border border-ys-border-softer rounded-xl p-1.5 overflow-y-auto flex flex-col gap-0.5">
+            {filtered.length === 0 && (
+              <div className="text-center text-[13px] text-ys-muted font-medium py-6">
+                No encontramos contactos con ese nombre.
+              </div>
+            )}
+            {filtered.map((c) => {
+              const active = selected.has(c.id);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => toggleContact(c.id)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors text-left hover:bg-[#f7fbf9]"
+                >
+                  <div className="w-[19px] h-[19px] flex-none rounded-[6px] border-[1.5px] border-ys-border bg-white flex items-center justify-center">
+                    {active && (
+                      <div className="w-[19px] h-[19px] -m-[1.5px] rounded-[6px] bg-ys-green flex items-center justify-center">
+                        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                          <path d="m3 8.4 3.4 3L13 4.6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  <div className="w-[30px] h-[30px] flex-none rounded-full bg-ys-el2 text-[#5d6560] text-[11px] font-extrabold flex items-center justify-center">
+                    {initialsOf(c.nombre)}
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                    <div className="text-[13.5px] font-bold text-ys-text truncate">{c.nombre || "Sin nombre"}</div>
+                    <div className="font-mono text-[11.5px] text-ys-dim truncate">{c.tel || "—"}</div>
+                  </div>
+                  <ScoreBadge score={c.score} />
+                </button>
+              );
+            })}
+          </div>
+
+          {onGoToContacts && (
+            <button
+              onClick={onGoToContacts}
+              className="self-start text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
+            >
+              Seleccionar desde Contactos →
+            </button>
+          )}
+        </div>
+
+        <div className="flex-none flex justify-end gap-2.5 border-t border-ys-border-softer pt-[18px]">
           <button
             onClick={handleClose}
             className="text-[13.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
@@ -89,7 +199,7 @@ export function CreateGroupModal({
           </button>
           <button
             onClick={handleCreate}
-            disabled={saving}
+            disabled={!puedeCrear || saving}
             className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
           >
             {saving ? "Creando..." : "Crear grupo"}

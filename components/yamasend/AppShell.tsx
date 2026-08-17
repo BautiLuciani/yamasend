@@ -444,6 +444,7 @@ export default function AppShell({
             lists={lists}
             contacts={contacts}
             onOpenGroup={(group) => setOpenGroupId(group.id)}
+            onCreateGroup={() => setCreateGroupOpen(true)}
           />
         </div>
       )}
@@ -688,14 +689,19 @@ export default function AppShell({
 
       <CreateGroupModal
         open={createGroupOpen}
-        selectedCount={sel.size}
+        contacts={contacts}
+        preselectedIds={Array.from(sel)}
         onClose={() => setCreateGroupOpen(false)}
-        onCreate={async (nombre) => {
-          const result = await saveListAction(nombre, Array.from(sel));
+        onGoToContacts={() => {
+          setCreateGroupOpen(false);
+          setActiveSection("contactos");
+        }}
+        onCreate={async (nombre, contactIds) => {
+          const result = await saveListAction(nombre, contactIds);
           if (result.error) {
             addMsg(`⚠️ No se pudo crear el grupo: ${result.error}`, "error");
           } else {
-            addMsg(`Grupo "${nombre}" creado con ${sel.size} contactos ✓`);
+            addMsg(`Grupo "${nombre}" creado con ${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} ✓`);
             router.refresh();
             setCreateGroupOpen(false);
             handleClearSel();
@@ -725,6 +731,7 @@ export default function AppShell({
       />
 
       <GroupDetailModal
+        key={openGroupId ?? "none"}
         group={lists.find((l) => l.id === openGroupId) ?? null}
         contacts={contacts}
         onClose={() => setOpenGroupId(null)}
@@ -742,6 +749,17 @@ export default function AppShell({
           if (result.error) {
             addMsg(`⚠️ No se pudo quitar el contacto del grupo: ${result.error}`, "error");
           } else {
+            router.refresh();
+          }
+        }}
+        onAddContacts={async (id, contactIds) => {
+          const result = await addContactsToListAction(id, contactIds);
+          if (result.error) {
+            addMsg(`⚠️ No se pudo agregar contactos al grupo: ${result.error}`, "error");
+          } else {
+            addMsg(
+              `${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} agregado${contactIds.length === 1 ? "" : "s"} al grupo ✓`,
+            );
             router.refresh();
           }
         }}

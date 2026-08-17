@@ -18,7 +18,7 @@ function initialsOf(nombre: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-function ScoreBadge({ score }: { score: ScoreTemp }) {
+export function ScoreBadge({ score }: { score: ScoreTemp }) {
   if (score === "caliente")
     return (
       <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold text-ys-green-text bg-ys-green-bg">
