@@ -286,15 +286,60 @@ export async function saveCampaignAction(
 }
 
 /**
+ * Borra un borrador de template puntual. Acotado a tenant + status =
+ * "borrador" para no poder borrar por error un template ya enviado a Meta.
+ * Se usa cuando el usuario continúa un borrador y lo manda directo a
+ * aprobación, para no dejar una fila "borrador" duplicada con la nueva
+ * fila "enviado" que crea el workflow de n8n.
+ */
+export async function deleteTemplateDraftAction(
+  templateId: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { error } = await supabase
+    .from("yamas_send_templates")
+    .delete()
+    .eq("id", templateId)
+    .eq("tenant_id", cliente.tenant_id)
+    .eq("status", "borrador");
+
+  if (error) return { error: error.message };
+  return { error: null };
+}
+
+/**
  * Guarda un template como borrador en yamas_send_templates (status: "borrador").
  * Solo requiere el nombre — contenido/categoría pueden completarse después,
  * ya que el usuario puede querer reservar el nombre y volver más tarde.
  * No llama a YCloud/Meta: es puramente local hasta que se mande a aprobar.
+ *
+ * Si se pasa templateId, actualiza ese borrador existente (caso "Continuar
+ * borrador") en vez de insertar una fila nueva. El UPDATE queda acotado al
+ * tenant del usuario logueado y a status = "borrador", para no permitir
+ * pisar por error un template que ya se mandó a Meta.
  */
 export async function saveTemplateDraftAction(
   nombre: string,
   contenido: string,
   categoria: string,
+  templateId?: string | null,
 ): Promise<SaveResult> {
   const supabase = await createClient();
 
@@ -316,6 +361,27 @@ export async function saveTemplateDraftAction(
 
   if (clienteError || !cliente?.tenant_id) {
     return { id: null, error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  if (templateId) {
+    const { data, error } = await supabase
+      .from("yamas_send_templates")
+      .update({
+        nombre: nombre.trim(),
+        contenido: contenido.trim(),
+        template_type: categoria,
+      })
+      .eq("id", templateId)
+      .eq("tenant_id", cliente.tenant_id)
+      .eq("status", "borrador")
+      .select("id")
+      .single();
+
+    if (error || !data) {
+      return { id: null, error: error?.message ?? "Error actualizando el borrador." };
+    }
+
+    return { id: data.id, error: null };
   }
 
   const { data, error } = await supabase

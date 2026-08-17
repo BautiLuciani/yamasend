@@ -5,6 +5,7 @@ import type { Template } from "@/lib/types";
 interface TemplateDetailModalProps {
   template: Template | null;
   onClose: () => void;
+  onContinueDraft: (template: Template) => void;
 }
 
 const CATEGORIA_LABEL: Record<string, string> = {
@@ -22,7 +23,7 @@ const STATUS_LABEL: Record<string, string> = {
   error: "Error al enviar",
 };
 
-export default function TemplateDetailModal({ template, onClose }: TemplateDetailModalProps) {
+export default function TemplateDetailModal({ template, onClose, onContinueDraft }: TemplateDetailModalProps) {
   if (!template) return null;
 
   return (
@@ -96,13 +97,21 @@ export default function TemplateDetailModal({ template, onClose }: TemplateDetai
           </div>
         </div>
 
-        <div className="border-t border-ys-border-soft pt-4">
+        <div className="border-t border-ys-border-soft pt-4 flex items-center gap-2.5">
           <button
             onClick={onClose}
             className="text-[13.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
           >
             Cerrar
           </button>
+          {template.status === "borrador" && (
+            <button
+              onClick={() => onContinueDraft(template)}
+              className="ml-auto text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+            >
+              Continuar borrador
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -42,6 +42,7 @@ import {
   deleteListAction,
   saveTemplateDraftAction,
   sendTemplateToMetaAction,
+  deleteTemplateDraftAction,
 } from "@/lib/actions/write";
 import {
   syncAndAnalyzeAction,
@@ -373,8 +374,24 @@ export default function AppShell({
     );
   }
 
+  // Precarga el modal de creación con los datos de un borrador existente y
+  // lo abre, cerrando el modal de detalle. tplId queda seteado con el id del
+  // borrador para que handleSaveDraft haga UPDATE en vez de INSERT, y para
+  // que handleSendToMeta sepa qué borrador borrar si el envío tiene éxito.
+  function handleContinueDraft(template: Template) {
+    setIsCreatingNew(true);
+    setTplId(template.id);
+    setNewTplContent(template.contenido);
+    setNewTplName(template.nombre);
+    setNewTplCategoria(template.tipo ?? "marketing");
+    setStatus("editing-tpl");
+    setDetailTemplate(null);
+    setTemplateModalOpen(true);
+  }
+
   function handleCancelNewTpl() {
     setIsCreatingNew(false);
+    setTplId(null);
     setNewTplContent("");
     setNewTplName("");
     setNewTplCategoria("marketing");
@@ -388,7 +405,7 @@ export default function AppShell({
 
   async function handleSaveDraft() {
     setSavingDraft(true);
-    const result = await saveTemplateDraftAction(newTplName, newTplContent, newTplCategoria);
+    const result = await saveTemplateDraftAction(newTplName, newTplContent, newTplCategoria, tplId);
     setSavingDraft(false);
 
     if (result.error) {
@@ -397,6 +414,7 @@ export default function AppShell({
     }
 
     setIsCreatingNew(false);
+    setTplId(null);
     setTemplateModalOpen(false);
     router.refresh();
     addMsg(`Borrador "${newTplName}" guardado. Podés retomarlo cuando quieras desde Templates.`);
@@ -412,9 +430,18 @@ export default function AppShell({
       return;
     }
 
+    // Si veníamos de "Continuar borrador", borramos la fila borrador vieja
+    // para que no quede duplicada con la nueva fila "enviado" que acaba de
+    // crear el workflow de n8n. Se hace después de confirmar el envío para
+    // no perder el borrador si sendTemplateToMetaAction hubiese fallado.
+    if (tplId) {
+      await deleteTemplateDraftAction(tplId);
+    }
+
     addMsg(result.mensaje);
     setStatus("ready");
     setIsCreatingNew(false);
+    setTplId(null);
     setTemplateModalOpen(false);
     router.refresh();
     addMsg(
@@ -706,7 +733,11 @@ export default function AppShell({
         savingDraft={savingDraft}
       />
 
-      <TemplateDetailModal template={detailTemplate} onClose={() => setDetailTemplate(null)} />
+      <TemplateDetailModal
+        template={detailTemplate}
+        onClose={() => setDetailTemplate(null)}
+        onContinueDraft={handleContinueDraft}
+      />
 
       <CampaignWizardModal
         open={wizardOpen}
