@@ -32,7 +32,7 @@ export async function getListsForTenant(
 
   const { data: rows, error } = await supabase
     .from("yamas_send_listas")
-    .select("id, nombre, contactos_ids")
+    .select("id, nombre, contactos_ids, created_at, updated_at")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -43,6 +43,8 @@ export async function getListsForTenant(
     id: r.id,
     nombre: r.nombre,
     contactosIds: r.contactos_ids ?? [],
+    createdAt: r.created_at ?? null,
+    updatedAt: r.updated_at ?? null,
   }));
 }
 

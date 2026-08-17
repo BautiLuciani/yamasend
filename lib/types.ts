@@ -40,6 +40,8 @@ export interface ContactList {
   id: string;
   nombre: string;
   contactosIds: string[];
+  createdAt: string | null;
+  updatedAt: string | null;
 }
 
 export interface Campaign {

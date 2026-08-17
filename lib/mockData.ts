@@ -139,16 +139,22 @@ export const mockLists: ContactList[] = [
     id: "abonados",
     nombre: "Abonados CABA",
     contactosIds: mockContacts.slice(0, 8).map((c) => c.id),
+    createdAt: "2026-08-02T00:00:00.000Z",
+    updatedAt: "2026-08-14T00:00:00.000Z",
   },
   {
     id: "premium",
     nombre: "Interesados premium",
     contactosIds: mockContacts.slice(0, 5).map((c) => c.id),
+    createdAt: "2026-08-05T00:00:00.000Z",
+    updatedAt: "2026-08-13T00:00:00.000Z",
   },
   {
     id: "inactivos",
     nombre: "Inactivos +30 días",
     contactosIds: mockContacts.map((c) => c.id),
+    createdAt: "2026-07-20T00:00:00.000Z",
+    updatedAt: "2026-08-10T00:00:00.000Z",
   },
 ];
 

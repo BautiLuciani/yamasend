@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import type { Contact, ContactList } from "@/lib/types";
+import { useEffect, useRef, useState } from "react";
+import type { Campaign, Contact, ContactList } from "@/lib/types";
 import { ScoreBadge } from "./ContactsTable";
 
 interface GroupDetailModalProps {
   group: ContactList | null;
   contacts: Contact[];
+  campaigns: Campaign[];
   onClose: () => void;
   onRename: (id: string, nombre: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onRemoveContacts: (id: string, contactIds: string[]) => Promise<void>;
   onAddContacts: (id: string, contactIds: string[]) => Promise<void>;
+  onCreateCampaign: (group: ContactList) => void;
 }
 
 function initialsOf(nombre: string): string {
@@ -21,14 +23,41 @@ function initialsOf(nombre: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+function formatFecha(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+function formatModificado(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const hoy = new Date();
+  const esHoy =
+    d.getFullYear() === hoy.getFullYear() &&
+    d.getMonth() === hoy.getMonth() &&
+    d.getDate() === hoy.getDate();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  if (esHoy) return `Hoy, ${hh}:${min}`;
+  return formatFecha(iso);
+}
+
 export default function GroupDetailModal({
   group,
   contacts,
+  campaigns,
   onClose,
   onRename,
   onDelete,
   onRemoveContacts,
   onAddContacts,
+  onCreateCampaign,
 }: GroupDetailModalProps) {
   const [editing, setEditing] = useState(false);
   const [nombreDraft, setNombreDraft] = useState("");
@@ -36,14 +65,27 @@ export default function GroupDetailModal({
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [addingContacts, setAddingContacts] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
   const [addSaving, setAddSaving] = useState(false);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuOpen]);
+
   if (!group) return null;
 
   const groupContacts = contacts.filter((c) => group.contactosIds.includes(c.id));
+  const groupCampaigns = campaigns.filter((c) => c.listaId === group.id);
   const availableContacts = contacts.filter((c) => !group.contactosIds.includes(c.id));
   const filteredAvailable = availableContacts.filter(
     (c) =>
@@ -171,7 +213,7 @@ export default function GroupDetailModal({
           </div>
 
           {!editing && (
-            <div className="relative flex-shrink-0">
+            <div ref={menuRef} className="relative flex-shrink-0">
               <button
                 onClick={() => setMenuOpen((v) => !v)}
                 title="Más opciones"
@@ -184,36 +226,31 @@ export default function GroupDetailModal({
                 </svg>
               </button>
               {menuOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-20"
-                    onClick={() => setMenuOpen(false)}
-                  />
-                  <div className="absolute top-[calc(100%+6px)] right-0 w-[196px] bg-white border border-ys-border rounded-xl p-1.5 shadow-[var(--shadow-card)] flex flex-col gap-0.5 z-30">
-                    <button
-                      onClick={startEdit}
-                      className="text-left px-[11px] py-2.5 rounded-lg text-[13px] font-semibold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f5f7f6]"
-                    >
-                      Renombrar
-                    </button>
-                    <button
-                      onClick={openAddContacts}
-                      className="text-left px-[11px] py-2.5 rounded-lg text-[13px] font-semibold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f5f7f6]"
-                    >
-                      Agregar contactos
-                    </button>
-                    <div className="h-px bg-ys-border-softer my-1 mx-1.5" />
-                    <button
-                      onClick={() => {
-                        setConfirmDelete(true);
-                        setMenuOpen(false);
-                      }}
-                      className="text-left px-[11px] py-2.5 rounded-lg text-[13px] font-semibold text-ys-orange cursor-pointer transition-colors hover:bg-ys-warn-bg"
-                    >
-                      Eliminar grupo
-                    </button>
-                  </div>
-                </>
+                <div className="absolute top-[calc(100%+6px)] right-0 w-[196px] bg-white border border-ys-border rounded-xl p-1.5 shadow-[var(--shadow-card)] flex flex-col gap-0.5 z-30">
+                  <button
+                    onClick={startEdit}
+                    className="text-left px-[11px] py-2.5 rounded-lg text-[13px] font-semibold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f5f7f6]"
+                  >
+                    Renombrar
+                  </button>
+                  <button
+                    onClick={openAddContacts}
+                    className="text-left px-[11px] py-2.5 rounded-lg text-[13px] font-semibold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f5f7f6]"
+                  >
+                    Agregar contactos
+                  </button>
+                  <div className="h-px bg-ys-border-softer my-1 mx-1.5" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setConfirmDelete(true);
+                    }}
+                    className="text-left px-[11px] py-2.5 rounded-lg text-[13px] font-semibold text-ys-orange cursor-pointer transition-colors hover:bg-ys-warn-bg"
+                  >
+                    Eliminar grupo
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -224,6 +261,21 @@ export default function GroupDetailModal({
           >
             ×
           </button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3.5 bg-[#fbfcfb] border border-ys-border-soft rounded-xl px-4 py-3.5">
+          <div className="flex flex-col gap-0.5">
+            <div className="text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">Nombre</div>
+            <div className="text-[13.5px] font-bold text-ys-text truncate">{group.nombre}</div>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <div className="text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">Creación</div>
+            <div className="font-mono text-[13px] text-[#3f4844]">{formatFecha(group.createdAt)}</div>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <div className="text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">Modificado</div>
+            <div className="font-mono text-[13px] text-[#3f4844]">{formatModificado(group.updatedAt)}</div>
+          </div>
         </div>
 
         {addingContacts && (
@@ -306,38 +358,69 @@ export default function GroupDetailModal({
           </div>
         )}
 
-        <div className="flex flex-col border border-ys-border-soft rounded-xl overflow-hidden">
-          {groupContacts.length === 0 && (
-            <div className="text-center text-[13px] text-ys-muted font-medium py-8">
-              Este grupo no tiene contactos.
+        <div className="flex flex-col gap-2">
+          <div className="text-sm font-extrabold text-ys-text">Contactos</div>
+          <div className="flex flex-col border border-ys-border-soft rounded-xl overflow-hidden">
+            {groupContacts.length === 0 && (
+              <div className="text-center text-[13px] text-ys-muted font-medium py-8">
+                Este grupo no tiene contactos.
+              </div>
+            )}
+            {groupContacts.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center gap-3 px-4 py-2.5 border-b border-ys-border-softer last:border-b-0"
+              >
+                <div className="w-8 h-8 flex-none rounded-full bg-ys-green-bg text-ys-green-text text-[11px] font-extrabold flex items-center justify-center">
+                  {initialsOf(c.nombre)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13.5px] font-bold text-ys-text truncate">
+                    {c.nombre || "Sin nombre"}
+                  </div>
+                  <div className="font-mono text-[11.5px] text-ys-dim truncate">{c.tel || "—"}</div>
+                </div>
+                <button
+                  onClick={() => handleRemoveContact(c.id)}
+                  disabled={removingId === c.id}
+                  title="Quitar del grupo"
+                  className="flex-none text-ys-dimmer hover:text-ys-red-text transition-colors cursor-pointer disabled:opacity-40"
+                >
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="text-sm font-extrabold text-ys-text">Campañas</div>
+          {groupCampaigns.length === 0 ? (
+            <div className="text-center text-[13px] text-ys-muted font-medium py-6 border-t border-ys-border-softer">
+              No hay campañas con este grupo.
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              {groupCampaigns.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center gap-3 py-2.5 border-t border-ys-border-softer"
+                >
+                  <div className="w-8 h-8 flex-none rounded-[10px] bg-ys-green-bg flex items-center justify-center">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z" stroke="#067647" strokeWidth="1.5" strokeLinejoin="round" />
+                      <path d="M12 6v4" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0 text-[13.5px] font-bold text-ys-text truncate">
+                    {c.nombre}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
-          {groupContacts.map((c) => (
-            <div
-              key={c.id}
-              className="flex items-center gap-3 px-4 py-2.5 border-b border-ys-border-softer last:border-b-0"
-            >
-              <div className="w-8 h-8 flex-none rounded-full bg-ys-green-bg text-ys-green-text text-[11px] font-extrabold flex items-center justify-center">
-                {initialsOf(c.nombre)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[13.5px] font-bold text-ys-text truncate">
-                  {c.nombre || "Sin nombre"}
-                </div>
-                <div className="font-mono text-[11.5px] text-ys-dim truncate">{c.tel || "—"}</div>
-              </div>
-              <button
-                onClick={() => handleRemoveContact(c.id)}
-                disabled={removingId === c.id}
-                title="Quitar del grupo"
-                className="flex-none text-ys-dimmer hover:text-ys-red-text transition-colors cursor-pointer disabled:opacity-40"
-              >
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                </svg>
-              </button>
-            </div>
-          ))}
         </div>
 
         {confirmDelete ? (
@@ -364,10 +447,10 @@ export default function GroupDetailModal({
         ) : (
           <div className="flex justify-end items-center border-t border-ys-border-soft pt-4">
             <button
-              onClick={onClose}
-              className="text-[13.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
+              onClick={() => onCreateCampaign(group)}
+              className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
             >
-              Cerrar
+              Crear campaña con este grupo
             </button>
           </div>
         )}

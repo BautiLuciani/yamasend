@@ -734,6 +734,7 @@ export default function AppShell({
         key={openGroupId ?? "none"}
         group={lists.find((l) => l.id === openGroupId) ?? null}
         contacts={contacts}
+        campaigns={campaigns}
         onClose={() => setOpenGroupId(null)}
         onRename={async (id, nombre) => {
           const result = await renameListAction(id, nombre);
@@ -773,6 +774,10 @@ export default function AppShell({
             router.refresh();
             setOpenGroupId(null);
           }
+        }}
+        onCreateCampaign={() => {
+          setOpenGroupId(null);
+          setWizardOpen(true);
         }}
       />
 
