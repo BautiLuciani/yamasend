@@ -1,6 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Campaign, ContactList, Template } from "@/lib/types";
 
+/**
+ * Devuelve TODOS los templates del tenant (cualquier status), no solo los
+ * aprobados — la sección Templates necesita mostrar borradores, enviados,
+ * rechazados, etc. El filtro por status, si hace falta, se aplica en el
+ * cliente (ver Templates.tsx).
+ */
 export async function getTemplatesForTenant(
   tenantId: string,
 ): Promise<Template[]> {
@@ -8,9 +14,8 @@ export async function getTemplatesForTenant(
 
   const { data: rows, error } = await supabase
     .from("yamas_send_templates")
-    .select("id, nombre, contenido, status, template_type")
+    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo")
     .eq("tenant_id", tenantId)
-    .eq("status", "APPROVED")
     .order("created_at", { ascending: false });
 
   if (error || !rows) return [];
@@ -19,9 +24,10 @@ export async function getTemplatesForTenant(
     id: r.id,
     nombre: r.nombre,
     contenido: r.contenido,
-    status: (r.status as Template["status"]) ?? "APPROVED",
+    status: (r.status as Template["status"]) ?? "borrador",
     tipo: r.template_type ?? "marketing",
     precio: "0.0618",
+    rechazoMotivo: r.meta_rechazo_motivo ?? null,
   }));
 }
 

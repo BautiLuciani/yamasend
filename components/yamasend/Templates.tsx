@@ -17,7 +17,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
 };
 
 function StatusBadge({ status }: { status: Template["status"] }) {
-  if (status === "APPROVED")
+  if (status === "verificado")
     return (
       <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-green-text bg-ys-green-bg rounded-full px-2.5 py-1">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -26,7 +26,7 @@ function StatusBadge({ status }: { status: Template["status"] }) {
         Aprobado
       </span>
     );
-  if (status === "PENDING")
+  if (status === "enviado")
     return (
       <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-warn-text bg-ys-warn-bg rounded-full px-2.5 py-1">
         <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
@@ -36,32 +36,53 @@ function StatusBadge({ status }: { status: Template["status"] }) {
         En revisión
       </span>
     );
+  if (status === "borrador")
+    return (
+      <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-dim bg-ys-el2 rounded-full px-2.5 py-1">
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+          <path d="M4 12.5V4.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v8" stroke="#7b837e" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 12.5h8" stroke="#7b837e" strokeWidth="1.6" strokeLinecap="round" />
+        </svg>
+        Borrador
+      </span>
+    );
+  // rechazado o error
   return (
     <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-red-text bg-ys-red-bg rounded-full px-2.5 py-1">
       <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
         <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="#a8443b" strokeWidth="2.2" strokeLinecap="round" />
       </svg>
-      Rechazado
+      {status === "error" ? "Error" : "Rechazado"}
     </span>
   );
 }
 
 export default function Templates({ templates, onNewTemplate, onOpenTemplate }: TemplatesProps) {
   const [query, setQuery] = useState("");
-  const [estado, setEstado] = useState<"todos" | "APPROVED" | "PENDING" | "REJECTED">("todos");
+  const [estado, setEstado] = useState<
+    "todos" | "verificado" | "enviado" | "rechazado" | "borrador"
+  >("todos");
 
   const counts = useMemo(
     () => ({
       total: templates.length,
-      aprobados: templates.filter((t) => t.status === "APPROVED").length,
-      revision: templates.filter((t) => t.status === "PENDING").length,
-      rechazados: templates.filter((t) => t.status === "REJECTED").length,
+      aprobados: templates.filter((t) => t.status === "verificado").length,
+      revision: templates.filter((t) => t.status === "enviado").length,
+      rechazados: templates.filter(
+        (t) => t.status === "rechazado" || t.status === "error",
+      ).length,
     }),
     [templates],
   );
 
   const filtered = templates.filter((t) => {
-    if (estado !== "todos" && t.status !== estado) return false;
+    if (estado !== "todos") {
+      const matches =
+        estado === "rechazado"
+          ? t.status === "rechazado" || t.status === "error"
+          : t.status === estado;
+      if (!matches) return false;
+    }
     if (query && !t.nombre.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   });
@@ -127,9 +148,10 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate }: 
             {(
               [
                 { key: "todos", label: "Todos" },
-                { key: "APPROVED", label: "Aprobados" },
-                { key: "PENDING", label: "En revisión" },
-                { key: "REJECTED", label: "Rechazados" },
+                { key: "verificado", label: "Aprobados" },
+                { key: "enviado", label: "En revisión" },
+                { key: "rechazado", label: "Rechazados" },
+                { key: "borrador", label: "Borradores" },
               ] as const
             ).map((f) => (
               <button

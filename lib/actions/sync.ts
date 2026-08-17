@@ -88,6 +88,60 @@ export async function syncAndAnalyzeAction(
   }
 }
 
+// Webhook del workflow "YamaSend — Generar Template con IA" en n8n.
+// Recibe { descripcion, categoria } y devuelve { ok, sugerencia } con un
+// mensaje de template redactado por un AI Agent (OpenAI) siguiendo las
+// reglas de Meta para templates de WhatsApp.
+const TEMPLATE_IA_WEBHOOK_URL =
+  "https://yamasai.app.n8n.cloud/webhook/yamasend-template-ia";
+
+export interface GenerarTemplateIAResult {
+  sugerencia: string | null;
+  error: string | null;
+}
+
+/**
+ * Genera un mensaje de template sugerido a partir de una descripción libre
+ * de lo que el usuario quiere comunicar. No requiere sesión con tenant_id
+ * porque no persiste nada — solo genera texto.
+ */
+export async function generarTemplateConIAAction(
+  descripcion: string,
+  categoria: string,
+): Promise<GenerarTemplateIAResult> {
+  if (!descripcion.trim()) {
+    return { sugerencia: null, error: "Contá qué querés comunicar para poder generar el mensaje." };
+  }
+
+  try {
+    const res = await fetch(TEMPLATE_IA_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ descripcion: descripcion.trim(), categoria }),
+    });
+
+    if (!res.ok) {
+      return {
+        sugerencia: null,
+        error: `El generador de mensajes respondió con error (${res.status}).`,
+      };
+    }
+
+    const data = await res.json();
+
+    if (!data.sugerencia) {
+      return { sugerencia: null, error: "No se pudo generar una sugerencia. Probá reformular la descripción." };
+    }
+
+    return { sugerencia: data.sugerencia, error: null };
+  } catch {
+    return {
+      sugerencia: null,
+      error: "No se pudo conectar con el generador de mensajes. Reintentá en unos segundos.",
+    };
+  }
+}
+
 /**
  * Permite al vendedor pisar manualmente la temperatura calculada por IA
  * para un contacto puntual (columna temperatura_manual). La columna generada

@@ -27,13 +27,23 @@ export interface Contact {
 
 export type PlanKey = "starter" | "pro" | "uso";
 
+// Valores reales de yamas_send_templates.status en Supabase (texto en español).
+// "enviado" = mandado a Meta, esperando resolución del webhook de YCloud.
+export type TemplateStatus =
+  | "borrador"
+  | "enviado"
+  | "verificado"
+  | "rechazado"
+  | "error";
+
 export interface Template {
   id: string;
   nombre: string;
   contenido: string;
-  status: "APPROVED" | "PENDING" | "REJECTED";
+  status: TemplateStatus;
   tipo?: string;
   precio?: string;
+  rechazoMotivo?: string | null;
 }
 
 export interface ContactList {

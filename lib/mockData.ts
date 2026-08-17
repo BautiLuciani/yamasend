@@ -110,7 +110,7 @@ export const mockTemplates: Template[] = [
     nombre: "Promo especial",
     contenido:
       "🎉 Oferta especial para vos\n\nHola {{nombre}}, este mes tenemos 20% de descuento en botellones 20 lts para nuevos abonos.\n\n¿Te interesa sumarte?",
-    status: "APPROVED",
+    status: "verificado",
     tipo: "marketing",
     precio: "0.0618",
   },
@@ -119,7 +119,7 @@ export const mockTemplates: Template[] = [
     nombre: "Reactivación",
     contenido:
       "Hola, ¿todo bien? 👋\n\nHola {{nombre}}, hace un tiempo que no hablamos.\n\nTenemos novedades y precios actualizados para vos.",
-    status: "APPROVED",
+    status: "verificado",
     tipo: "marketing",
     precio: "0.0618",
   },
@@ -128,7 +128,7 @@ export const mockTemplates: Template[] = [
     nombre: "Nueva lista de precios",
     contenido:
       "📋 Nueva lista de precios 2026\n\nHola {{nombre}}, a partir del 1° de abril entran los nuevos precios.",
-    status: "APPROVED",
+    status: "verificado",
     tipo: "utility",
     precio: "0.0618",
   },

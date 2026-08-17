@@ -14,6 +14,14 @@ const CATEGORIA_LABEL: Record<string, string> = {
   service: "Servicio",
 };
 
+const STATUS_LABEL: Record<string, string> = {
+  verificado: "Aprobado",
+  enviado: "En revisión",
+  rechazado: "Rechazado",
+  borrador: "Borrador",
+  error: "Error al enviar",
+};
+
 export default function TemplateDetailModal({ template, onClose }: TemplateDetailModalProps) {
   if (!template) return null;
 
@@ -55,11 +63,7 @@ export default function TemplateDetailModal({ template, onClose }: TemplateDetai
               Estado
             </div>
             <div className="text-[13.5px] font-bold text-ys-text">
-              {template.status === "APPROVED"
-                ? "Aprobado"
-                : template.status === "PENDING"
-                  ? "En revisión"
-                  : "Rechazado"}
+              {STATUS_LABEL[template.status] ?? template.status}
             </div>
           </div>
           <div className="flex flex-col gap-0.5">
@@ -69,6 +73,16 @@ export default function TemplateDetailModal({ template, onClose }: TemplateDetai
             <div className="font-mono text-[13px] text-[#3f4844]">USD {template.precio ?? "0.0618"}</div>
           </div>
         </div>
+
+        {(template.status === "rechazado" || template.status === "error") &&
+          template.rechazoMotivo && (
+            <div className="bg-ys-red-bg border border-[#f1cdc8] rounded-xl px-4 py-3 flex flex-col gap-0.5">
+              <div className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-red-text">
+                Motivo
+              </div>
+              <div className="text-[13px] text-[#3f4844] font-medium">{template.rechazoMotivo}</div>
+            </div>
+          )}
 
         <div className="flex flex-col gap-2">
           <div className="text-sm font-extrabold text-ys-text">Mensaje</div>

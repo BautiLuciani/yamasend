@@ -40,8 +40,14 @@ import {
   renameListAction,
   removeContactsFromListAction,
   deleteListAction,
+  saveTemplateDraftAction,
+  sendTemplateToMetaAction,
 } from "@/lib/actions/write";
-import { syncAndAnalyzeAction, setTemperaturaManualAction } from "@/lib/actions/sync";
+import {
+  syncAndAnalyzeAction,
+  setTemperaturaManualAction,
+  generarTemplateConIAAction,
+} from "@/lib/actions/sync";
 import { createClient } from "@/lib/supabase/client";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -90,6 +96,8 @@ export default function AppShell({
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [newTplContent, setNewTplContent] = useState("");
   const [newTplName, setNewTplName] = useState("");
+  const [newTplCategoria, setNewTplCategoria] = useState("marketing");
+  const [savingDraft, setSavingDraft] = useState(false);
 
   const [status, setStatus] = useState<StatusState>("idle");
 
@@ -357,6 +365,7 @@ export default function AppShell({
     setTplId(null);
     setNewTplContent("");
     setNewTplName("");
+    setNewTplCategoria("marketing");
     setStatus("editing-tpl");
     setTemplateModalOpen(true);
     addMsg(
@@ -368,24 +377,49 @@ export default function AppShell({
     setIsCreatingNew(false);
     setNewTplContent("");
     setNewTplName("");
+    setNewTplCategoria("marketing");
     setTemplateModalOpen(false);
     setStatus(sel.size > 0 ? "need-tpl" : "idle");
   }
 
-  function handleSendToMeta() {
+  async function handleGenerarIA(descripcion: string) {
+    return generarTemplateConIAAction(descripcion, newTplCategoria);
+  }
+
+  async function handleSaveDraft() {
+    setSavingDraft(true);
+    const result = await saveTemplateDraftAction(newTplName, newTplContent, newTplCategoria);
+    setSavingDraft(false);
+
+    if (result.error) {
+      addMsg(`No pude guardar el borrador: ${result.error}`);
+      return;
+    }
+
+    setIsCreatingNew(false);
+    setTemplateModalOpen(false);
+    router.refresh();
+    addMsg(`Borrador "${newTplName}" guardado. Podés retomarlo cuando quieras desde Templates.`);
+  }
+
+  async function handleSendToMeta() {
     setStatus("approving");
+    const result = await sendTemplateToMetaAction(newTplName, newTplContent, newTplCategoria);
+
+    if (!result.ok) {
+      setStatus("rejected");
+      addMsg(`No se pudo enviar el template a Meta: ${result.error}`);
+      return;
+    }
+
+    addMsg(result.mensaje);
+    setStatus("ready");
+    setIsCreatingNew(false);
+    setTemplateModalOpen(false);
+    router.refresh();
     addMsg(
-      "Template enviado a Meta para revisión. Te aviso cuando esté aprobado — puede tardar unos minutos.",
+      "El template quedó \"En revisión\". Meta puede tardar unos minutos (a veces más) en aprobarlo — te vamos a avisar apenas cambie el estado.",
     );
-    // Simulación: en producción esto llama al webhook de n8n desde el servidor
-    setTimeout(() => {
-      setStatus("ready");
-      setIsCreatingNew(false);
-      setTemplateModalOpen(false);
-      addMsg(
-        "✅ Template aprobado por Meta. Ya podés enviar la campaña. Presioná Enviar campaña.",
-      );
-    }, 3000);
   }
 
   function handleChatSend(text: string) {
@@ -662,9 +696,14 @@ export default function AppShell({
         onContentChange={setNewTplContent}
         name={newTplName}
         onNameChange={setNewTplName}
+        categoria={newTplCategoria}
+        onCategoriaChange={setNewTplCategoria}
         onCancel={handleCancelNewTpl}
+        onSaveDraft={handleSaveDraft}
         onSendToMeta={handleSendToMeta}
+        onGenerateIA={handleGenerarIA}
         sending={status === "approving"}
+        savingDraft={savingDraft}
       />
 
       <TemplateDetailModal template={detailTemplate} onClose={() => setDetailTemplate(null)} />
