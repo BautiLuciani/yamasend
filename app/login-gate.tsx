@@ -39,7 +39,12 @@ export default function LoginGate({
       onLogin={handleLogin}
       onRegister={handleRegister}
       initialTab={initialTab}
-      onTabChange={(next) => router.replace(`/${next}`)}
+      onTabChange={(next) => {
+        // Actualiza solo la URL visible, sin disparar navegación de Next
+        // (que activaría el Suspense/loading.tsx de /login o /register
+        // para un simple cambio de tab que es 100% estado local).
+        window.history.replaceState(null, "", `/${next}`);
+      }}
     />
   );
 }

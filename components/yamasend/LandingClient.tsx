@@ -380,7 +380,8 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 key={link.href}
                 href={link.href}
                 onClick={() => setMenuOpen(false)}
-                className="py-3.5 px-3 rounded-[10px] text-[15.5px] font-semibold text-ys-text hover:bg-ys-border-softer transition-colors"
+                className="py-3.5 px-3 rounded-[10px] text-[15.5px] font-semibold transition-colors hover:bg-ys-border-softer"
+                style={{ color: "#16211b" }}
               >
                 {link.label}
               </a>
