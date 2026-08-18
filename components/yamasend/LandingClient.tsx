@@ -291,7 +291,10 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
               <a
                 key={link.href}
                 href={link.href}
-                className="text-sm font-semibold text-ys-muted hover:text-ys-text transition-colors"
+                className="text-sm font-semibold transition-colors"
+                style={{ color: "#535b56" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#16211b")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#535b56")}
               >
                 {link.label}
               </a>
@@ -299,19 +302,31 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
           </div>
 
           <div className="hidden lg:flex flex-none items-center gap-3.5">
-            <Link
-              href={loginHref}
-              className="text-sm font-bold text-ys-text py-[9px] px-1.5 hover:text-ys-green-text transition-colors"
-            >
-              {loginLabel}
-            </Link>
-            {!isAuthenticated && (
+            {isAuthenticated ? (
               <Link
-                href={registerHref}
-                className="flex items-center gap-2 text-sm font-bold text-white bg-ys-green rounded-[11px] py-[11px] px-[18px] shadow-[var(--shadow-cta)] transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                href="/panel"
+                className="flex items-center gap-2 text-sm font-bold rounded-[11px] py-[11px] px-[18px] shadow-[var(--shadow-cta)] transition-all hover:-translate-y-px"
+                style={{ color: "#fff", background: "#12B76A" }}
               >
-                {registerLabel}
+                Ir al Dashboard
               </Link>
+            ) : (
+              <>
+                <Link
+                  href={loginHref}
+                  className="text-sm font-bold py-[9px] px-1.5 transition-colors"
+                  style={{ color: "#16211b" }}
+                >
+                  {loginLabel}
+                </Link>
+                <Link
+                  href={registerHref}
+                  className="flex items-center gap-2 text-sm font-bold rounded-[11px] py-[11px] px-[18px] shadow-[var(--shadow-cta)] transition-all hover:-translate-y-px"
+                  style={{ color: "#fff", background: "#12B76A" }}
+                >
+                  {registerLabel}
+                </Link>
+              </>
             )}
           </div>
 
@@ -371,22 +386,35 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
               </a>
             ))}
             <div className="h-px bg-ys-border-softest my-3 mx-1" />
-            {!isAuthenticated && (
+            {isAuthenticated ? (
               <Link
-                href={registerHref}
+                href="/panel"
                 onClick={() => setMenuOpen(false)}
-                className="flex items-center justify-center text-[15px] font-bold text-white bg-ys-green rounded-xl py-[15px] px-[18px] hover:bg-ys-green-hover transition-colors"
+                className="flex items-center justify-center text-[15px] font-bold rounded-xl py-[15px] px-[18px] transition-colors"
+                style={{ color: "#fff", background: "#12B76A" }}
               >
-                {registerLabel}
+                Ir al Dashboard
               </Link>
+            ) : (
+              <>
+                <Link
+                  href={registerHref}
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center justify-center text-[15px] font-bold rounded-xl py-[15px] px-[18px] transition-colors"
+                  style={{ color: "#fff", background: "#12B76A" }}
+                >
+                  {registerLabel}
+                </Link>
+                <Link
+                  href={loginHref}
+                  onClick={() => setMenuOpen(false)}
+                  className="flex items-center justify-center text-[15px] font-bold border border-ys-border-softest rounded-xl py-3.5 px-[18px] mt-2.5 hover:bg-ys-border-softer transition-colors"
+                  style={{ color: "#16211b" }}
+                >
+                  {loginLabel}
+                </Link>
+              </>
             )}
-            <Link
-              href={loginHref}
-              onClick={() => setMenuOpen(false)}
-              className="flex items-center justify-center text-[15px] font-bold text-ys-text border border-ys-border-softest rounded-xl py-3.5 px-[18px] mt-2.5 hover:bg-ys-border-softer transition-colors"
-            >
-              {loginLabel}
-            </Link>
           </div>
         </div>
       )}
@@ -439,7 +467,8 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
               </Link>
               <a
                 href="#como-funciona"
-                className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-ys-text bg-white border border-ys-border-softest rounded-xl py-[15px] px-[22px] hover:bg-ys-border-softer transition-colors"
+                className="flex items-center justify-center gap-[9px] text-[15px] font-bold bg-white border border-ys-border-softest rounded-xl py-[15px] px-[22px] hover:bg-ys-border-softer transition-colors"
+                style={{ color: "#16211b" }}
               >
                 Ver cómo funciona
               </a>
@@ -846,18 +875,29 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 Creá tu cuenta, vinculá tu WhatsApp y armá tu primera campaña con la plataforma completa a la vista.
               </p>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-2 w-full sm:w-auto">
-                <Link
-                  href={registerHref}
-                  className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-[#0b1310] bg-ys-green rounded-xl py-[15px] px-6 transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-                >
-                  {registerLabel}
-                </Link>
-                <Link
-                  href={loginHref}
-                  className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-ys-border-softest border border-[#33403a] rounded-xl py-[15px] px-[22px] transition-colors hover:bg-[#22302a] hover:text-white"
-                >
-                  {loginLabel}
-                </Link>
+                {isAuthenticated ? (
+                  <Link
+                    href="/panel"
+                    className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-[#0b1310] bg-ys-green rounded-xl py-[15px] px-6 transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                  >
+                    Ir al Dashboard
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      href={registerHref}
+                      className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-[#0b1310] bg-ys-green rounded-xl py-[15px] px-6 transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                    >
+                      {registerLabel}
+                    </Link>
+                    <Link
+                      href={loginHref}
+                      className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-ys-border-softest border border-[#33403a] rounded-xl py-[15px] px-[22px] transition-colors hover:bg-[#22302a] hover:text-white"
+                    >
+                      {loginLabel}
+                    </Link>
+                  </>
+                )}
               </div>
             </Reveal>
           </div>
@@ -882,28 +922,51 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
             </div>
             <div className="flex flex-col gap-2.5">
               <div className="text-[12.5px] font-extrabold tracking-[.04em]">Producto</div>
-              <a href="#funcionalidades" className="text-[13.5px] font-semibold text-ys-muted hover:text-ys-green-text transition-colors">
-                Funcionalidades
-              </a>
-              <a href="#como-funciona" className="text-[13.5px] font-semibold text-ys-muted hover:text-ys-green-text transition-colors">
-                Cómo funciona
-              </a>
-              <a href="#ia" className="text-[13.5px] font-semibold text-ys-muted hover:text-ys-green-text transition-colors">
-                IA
-              </a>
-              <a href="#faq" className="text-[13.5px] font-semibold text-ys-muted hover:text-ys-green-text transition-colors">
-                Preguntas frecuentes
-              </a>
+              {[
+                { href: "#funcionalidades", label: "Funcionalidades" },
+                { href: "#como-funciona", label: "Cómo funciona" },
+                { href: "#ia", label: "IA" },
+                { href: "#faq", label: "Preguntas frecuentes" },
+              ].map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  className="text-[13.5px] font-semibold transition-colors"
+                  style={{ color: "#6b736e" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "#067647")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "#6b736e")}
+                >
+                  {item.label}
+                </a>
+              ))}
             </div>
             <div className="flex flex-col gap-2.5">
               <div className="text-[12.5px] font-extrabold tracking-[.04em]">Cuenta</div>
-              <Link href={loginHref} className="text-[13.5px] font-semibold text-ys-muted hover:text-ys-green-text transition-colors">
+              <Link
+                href={loginHref}
+                className="text-[13.5px] font-semibold transition-colors"
+                style={{ color: "#6b736e" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#067647")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#6b736e")}
+              >
                 {loginLabel}
               </Link>
-              <Link href={registerHref} className="text-[13.5px] font-semibold text-ys-muted hover:text-ys-green-text transition-colors">
+              <Link
+                href={registerHref}
+                className="text-[13.5px] font-semibold transition-colors"
+                style={{ color: "#6b736e" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#067647")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#6b736e")}
+              >
                 {isAuthenticated ? "Ir al Dashboard" : "Crear cuenta"}
               </Link>
-              <a href="#nosotros" className="text-[13.5px] font-semibold text-ys-muted hover:text-ys-green-text transition-colors">
+              <a
+                href="#nosotros"
+                className="text-[13.5px] font-semibold transition-colors"
+                style={{ color: "#6b736e" }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#067647")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#6b736e")}
+              >
                 Nosotros
               </a>
             </div>
@@ -921,7 +984,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
         </div>
       </footer>
 
-      <style jsx>{`
+      <style jsx global>{`
         @keyframes ys-drawer-right {
           from {
             transform: translateX(100%);
