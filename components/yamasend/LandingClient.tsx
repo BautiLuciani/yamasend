@@ -616,10 +616,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 key={item.tag}
                 className={`grid grid-cols-1 md:grid-cols-2 gap-[22px] md:gap-12 items-center`}
               >
-                <div
-                  className="flex flex-col gap-[14px]"
-                  style={item.reverse ? { order: 2 } : undefined}
-                >
+                <div className={`flex flex-col gap-[14px] ${item.reverse ? "md:order-2" : ""}`}>
                   <div className="font-mono text-[11.5px] text-ys-dim">{item.tag}</div>
                   <h3 className="m-0 text-xl md:text-2xl leading-[1.2] tracking-[-0.015em] font-extrabold">
                     {item.title}
@@ -639,8 +636,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                   )}
                 </div>
                 <div
-                  className="border border-ys-border-softest rounded-2xl overflow-hidden bg-white shadow-[0_14px_36px_rgba(16,24,20,0.08)]"
-                  style={item.reverse ? { order: 1 } : undefined}
+                  className={`border border-ys-border-softest rounded-2xl overflow-hidden bg-white shadow-[0_14px_36px_rgba(16,24,20,0.08)] ${item.reverse ? "md:order-1" : ""}`}
                 >
                   <Image src={item.img} alt={item.alt} width={item.w} height={item.h} className="w-full h-auto block" />
                 </div>
