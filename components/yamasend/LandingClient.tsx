@@ -266,7 +266,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
   return (
     <div
       id="inicio"
-      className="fixed inset-0 overflow-y-auto overflow-x-clip text-ys-text bg-white"
+      className="fixed inset-0 overflow-y-auto overflow-x-clip scroll-smooth text-ys-text bg-white"
       style={{ fontFamily: "var(--font-body)" }}
     >
       {/* Header */}
@@ -458,7 +458,8 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
             >
               <Link
                 href={registerHref}
-                className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-white bg-ys-green rounded-xl py-[15px] px-6 shadow-[var(--shadow-cta)] transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                className="flex items-center justify-center gap-[9px] text-[15px] font-bold rounded-xl py-[15px] px-6 shadow-[var(--shadow-cta)] transition-all hover:-translate-y-px"
+                style={{ color: "#fff", background: "#12B76A" }}
               >
                 {registerLabel}
                 <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -530,7 +531,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
         </section>
 
         {/* Funcionalidades / beneficios */}
-        <section id="funcionalidades" className="py-14 md:py-20">
+        <section id="funcionalidades" className="py-14 md:py-20 scroll-mt-[71px]">
           <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col gap-[38px]">
             <Reveal className="max-w-[640px] flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">BENEFICIOS</div>
@@ -564,7 +565,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
         {/* Cómo funciona */}
         <section
           id="como-funciona"
-          className="py-14 md:py-20 bg-[#f7f9f8] border-t border-b border-ys-border-softest"
+          className="py-14 md:py-20 bg-[#f7f9f8] border-t border-b border-ys-border-softest scroll-mt-[71px]"
         >
           <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col gap-[38px]">
             <Reveal className="max-w-[640px] flex flex-col gap-3">
@@ -648,7 +649,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
         </section>
 
         {/* IA */}
-        <section id="ia" className="py-16 md:py-[84px] bg-ys-dark">
+        <section id="ia" className="py-16 md:py-[84px] bg-ys-dark scroll-mt-[71px]">
           <div className="max-w-[1180px] mx-auto px-5 md:px-8">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-[26px] md:gap-[52px] items-center">
               <Reveal className="flex flex-col gap-[18px]">
@@ -751,7 +752,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
         </section>
 
         {/* Nosotros */}
-        <section id="nosotros" className="py-14 md:py-20">
+        <section id="nosotros" className="py-14 md:py-20 scroll-mt-[71px]">
           <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col gap-[34px]">
             <Reveal className="max-w-[660px] flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">NOSOTROS</div>
@@ -815,7 +816,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
         </section>
 
         {/* FAQ */}
-        <section id="faq" className="py-14 md:py-20 bg-[#f7f9f8] border-t border-ys-border-softest">
+        <section id="faq" className="py-14 md:py-20 bg-[#f7f9f8] border-t border-ys-border-softest scroll-mt-[71px]">
           <div className="max-w-[860px] mx-auto px-5 md:px-8 flex flex-col gap-[30px]">
             <Reveal className="flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">PREGUNTAS FRECUENTES</div>
@@ -878,7 +879,8 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 {isAuthenticated ? (
                   <Link
                     href="/panel"
-                    className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-[#0b1310] bg-ys-green rounded-xl py-[15px] px-6 transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                    className="flex items-center justify-center gap-[9px] text-[15px] font-bold rounded-xl py-[15px] px-6 transition-all hover:-translate-y-px"
+                    style={{ color: "#0b1310", background: "#12B76A" }}
                   >
                     Ir al Dashboard
                   </Link>
@@ -886,13 +888,17 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                   <>
                     <Link
                       href={registerHref}
-                      className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-[#0b1310] bg-ys-green rounded-xl py-[15px] px-6 transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                      className="flex items-center justify-center gap-[9px] text-[15px] font-bold rounded-xl py-[15px] px-6 transition-all hover:-translate-y-px"
+                      style={{ color: "#0b1310", background: "#12B76A" }}
                     >
                       {registerLabel}
                     </Link>
                     <Link
                       href={loginHref}
-                      className="flex items-center justify-center gap-[9px] text-[15px] font-bold text-ys-border-softest border border-[#33403a] rounded-xl py-[15px] px-[22px] transition-colors hover:bg-[#22302a] hover:text-white"
+                      className="flex items-center justify-center gap-[9px] text-[15px] font-bold rounded-xl py-[15px] px-[22px] transition-colors"
+                      style={{ color: "#eef1ef", border: "1px solid #33403a" }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "#22302a")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                     >
                       {loginLabel}
                     </Link>
