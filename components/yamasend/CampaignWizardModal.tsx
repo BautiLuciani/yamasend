@@ -514,7 +514,19 @@ export default function CampaignWizardModal({
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <div className="text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">Envío</div>
-                  <div className="text-[13.5px] font-bold text-ys-text">Ahora</div>
+                  <div className="text-[13.5px] font-bold text-ys-text">
+                    {momento === "ahora"
+                      ? "Ahora"
+                      : fechaProgramada
+                        ? new Date(fechaProgramada).toLocaleString("es-AR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "Sin definir"}
+                  </div>
                 </div>
                 <div className="flex flex-col gap-0.5">
                   <div className="text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">Destinatarios</div>
