@@ -44,6 +44,7 @@ export interface Template {
   tipo?: string;
   precio?: string;
   rechazoMotivo?: string | null;
+  templateLang?: string;
 }
 
 export interface ContactList {
@@ -54,11 +55,27 @@ export interface ContactList {
   updatedAt: string | null;
 }
 
+// Valores reales de yamas_send_campanas.status en Supabase (constraint CHECK).
+export type CampaignStatus =
+  | "borrador"
+  | "programada"
+  | "enviando"
+  | "enviado"
+  | "error"
+  | "cancelado";
+
 export interface Campaign {
   id: string;
   nombre: string;
   listaId: string | null;
   templateId: string | null;
+  listaNombre: string | null;
+  templateNombre: string | null;
+  status: CampaignStatus;
+  contactosCount: number;
+  fechaProgramada: string | null;
+  enviadoAt: string | null;
+  createdAt: string | null;
 }
 
 export interface AppUser {

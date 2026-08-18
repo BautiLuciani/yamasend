@@ -14,7 +14,7 @@ export async function getTemplatesForTenant(
 
   const { data: rows, error } = await supabase
     .from("yamas_send_templates")
-    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo")
+    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
 
@@ -28,6 +28,7 @@ export async function getTemplatesForTenant(
     tipo: r.template_type ?? "marketing",
     precio: "0.0618",
     rechazoMotivo: r.meta_rechazo_motivo ?? null,
+    templateLang: r.template_lang ?? "es_AR",
   }));
 }
 
@@ -61,7 +62,9 @@ export async function getCampaignsForTenant(
 
   const { data: rows, error } = await supabase
     .from("yamas_send_campanas")
-    .select("id, nombre, lista_id, template_id")
+    .select(
+      "id, nombre, lista_id, template_id, lista_nombre, template_nombre, status, contactos_count, fecha_programada, enviado_at, created_at",
+    )
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -73,5 +76,12 @@ export async function getCampaignsForTenant(
     nombre: r.nombre,
     listaId: r.lista_id,
     templateId: r.template_id,
+    listaNombre: r.lista_nombre,
+    templateNombre: r.template_nombre,
+    status: (r.status as Campaign["status"]) ?? "borrador",
+    contactosCount: r.contactos_count ?? 0,
+    fechaProgramada: r.fecha_programada,
+    enviadoAt: r.enviado_at,
+    createdAt: r.created_at,
   }));
 }

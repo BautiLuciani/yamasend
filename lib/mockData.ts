@@ -159,11 +159,30 @@ export const mockLists: ContactList[] = [
 ];
 
 export const mockCampaigns: Campaign[] = [
-  { id: "c1", nombre: "Promo marzo", listaId: "abonados", templateId: "promo" },
+  {
+    id: "c1",
+    nombre: "Promo marzo",
+    listaId: "abonados",
+    templateId: "promo",
+    listaNombre: "Abonados",
+    templateNombre: "promo",
+    status: "enviado",
+    contactosCount: 120,
+    fechaProgramada: null,
+    enviadoAt: "2026-03-05T00:00:00.000Z",
+    createdAt: "2026-03-01T00:00:00.000Z",
+  },
   {
     id: "c2",
     nombre: "Reactivación feb",
     listaId: "inactivos",
     templateId: "reactivar",
+    listaNombre: "Inactivos",
+    templateNombre: "reactivar",
+    status: "enviado",
+    contactosCount: 80,
+    fechaProgramada: null,
+    enviadoAt: "2026-02-15T00:00:00.000Z",
+    createdAt: "2026-02-10T00:00:00.000Z",
   },
 ];

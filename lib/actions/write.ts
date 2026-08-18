@@ -221,17 +221,30 @@ export async function deleteListAction(
   return { error: null };
 }
 
+// Webhook del workflow "Yamasend — envios mensajes meta" en n8n. Recibe
+// { tenant_id, ycloud_api, wabaid, ventas_tel, lista_id, template_name,
+// template_language, ventana_24h, total } y dispara el envío masivo vía
+// YCloud, actualizando yamas_send_listas.status y yamas_inmo_clientesdeclientes
+// a medida que va enviando.
+const CAMPAIGN_SEND_WEBHOOK_URL =
+  "https://yamasai.app.n8n.cloud/webhook/9a625055-39fb-4b59-a991-5f9d19beb32f";
+
 /**
  * Guarda una campaña asociada a una lista y un template ya existentes.
  * Requiere ycloud_api y waba_id del tenant (campos NOT NULL en el esquema);
  * si el tenant todavía no los configuró, se informa el error en vez de
  * insertar datos incompletos que rompan la fila.
+ * Desnormaliza lista_nombre/template_nombre para que la tabla de Campañas
+ * no necesite hacer joins para mostrarse.
+ * status inicial: "programada" si se pasa fechaProgramada (futura), si no
+ * "enviando" (el llamador dispara sendCampaignAction a continuación).
  */
 export async function saveCampaignAction(
   nombre: string,
   listaId: string | null,
   templateId: string | null,
   contactosIds: string[],
+  fechaProgramada: string | null = null,
 ): Promise<SaveResult> {
   const supabase = await createClient();
 
@@ -259,6 +272,15 @@ export async function saveCampaignAction(
     };
   }
 
+  const [{ data: lista }, { data: template }] = await Promise.all([
+    listaId
+      ? supabase.from("yamas_send_listas").select("nombre").eq("id", listaId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    templateId
+      ? supabase.from("yamas_send_templates").select("nombre").eq("id", templateId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+
   const { data, error } = await supabase
     .from("yamas_send_campanas")
     .insert({
@@ -266,11 +288,14 @@ export async function saveCampaignAction(
       nombre,
       lista_id: listaId,
       template_id: templateId,
+      lista_nombre: lista?.nombre ?? null,
+      template_nombre: template?.nombre ?? null,
       contactos_ids: contactosIds,
       contactos_count: contactosIds.length,
       ycloud_api: cliente.ycloud_api,
       waba_id: cliente.wabaid,
-      status: "borrador",
+      status: fechaProgramada ? "programada" : "enviando",
+      fecha_programada: fechaProgramada,
     })
     .select("id")
     .single();
@@ -283,6 +308,97 @@ export async function saveCampaignAction(
   }
 
   return { id: data.id, error: null };
+}
+
+export interface SendCampaignResult {
+  ok: boolean;
+  error: string | null;
+}
+
+/**
+ * Dispara el envío inmediato de una campaña ya guardada, llamando al
+ * workflow de n8n "Yamasend — envios mensajes meta". Resuelve
+ * ycloud_api/wabaid/ventas_tel del tenant server-side (nunca del cliente).
+ * Se usa tanto para "Enviar ahora" como, desde el scheduler de n8n, para
+ * campañas programadas cuya fecha_programada ya venció (en ese caso el
+ * propio n8n llama a este mismo webhook directamente, sin pasar por acá).
+ */
+export async function sendCampaignAction(
+  campaignId: string,
+  listaId: string,
+  templateName: string,
+  templateLanguage: string,
+  ventana24h: boolean,
+  total: number,
+): Promise<SendCampaignResult> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { ok: false, error: "No hay sesión activa." };
+
+  const { data: cliente, error: clienteError } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id, ycloud_api, wabaid, ventas_tel")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (clienteError || !cliente?.tenant_id) {
+    return { ok: false, error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  if (!cliente.ycloud_api || !cliente.wabaid || !cliente.ventas_tel) {
+    return {
+      ok: false,
+      error:
+        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (ycloud_api / wabaid / ventas_tel). Contactá a soporte.",
+    };
+  }
+
+  try {
+    const res = await fetch(CAMPAIGN_SEND_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tenant_id: cliente.tenant_id,
+        campaign_id: campaignId,
+        ycloud_api: cliente.ycloud_api,
+        wabaid: cliente.wabaid,
+        ventas_tel: cliente.ventas_tel,
+        lista_id: listaId,
+        template_name: templateName,
+        template_language: templateLanguage,
+        ventana_24h: ventana24h,
+        total,
+      }),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data || data.ok === false) {
+      await supabase
+        .from("yamas_send_campanas")
+        .update({ status: "error" })
+        .eq("id", campaignId);
+      return {
+        ok: false,
+        error: `El servidor de envío respondió con error (${res.status}).`,
+      };
+    }
+
+    return { ok: true, error: null };
+  } catch {
+    await supabase
+      .from("yamas_send_campanas")
+      .update({ status: "error" })
+      .eq("id", campaignId);
+    return {
+      ok: false,
+      error: "No se pudo conectar con el servicio de envío. Reintentá en unos segundos.",
+    };
+  }
 }
 
 /**
@@ -537,6 +653,85 @@ export async function sendTemplateToMetaAction(
       status: null,
       mensaje: "",
       error: "No se pudo conectar con el servicio de aprobación. Reintentá en unos segundos.",
+    };
+  }
+}
+
+// Webhook del workflow "YamaSend — Insight IA Campañas" en n8n. Recibe
+// { tenant_id }, trae las campañas del tenant desde Supabase y devuelve un
+// insight redactado por GPT. El resultado se cachea en
+// yamas_send_insights_cache (1 por tenant por día) para no llamar al LLM en
+// cada carga de pantalla. Reutilizado por el modal de Nueva Campaña y,
+// eventualmente, por el Dashboard.
+const CAMPAIGN_INSIGHT_WEBHOOK_URL =
+  "https://yamasai.app.n8n.cloud/webhook/yamasend-insight-campanas";
+
+export interface CampaignInsightResult {
+  insight: string | null;
+  error: string | null;
+}
+
+/**
+ * Devuelve el insight de IA del tenant, usando cache de Supabase si ya se
+ * generó uno hoy. Si no hay cache vigente, llama al workflow de n8n, que es
+ * quien se encarga de guardar el resultado nuevo en la tabla de cache.
+ */
+export async function getCampaignInsightAction(): Promise<CampaignInsightResult> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { insight: null, error: "No hay sesión activa." };
+
+  const { data: cliente, error: clienteError } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (clienteError || !cliente?.tenant_id) {
+    return { insight: null, error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const inicioDeHoy = new Date();
+  inicioDeHoy.setHours(0, 0, 0, 0);
+
+  const { data: cache } = await supabase
+    .from("yamas_send_insights_cache")
+    .select("insight")
+    .eq("tenant_id", cliente.tenant_id)
+    .gte("generado_at", inicioDeHoy.toISOString())
+    .order("generado_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (cache?.insight) {
+    return { insight: cache.insight, error: null };
+  }
+
+  try {
+    const res = await fetch(CAMPAIGN_INSIGHT_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenant_id: cliente.tenant_id }),
+    });
+
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data?.insight) {
+      return {
+        insight: null,
+        error: "No se pudo generar el insight en este momento.",
+      };
+    }
+
+    return { insight: data.insight as string, error: null };
+  } catch {
+    return {
+      insight: null,
+      error: "No se pudo conectar con el servicio de insights.",
     };
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ContactList, Template } from "@/lib/types";
 
 type Paso = 1 | 2 | 3 | 4;
@@ -11,12 +11,24 @@ interface CampaignWizardModalProps {
   templates: Template[];
   costPerMsg: number;
   onClose: () => void;
+  onFetchInsight: () => Promise<{ insight: string | null; error: string | null }>;
   onConfirm: (data: {
     nombre: string;
     listaId: string;
     templateId: string;
     contactosIds: string[];
+    momento: "ahora" | "programar";
+    fechaProgramada: string | null;
   }) => Promise<{ error: string | null }>;
+}
+
+function defaultFechaProgramada(): string {
+  // Por defecto: mañana a las 10:00, formato para <input type="datetime-local">
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(10, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function CampaignWizardModal({
@@ -25,6 +37,7 @@ export default function CampaignWizardModal({
   templates,
   costPerMsg,
   onClose,
+  onFetchInsight,
   onConfirm,
 }: CampaignWizardModalProps) {
   const [paso, setPaso] = useState<Paso>(1);
@@ -32,12 +45,32 @@ export default function CampaignWizardModal({
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [nombre, setNombre] = useState("");
   const [momento, setMomento] = useState<"ahora" | "programar">("ahora");
+  const [fechaProgramada, setFechaProgramada] = useState(defaultFechaProgramada());
   const [buscarGrupo, setBuscarGrupo] = useState("");
   const [buscarTpl, setBuscarTpl] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
   const [exito, setExito] = useState(false);
+  const [insight, setInsight] = useState<string | null>(null);
+  const [insightCargando, setInsightCargando] = useState(false);
+  const insightPedidoRef = useRef(false);
+
+  async function cargarInsight() {
+    if (insightPedidoRef.current) return;
+    insightPedidoRef.current = true;
+    setInsightCargando(true);
+    const result = await onFetchInsight();
+    setInsight(result.insight);
+    setInsightCargando(false);
+  }
+
+  useEffect(() => {
+    if (open && paso === 3) {
+      cargarInsight();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, paso]);
 
   function resetState() {
     setPaso(1);
@@ -45,12 +78,15 @@ export default function CampaignWizardModal({
     setTemplateId(null);
     setNombre("");
     setMomento("ahora");
+    setFechaProgramada(defaultFechaProgramada());
     setBuscarGrupo("");
     setBuscarTpl("");
     setConfirmando(false);
     setEnviando(false);
     setErrorEnvio(null);
     setExito(false);
+    setInsight(null);
+    insightPedidoRef.current = false;
   }
 
   if (!open) return null;
@@ -82,6 +118,11 @@ export default function CampaignWizardModal({
       listaId: lista.id,
       templateId: template.id,
       contactosIds: lista.contactosIds,
+      momento,
+      fechaProgramada:
+        momento === "programar" && fechaProgramada
+          ? new Date(fechaProgramada).toISOString()
+          : null,
     });
     setEnviando(false);
     if (result.error) {
@@ -377,9 +418,10 @@ export default function CampaignWizardModal({
                     )}
                   </button>
                   <button
-                    disabled
-                    title="Disponible próximamente"
-                    className="border-[1.5px] border-ys-border rounded-[14px] px-4 py-3.5 flex items-center gap-3 opacity-50 cursor-not-allowed text-left"
+                    onClick={() => setMomento("programar")}
+                    className={`border-[1.5px] rounded-[14px] px-4 py-3.5 flex items-center gap-3 cursor-pointer transition-colors text-left ${
+                      momento === "programar" ? "border-ys-green bg-ys-green-bg" : "border-ys-border"
+                    }`}
                   >
                     <div className="w-[34px] h-[34px] flex-none rounded-[11px] bg-ys-green-bg flex items-center justify-center">
                       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -389,12 +431,34 @@ export default function CampaignWizardModal({
                     </div>
                     <div className="flex-1 flex flex-col gap-0.5">
                       <div className="text-[13.5px] font-bold text-ys-text">Programar envío</div>
-                      <div className="text-[11.5px] text-ys-dim font-semibold">Próximamente</div>
+                      <div className="text-[11.5px] text-ys-dim font-semibold">Elegí fecha y hora</div>
                     </div>
+                    {momento === "programar" && (
+                      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="7" fill="#12B76A" />
+                        <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
                   </button>
                 </div>
+
+                {momento === "programar" && (
+                  <div className="flex flex-col gap-[7px]">
+                    <div className="text-[13px] font-extrabold text-ys-text">Fecha y hora de envío</div>
+                    <input
+                      type="datetime-local"
+                      value={fechaProgramada}
+                      min={defaultFechaProgramada().slice(0, 10) + "T00:00"}
+                      onChange={(e) => setFechaProgramada(e.target.value)}
+                      className="border border-ys-border rounded-[10px] px-3.5 py-[11px] text-[13.5px] font-semibold text-ys-text outline-none transition-colors focus:border-ys-green"
+                    />
+                  </div>
+                )}
+
                 <div className="text-[12.5px] text-ys-muted font-medium">
-                  La campaña comenzará a enviarse después de confirmar.
+                  {momento === "programar"
+                    ? "La campaña se enviará automáticamente en la fecha y hora elegidas."
+                    : "La campaña comenzará a enviarse después de confirmar."}
                 </div>
               </div>
 
@@ -408,7 +472,10 @@ export default function CampaignWizardModal({
                   </div>
                 </div>
                 <div className="text-sm leading-[1.55] text-ys-border-softest font-semibold">
-                  Los envíos de los martes a las 10:00 obtienen un 31% más de respuestas que el resto de la semana.
+                  {insightCargando
+                    ? "Analizando tus campañas anteriores..."
+                    : insight ??
+                      "Todavía no tenemos suficientes datos históricos para un insight personalizado."}
                 </div>
               </div>
             </div>
@@ -416,7 +483,7 @@ export default function CampaignWizardModal({
               onBack={() => setPaso(2)}
               backLabel="Atrás"
               onNext={() => setPaso(4)}
-              nextDisabled={!nombre.trim()}
+              nextDisabled={!nombre.trim() || (momento === "programar" && !fechaProgramada)}
             />
           </>
         )}

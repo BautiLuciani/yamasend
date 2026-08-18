@@ -43,6 +43,8 @@ import {
   saveTemplateDraftAction,
   sendTemplateToMetaAction,
   deleteTemplateDraftAction,
+  sendCampaignAction,
+  getCampaignInsightAction,
 } from "@/lib/actions/write";
 import {
   syncAndAnalyzeAction,
@@ -522,7 +524,7 @@ export default function AppShell({
 
       {activeSection === "campanas" && (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
-          <Campanas onNewCampaign={() => setWizardOpen(true)} />
+          <Campanas campaigns={campaigns} onNewCampaign={() => setWizardOpen(true)} />
         </div>
       )}
 
@@ -745,15 +747,50 @@ export default function AppShell({
         templates={templates}
         costPerMsg={COST_PER_MSG}
         onClose={() => setWizardOpen(false)}
-        onConfirm={async ({ nombre, listaId, templateId, contactosIds }) => {
-          const result = await saveCampaignAction(nombre, listaId, templateId, contactosIds);
-          if (!result.error) {
+        onFetchInsight={async () => {
+          const result = await getCampaignInsightAction();
+          return { insight: result.insight, error: result.error };
+        }}
+        onConfirm={async ({ nombre, listaId, templateId, contactosIds, momento, fechaProgramada }) => {
+          const saveResult = await saveCampaignAction(
+            nombre,
+            listaId,
+            templateId,
+            contactosIds,
+            momento === "programar" ? fechaProgramada : null,
+          );
+
+          if (saveResult.error || !saveResult.id) {
+            return { error: saveResult.error };
+          }
+
+          if (momento === "programar") {
             addMsg(
-              `✅ Campaña "${nombre}" enviada a ${contactosIds.length} contactos.`,
+              `🕒 Campaña "${nombre}" programada para ${fechaProgramada ? new Date(fechaProgramada).toLocaleString("es-AR") : ""}.`,
             );
             router.refresh();
+            return { error: null };
           }
-          return { error: result.error };
+
+          const template = templates.find((t) => t.id === templateId);
+          const sendResult = await sendCampaignAction(
+            saveResult.id,
+            listaId ?? "",
+            template?.nombre ?? "",
+            template?.templateLang ?? "es_AR",
+            false,
+            contactosIds.length,
+          );
+
+          if (sendResult.error) {
+            return { error: sendResult.error };
+          }
+
+          addMsg(
+            `✅ Campaña "${nombre}" enviándose a ${contactosIds.length} contactos.`,
+          );
+          router.refresh();
+          return { error: null };
         }}
       />
 
