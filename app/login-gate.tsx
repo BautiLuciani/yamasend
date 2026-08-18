@@ -5,13 +5,19 @@ import LoginScreen from "@/components/yamasend/LoginScreen";
 import { loginAction, registerAction } from "@/lib/actions/auth";
 import type { PlanKey } from "@/lib/types";
 
-export default function LoginGate() {
+export default function LoginGate({
+  initialTab,
+  redirectTo = "/panel",
+}: {
+  initialTab?: "login" | "register";
+  redirectTo?: string;
+}) {
   const router = useRouter();
 
   async function handleLogin(email: string, password: string) {
     const { error } = await loginAction(email, password);
     if (error) return error;
-    router.refresh();
+    router.push(redirectTo);
     return null;
   }
 
@@ -24,9 +30,16 @@ export default function LoginGate() {
   }) {
     const { error } = await registerAction(data);
     if (error) return error;
-    router.refresh();
+    router.push(redirectTo);
     return null;
   }
 
-  return <LoginScreen onLogin={handleLogin} onRegister={handleRegister} />;
+  return (
+    <LoginScreen
+      onLogin={handleLogin}
+      onRegister={handleRegister}
+      initialTab={initialTab}
+      onTabChange={(next) => router.replace(`/${next}`)}
+    />
+  );
 }

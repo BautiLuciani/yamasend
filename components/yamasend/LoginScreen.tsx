@@ -13,6 +13,8 @@ interface LoginScreenProps {
     password: string;
     plan: PlanKey;
   }) => Promise<string | null>;
+  initialTab?: "login" | "register";
+  onTabChange?: (tab: "login" | "register") => void;
 }
 
 const PLANS: { key: PlanKey; nombre: string; precio: string; features: string[] }[] = [
@@ -42,8 +44,17 @@ const PLANS: { key: PlanKey; nombre: string; precio: string; features: string[] 
   },
 ];
 
-export default function LoginScreen({ onLogin, onRegister }: LoginScreenProps) {
-  const [tab, setTab] = useState<"login" | "register">("login");
+export default function LoginScreen({
+  onLogin,
+  onRegister,
+  initialTab = "login",
+  onTabChange,
+}: LoginScreenProps) {
+  const [tab, setTabState] = useState<"login" | "register">(initialTab);
+  const setTab = (next: "login" | "register") => {
+    setTabState(next);
+    onTabChange?.(next);
+  };
   const [regStep, setRegStep] = useState<1 | 2>(1);
   const [success, setSuccess] = useState<{ title: string; sub: string } | null>(
     null,

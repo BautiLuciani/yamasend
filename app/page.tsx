@@ -1,35 +1,24 @@
-import { getCurrentAppUser, getContactsForTenant } from "@/lib/actions/user";
-import {
-  getTemplatesForTenant,
-  getListsForTenant,
-  getCampaignsForTenant,
-} from "@/lib/actions/campaigns";
-import LoginGate from "./login-gate";
-import AppShell from "@/components/yamasend/AppShell";
-import { logoutAction } from "@/lib/actions/auth";
+import type { Metadata } from "next";
+import Landing from "@/components/yamasend/Landing";
 
-export default async function Home() {
-  const user = await getCurrentAppUser();
+export const metadata: Metadata = {
+  title: "YamaSend — Mensajería masiva por WhatsApp con IA",
+  description:
+    "Creá campañas, organizá tus contactos y aprovechá la inteligencia artificial para comunicarte mejor por WhatsApp, todo desde un solo lugar.",
+  openGraph: {
+    title: "YamaSend — Mensajería masiva por WhatsApp con IA",
+    description:
+      "Creá campañas, organizá tus contactos y aprovechá la inteligencia artificial para comunicarte mejor por WhatsApp, todo desde un solo lugar.",
+    url: "/",
+    siteName: "YamaSend",
+    locale: "es_AR",
+    type: "website",
+  },
+  alternates: {
+    canonical: "/",
+  },
+};
 
-  if (!user) {
-    return <LoginGate />;
-  }
-
-  const [contacts, templates, lists, campaigns] = await Promise.all([
-    getContactsForTenant(user.tenantId),
-    getTemplatesForTenant(user.tenantId),
-    getListsForTenant(user.tenantId),
-    getCampaignsForTenant(user.tenantId),
-  ]);
-
-  return (
-    <AppShell
-      user={user}
-      contacts={contacts}
-      templates={templates}
-      lists={lists}
-      campaigns={campaigns}
-      onLogout={logoutAction}
-    />
-  );
+export default function Home() {
+  return <Landing />;
 }
