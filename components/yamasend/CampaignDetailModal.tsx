@@ -283,12 +283,6 @@ export default function CampaignDetailModal({
                     Eliminar campaña
                   </button>
                 )}
-                <button
-                  onClick={onClose}
-                  className="text-[13.5px] font-bold text-[#3f4844] border border-[#e8ebe9] rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
-                >
-                  Cerrar
-                </button>
                 {detail.status === "borrador" && onContinueDraft && (
                   <button
                     onClick={() => onContinueDraft(detail.id)}
