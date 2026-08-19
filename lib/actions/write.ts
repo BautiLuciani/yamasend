@@ -409,6 +409,70 @@ export async function sendCampaignAction(
  * aprobación, para no dejar una fila "borrador" duplicada con la nueva
  * fila "enviado" que crea el workflow de n8n.
  */
+/**
+ * Elimina una campaña y sus mensajes asociados. Bloqueada para campañas en
+ * estado "enviando" (hay un envío en curso disparado por el workflow de
+ * n8n; borrarla a mitad de camino dejaría el envío corriendo sin ningún
+ * registro al que actualizar). El resto de los estados (borrador,
+ * programada, enviado, error, cancelado) se pueden eliminar libremente.
+ */
+export async function deleteCampaignAction(
+  campaignId: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { data: campana, error: campanaError } = await supabase
+    .from("yamas_send_campanas")
+    .select("id, status")
+    .eq("id", campaignId)
+    .eq("tenant_id", cliente.tenant_id)
+    .maybeSingle();
+
+  if (campanaError || !campana) {
+    return { error: "No se encontró la campaña." };
+  }
+
+  if (campana.status === "enviando") {
+    return {
+      error: "No se puede eliminar una campaña que está enviándose en este momento.",
+    };
+  }
+
+  const { error: mensajesError } = await supabase
+    .from("yamas_send_mensajes")
+    .delete()
+    .eq("campana_id", campaignId)
+    .eq("tenant_id", cliente.tenant_id);
+
+  if (mensajesError) return { error: mensajesError.message };
+
+  const { error: campanaDeleteError } = await supabase
+    .from("yamas_send_campanas")
+    .delete()
+    .eq("id", campaignId)
+    .eq("tenant_id", cliente.tenant_id);
+
+  if (campanaDeleteError) return { error: campanaDeleteError.message };
+
+  return { error: null };
+}
+
 export async function deleteTemplateDraftAction(
   templateId: string,
 ): Promise<{ error: string | null }> {

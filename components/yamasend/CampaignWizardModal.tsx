@@ -20,6 +20,17 @@ interface CampaignWizardModalProps {
     momento: "ahora" | "programar";
     fechaProgramada: string | null;
   }) => Promise<{ error: string | null }>;
+  /**
+   * Valores iniciales para precargar el wizard, usado por "Duplicar
+   * campaña": arranca directo en el paso de revisión con el mismo grupo,
+   * template y un nombre sugerido, en vez de empezar vacío en el paso 1.
+   */
+  initial?: {
+    nombre: string;
+    listaId: string | null;
+    templateId: string | null;
+    paso: Paso;
+  };
 }
 
 function defaultFechaProgramada(): string {
@@ -39,11 +50,12 @@ export default function CampaignWizardModal({
   onClose,
   onFetchInsight,
   onConfirm,
+  initial,
 }: CampaignWizardModalProps) {
-  const [paso, setPaso] = useState<Paso>(1);
-  const [listaId, setListaId] = useState<string | null>(null);
-  const [templateId, setTemplateId] = useState<string | null>(null);
-  const [nombre, setNombre] = useState("");
+  const [paso, setPaso] = useState<Paso>(initial?.paso ?? 1);
+  const [listaId, setListaId] = useState<string | null>(initial?.listaId ?? null);
+  const [templateId, setTemplateId] = useState<string | null>(initial?.templateId ?? null);
+  const [nombre, setNombre] = useState(initial?.nombre ?? "");
   const [momento, setMomento] = useState<"ahora" | "programar">("ahora");
   const [fechaProgramada, setFechaProgramada] = useState(defaultFechaProgramada());
   const [buscarGrupo, setBuscarGrupo] = useState("");
@@ -73,10 +85,10 @@ export default function CampaignWizardModal({
   }, [open, paso]);
 
   function resetState() {
-    setPaso(1);
-    setListaId(null);
-    setTemplateId(null);
-    setNombre("");
+    setPaso(initial?.paso ?? 1);
+    setListaId(initial?.listaId ?? null);
+    setTemplateId(initial?.templateId ?? null);
+    setNombre(initial?.nombre ?? "");
     setMomento("ahora");
     setFechaProgramada(defaultFechaProgramada());
     setBuscarGrupo("");

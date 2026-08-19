@@ -10,7 +10,8 @@ interface CampaignDetailModalProps {
   onFetchDetail: (tenantId: string, campaignId: string) => Promise<CampaignDetail | null>;
   onFetchInsight: () => Promise<{ insight: string | null; error: string | null }>;
   onContinueDraft?: (campaignId: string) => void;
-  onDuplicate?: (campaignId: string) => void;
+  onDuplicate?: (detail: CampaignDetail) => void;
+  onDelete?: (campaignId: string) => Promise<{ error: string | null }>;
 }
 
 const ESTADO_BADGE: Record<
@@ -59,9 +60,13 @@ export default function CampaignDetailModal({
   onFetchInsight,
   onContinueDraft,
   onDuplicate,
+  onDelete,
 }: CampaignDetailModalProps) {
   const [detail, setDetail] = useState<CampaignDetail | null>(null);
   const [insight, setInsight] = useState<string | null>(null);
+  const [confirmandoEliminar, setConfirmandoEliminar] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
   const loading = detail === null;
 
   useEffect(() => {
@@ -90,6 +95,21 @@ export default function CampaignDetailModal({
 
   const conMetricas = detail && (detail.status === "enviado" || detail.status === "error");
   const badge = detail ? ESTADO_BADGE[detail.status] : null;
+  const puedeEliminar = detail && detail.status !== "enviando";
+
+  async function handleEliminar() {
+    if (!detail || !onDelete) return;
+    setEliminando(true);
+    setErrorEliminar(null);
+    const result = await onDelete(detail.id);
+    setEliminando(false);
+    if (result.error) {
+      setErrorEliminar(result.error);
+      setConfirmandoEliminar(false);
+    }
+    // Si no hay error, el padre ya cierra el modal (onDelete hace
+    // setDetailCampaignId(null) tras eliminar con éxito).
+  }
 
   return (
     <div
@@ -225,30 +245,68 @@ export default function CampaignDetailModal({
               </div>
             </div>
 
-            <div className="flex items-center gap-2.5 border-t border-[#f2f4f3] pt-[18px]">
-              <button
-                onClick={onClose}
-                className="text-[13.5px] font-bold text-[#3f4844] border border-[#e8ebe9] rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
-              >
-                Cerrar
-              </button>
-              {detail.status === "borrador" && onContinueDraft && (
+            {errorEliminar && (
+              <div className="rounded-lg bg-ys-red-bg border border-[#f1cdc8] text-[#a8443b] px-3.5 py-2.5 text-[13px] font-medium">
+                {errorEliminar}
+              </div>
+            )}
+
+            {confirmandoEliminar ? (
+              <div className="border-t border-[#f2f4f3] pt-[18px] flex flex-col gap-3">
+                <div className="text-[13.5px] font-semibold text-ys-text">
+                  ¿Eliminar la campaña &ldquo;{detail.nombre}&rdquo;? Esta acción no se puede deshacer.
+                </div>
+                <div className="flex justify-end gap-2.5">
+                  <button
+                    onClick={() => setConfirmandoEliminar(false)}
+                    disabled={eliminando}
+                    className="text-[13.5px] font-bold text-[#3f4844] border border-[#e8ebe9] rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50"
+                  >
+                    Volver
+                  </button>
+                  <button
+                    onClick={handleEliminar}
+                    disabled={eliminando}
+                    className="text-[13.5px] font-bold text-white bg-[#a8443b] rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#8f3931] disabled:opacity-60"
+                  >
+                    {eliminando ? "Eliminando..." : "Sí, eliminar"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2.5 border-t border-[#f2f4f3] pt-[18px]">
+                {onDelete && puedeEliminar && (
+                  <button
+                    onClick={() => setConfirmandoEliminar(true)}
+                    className="text-[13.5px] font-bold text-[#a8443b] border border-[#f1cdc8] rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#fdeeec]"
+                  >
+                    Eliminar campaña
+                  </button>
+                )}
                 <button
-                  onClick={() => onContinueDraft(detail.id)}
-                  className="ml-auto text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                  onClick={onClose}
+                  className="text-[13.5px] font-bold text-[#3f4844] border border-[#e8ebe9] rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
                 >
-                  Continuar configuración
+                  Cerrar
                 </button>
-              )}
-              {detail.status !== "borrador" && onDuplicate && (
-                <button
-                  onClick={() => onDuplicate(detail.id)}
-                  className="ml-auto text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-                >
-                  Duplicar campaña
-                </button>
-              )}
-            </div>
+                {detail.status === "borrador" && onContinueDraft && (
+                  <button
+                    onClick={() => onContinueDraft(detail.id)}
+                    className="ml-auto text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                  >
+                    Continuar configuración
+                  </button>
+                )}
+                {detail.status !== "borrador" && onDuplicate && (
+                  <button
+                    onClick={() => onDuplicate(detail)}
+                    className="ml-auto text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+                  >
+                    Duplicar campaña
+                  </button>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

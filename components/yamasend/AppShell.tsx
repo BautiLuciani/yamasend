@@ -48,6 +48,7 @@ import {
   refreshTemplatesAction,
   sendCampaignAction,
   getCampaignInsightAction,
+  deleteCampaignAction,
 } from "@/lib/actions/write";
 import {
   syncAndAnalyzeAction,
@@ -171,6 +172,12 @@ export default function AppShell({
   const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [detailCampaignId, setDetailCampaignId] = useState<string | null>(null);
+  const [wizardInitial, setWizardInitial] = useState<{
+    nombre: string;
+    listaId: string | null;
+    templateId: string | null;
+    paso: 1 | 2 | 3 | 4;
+  } | null>(null);
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -643,7 +650,10 @@ export default function AppShell({
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
           <Campanas
             campaigns={campaigns}
-            onNewCampaign={() => setWizardOpen(true)}
+            onNewCampaign={() => {
+              setWizardInitial(null);
+              setWizardOpen(true);
+            }}
             onOpenCampaign={(campaignId) => setDetailCampaignId(campaignId)}
           />
         </div>
@@ -863,10 +873,12 @@ export default function AppShell({
       />
 
       <CampaignWizardModal
+        key={wizardInitial ? `dup-${wizardInitial.nombre}` : "new"}
         open={wizardOpen}
         lists={lists}
         templates={templates}
         costPerMsg={COST_PER_MSG}
+        initial={wizardInitial ?? undefined}
         onClose={() => setWizardOpen(false)}
         onFetchInsight={async () => {
           const result = await getCampaignInsightAction();
@@ -923,6 +935,29 @@ export default function AppShell({
         onFetchInsight={async () => {
           const result = await getCampaignInsightAction();
           return { insight: result.insight, error: result.error };
+        }}
+        onDuplicate={(detail) => {
+          setDetailCampaignId(null);
+          const listaExiste = !!detail.listaId && lists.some((l) => l.id === detail.listaId);
+          const templateExiste = !!detail.templateId && templates.some((t) => t.id === detail.templateId);
+          setWizardInitial({
+            nombre: `${detail.nombre} (copia)`,
+            listaId: listaExiste ? detail.listaId : null,
+            templateId: templateExiste ? detail.templateId : null,
+            paso: listaExiste && templateExiste ? 4 : 1,
+          });
+          setWizardOpen(true);
+        }}
+        onDelete={async (campaignId) => {
+          const result = await deleteCampaignAction(campaignId);
+          if (result.error) {
+            addMsg(`⚠️ No se pudo eliminar la campaña: ${result.error}`, "error");
+            return { error: result.error };
+          }
+          addMsg("Campaña eliminada ✓");
+          setDetailCampaignId(null);
+          router.refresh();
+          return { error: null };
         }}
         key={detailCampaignId ?? "closed"}
       />
@@ -1017,6 +1052,7 @@ export default function AppShell({
         }}
         onCreateCampaign={() => {
           setOpenGroupId(null);
+          setWizardInitial(null);
           setWizardOpen(true);
         }}
       />
