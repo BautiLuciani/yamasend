@@ -1,3 +1,5 @@
+"use server";
+
 import { createClient } from "@/lib/supabase/server";
 import type { Campaign, CampaignDetail, ContactList, Template } from "@/lib/types";
 
