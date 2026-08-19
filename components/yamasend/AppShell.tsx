@@ -439,8 +439,16 @@ export default function AppShell({
     // para que no quede duplicada con la nueva fila "enviado" que acaba de
     // crear el workflow de n8n. Se hace después de confirmar el envío para
     // no perder el borrador si sendTemplateToMetaAction hubiese fallado.
+    // Si el borrado falla, avisamos: el template igual se envió a Meta
+    // correctamente, pero puede quedar una fila "borrador" duplicada.
     if (tplId) {
-      await deleteTemplateDraftAction(tplId);
+      const deleteResult = await deleteTemplateDraftAction(tplId);
+      if (deleteResult.error) {
+        addMsg(
+          `⚠️ El template se envió a Meta, pero no pude limpiar el borrador anterior: ${deleteResult.error}`,
+          "error",
+        );
+      }
     }
 
     addMsg(result.mensaje);
