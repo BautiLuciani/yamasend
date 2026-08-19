@@ -26,6 +26,7 @@ import Campanas from "./Campanas";
 import CampaignWizardModal from "./CampaignWizardModal";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
+import LogoutModal from "./LogoutModal";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
 import ContactsPagination from "./ContactsPagination";
@@ -88,6 +89,8 @@ export default function AppShell({
   const [activeSection, setActiveSection] = useState<AppSection>("dashboard");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileView, setProfileView] = useState<"profile" | "settings">("profile");
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
   const [modo24h, setModo24h] = useState(false);
@@ -460,9 +463,21 @@ export default function AppShell({
     }, 500);
   }
 
-  async function handleLogout() {
+  function handleLogout() {
+    setProfileOpen(false);
+    setDrawerOpen(false);
+    setLogoutModalOpen(true);
+  }
+
+  async function handleConfirmLogout() {
+    setLogoutModalOpen(false);
     await onLogout();
     router.refresh();
+  }
+
+  function handleOpenSettings() {
+    setProfileView("settings");
+    setProfileOpen(true);
   }
 
   const planLabel = PLAN_LABELS[user.plan] || user.plan;
@@ -475,6 +490,7 @@ export default function AppShell({
         userName={user.contactoNombre}
         planLabel={planLabel}
         onLogout={handleLogout}
+        onOpenSettings={handleOpenSettings}
       />
 
       <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} />
@@ -486,13 +502,22 @@ export default function AppShell({
         userName={user.contactoNombre}
         planLabel={planLabel}
         onLogout={handleLogout}
+        onOpenSettings={handleOpenSettings}
       />
 
       <ProfileDrawer
         open={profileOpen}
         user={user}
+        view={profileView}
+        onViewChange={setProfileView}
         onClose={() => setProfileOpen(false)}
         onLogout={handleLogout}
+      />
+
+      <LogoutModal
+        open={logoutModalOpen}
+        onClose={() => setLogoutModalOpen(false)}
+        onConfirm={handleConfirmLogout}
       />
 
       {activeSection === "dashboard" && (

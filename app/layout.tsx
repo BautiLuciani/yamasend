@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Manrope, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/yamasend/ThemeContext";
+import { LangProvider } from "@/components/yamasend/LangContext";
 
 const manrope = Manrope({
   variable: "--font-manrope",
@@ -19,6 +21,22 @@ export const metadata: Metadata = {
   description: "YamaSend — AI mass messaging para WhatsApp Business",
 };
 
+// Se ejecuta antes del primer paint para evitar el flash de tema claro
+// cuando el usuario ya tenía guardada la preferencia oscura.
+const THEME_INIT_SCRIPT = `
+(function () {
+  try {
+    var stored = localStorage.getItem('yamasend-theme');
+    var theme = stored === 'dark' || stored === 'light'
+      ? stored
+      : (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    }
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -28,10 +46,14 @@ export default function RootLayout({
     <html
       lang="es"
       className={`${manrope.variable} ${ibmPlexMono.variable} h-full antialiased`}
-      data-theme="yamasend"
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="h-full flex flex-col overflow-hidden bg-ys-bg text-ys-text">
-        {children}
+        <ThemeProvider>
+          <LangProvider>{children}</LangProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
