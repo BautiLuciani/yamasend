@@ -44,6 +44,7 @@ import {
   saveTemplateDraftAction,
   sendTemplateToMetaAction,
   deleteTemplateDraftAction,
+  refreshTemplatesAction,
   sendCampaignAction,
   getCampaignInsightAction,
 } from "@/lib/actions/write";
@@ -80,12 +81,20 @@ const COST_PER_MSG = 0.0618;
 export default function AppShell({
   user,
   contacts,
-  templates,
+  templates: templatesProp,
   lists,
   campaigns,
   onLogout,
 }: AppShellProps) {
   const router = useRouter();
+  // Estado local de templates, sincronizado inicialmente con la prop del
+  // server component. Necesario para poder actualizarlo desde el polling de
+  // abajo sin depender de router.refresh() (que recarga todo /panel).
+  const [templates, setTemplates] = useState<Template[]>(templatesProp);
+  useEffect(() => {
+    setTemplates(templatesProp);
+  }, [templatesProp]);
+
   const [activeSection, setActiveSection] = useState<AppSection>("dashboard");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -201,6 +210,39 @@ export default function AppShell({
       }
     };
   }, [qrOpen, fetchQrStatus]);
+
+  // Polling de templates: mientras haya alguno en estado "enviado" (esperando
+  // revisión de Meta), consultamos cada 20s para reflejar el cambio a
+  // "verificado"/"rechazado" apenas llegue, sin que el usuario tenga que
+  // refrescar la página. Se frena solo cuando ya no queda ningún "enviado".
+  const templatesPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hayTemplatesEnviados = templates.some((t) => t.status === "enviado");
+
+  useEffect(() => {
+    if (!hayTemplatesEnviados) {
+      if (templatesPollTimeoutRef.current) clearTimeout(templatesPollTimeoutRef.current);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function pollTemplates() {
+      const result = await refreshTemplatesAction();
+      if (!cancelled && result.templates) {
+        setTemplates(result.templates);
+      }
+      if (!cancelled) {
+        templatesPollTimeoutRef.current = setTimeout(pollTemplates, 20000);
+      }
+    }
+
+    templatesPollTimeoutRef.current = setTimeout(pollTemplates, 20000);
+
+    return () => {
+      cancelled = true;
+      if (templatesPollTimeoutRef.current) clearTimeout(templatesPollTimeoutRef.current);
+    };
+  }, [hayTemplatesEnviados]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     {

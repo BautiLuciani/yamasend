@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import type { Template } from "@/lib/types";
 
 export interface SaveResult {
   id: string | null;
@@ -666,9 +667,59 @@ export async function sendTemplateToMetaAction(
 const CAMPAIGN_INSIGHT_WEBHOOK_URL =
   "https://yamasai.app.n8n.cloud/webhook/yamasend-insight-campanas";
 
-export interface CampaignInsightResult {
-  insight: string | null;
+export interface RefreshTemplatesResult {
+  templates: Template[] | null;
   error: string | null;
+}
+
+/**
+ * Devuelve los templates del tenant logueado en su estado actual. Pensada
+ * para ser invocada periódicamente desde el cliente (polling) mientras haya
+ * templates en estado "enviado", ya que el cambio de status llega vía
+ * webhook de YCloud y el panel no tiene otra forma de enterarse sin recargar
+ * la página. Reutiliza el mismo mapeo que getTemplatesForTenant.
+ */
+export async function refreshTemplatesAction(): Promise<RefreshTemplatesResult> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { templates: null, error: "No hay sesión activa." };
+
+  const { data: cliente, error: clienteError } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (clienteError || !cliente?.tenant_id) {
+    return { templates: null, error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { data: rows, error } = await supabase
+    .from("yamas_send_templates")
+    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang")
+    .eq("tenant_id", cliente.tenant_id)
+    .order("created_at", { ascending: false });
+
+  if (error || !rows) {
+    return { templates: null, error: error?.message ?? "No se pudieron traer los templates." };
+  }
+
+  const templates: Template[] = rows.map((r) => ({
+    id: r.id,
+    nombre: r.nombre,
+    contenido: r.contenido,
+    status: (r.status as Template["status"]) ?? "borrador",
+    tipo: r.template_type ?? "marketing",
+    precio: "0.0618",
+    rechazoMotivo: r.meta_rechazo_motivo ?? null,
+    templateLang: r.template_lang ?? "es_AR",
+  }));
+
+  return { templates, error: null };
 }
 
 /**
@@ -676,6 +727,11 @@ export interface CampaignInsightResult {
  * generó uno hoy. Si no hay cache vigente, llama al workflow de n8n, que es
  * quien se encarga de guardar el resultado nuevo en la tabla de cache.
  */
+export interface CampaignInsightResult {
+  insight: string | null;
+  error: string | null;
+}
+
 export async function getCampaignInsightAction(): Promise<CampaignInsightResult> {
   const supabase = await createClient();
 
