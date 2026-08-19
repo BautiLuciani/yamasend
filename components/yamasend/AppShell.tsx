@@ -95,7 +95,44 @@ export default function AppShell({
     setTemplates(templatesProp);
   }, [templatesProp]);
 
-  const [activeSection, setActiveSection] = useState<AppSection>("dashboard");
+  const VALID_SECTIONS: AppSection[] = [
+    "dashboard",
+    "contactos",
+    "grupos",
+    "templates",
+    "campanas",
+    "ia",
+  ];
+
+  // La sección activa se guarda en la URL (?section=...) para que sobreviva
+  // a un refresh de página. Usamos window.history.replaceState en vez de
+  // useSearchParams/router.push a propósito: useSearchParams exigiría envolver
+  // todo AppShell en <Suspense> (990 líneas) y router.push/replace dispara el
+  // loading spinner de Next en cada cambio de tab, que no queremos acá — mismo
+  // criterio que ya usamos para otros toggles que no deben mostrar loading state.
+  function getInitialSection(): AppSection {
+    if (typeof window === "undefined") return "dashboard";
+    const param = new URLSearchParams(window.location.search).get("section");
+    return VALID_SECTIONS.includes(param as AppSection)
+      ? (param as AppSection)
+      : "dashboard";
+  }
+
+  const [activeSection, setActiveSectionState] = useState<AppSection>(getInitialSection);
+
+  function setActiveSection(section: AppSection) {
+    setActiveSectionState(section);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (section === "dashboard") {
+        url.searchParams.delete("section");
+      } else {
+        url.searchParams.set("section", section);
+      }
+      window.history.replaceState(null, "", url.toString());
+    }
+  }
+
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileView, setProfileView] = useState<"profile" | "settings">("profile");
