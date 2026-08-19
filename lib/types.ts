@@ -78,6 +78,20 @@ export interface Campaign {
   createdAt: string | null;
 }
 
+/**
+ * Detalle ampliado de una campaña para el modal de "Recorrido de la
+ * campaña". Se pide bajo demanda (al abrir el modal) en vez de traerse en
+ * la carga inicial del panel, para que las métricas estén siempre frescas
+ * mientras una campaña está "enviando".
+ */
+export interface CampaignDetail extends Campaign {
+  mensajesOk: number;
+  mensajesError: number;
+  respuestas: number;
+  costoUsd: number | null;
+  duracionMin: number | null;
+}
+
 export interface AppUser {
   id: string;
   tenantId: string;

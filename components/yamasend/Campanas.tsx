@@ -6,6 +6,7 @@ import type { Campaign, CampaignStatus } from "@/lib/types";
 interface CampanasProps {
   campaigns: Campaign[];
   onNewCampaign: () => void;
+  onOpenCampaign: (campaignId: string) => void;
 }
 
 const ESTADO_CONFIG: Record<
@@ -71,7 +72,7 @@ function useClickOutside(onOutside: () => void) {
   return ref;
 }
 
-export default function Campanas({ campaigns, onNewCampaign }: CampanasProps) {
+export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign }: CampanasProps) {
   const [query, setQuery] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<CampaignStatus | "todas">("todas");
   const [periodoFiltro, setPeriodoFiltro] = useState<Periodo>("todo");
@@ -280,7 +281,8 @@ export default function Campanas({ campaigns, onNewCampaign }: CampanasProps) {
           {filtered.map((c, i) => (
             <div
               key={c.id}
-              className={`grid grid-cols-1 md:grid-cols-[2.4fr_1.5fr_1.5fr_1.25fr_1.15fr] items-center gap-1.5 md:gap-0 px-4 md:px-6 py-3.5 ${
+              onClick={() => onOpenCampaign(c.id)}
+              className={`grid grid-cols-1 md:grid-cols-[2.4fr_1.5fr_1.5fr_1.25fr_1.15fr] items-center gap-1.5 md:gap-0 px-4 md:px-6 py-3.5 cursor-pointer transition-colors hover:bg-[#fbfcfb] ${
                 i > 0 ? "border-t border-ys-border-softer" : ""
               }`}
             >

@@ -24,6 +24,7 @@ import TemplateCreateModal from "./TemplateCreateModal";
 import TemplateDetailModal from "./TemplateDetailModal";
 import Campanas from "./Campanas";
 import CampaignWizardModal from "./CampaignWizardModal";
+import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
 import LogoutModal from "./LogoutModal";
@@ -53,6 +54,7 @@ import {
   setTemperaturaManualAction,
   generarTemplateConIAAction,
 } from "@/lib/actions/sync";
+import { getCampaignDetailAction } from "@/lib/actions/campaigns";
 import { createClient } from "@/lib/supabase/client";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -168,6 +170,7 @@ export default function AppShell({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [detailCampaignId, setDetailCampaignId] = useState<string | null>(null);
 
   const fetchQrStatus = useCallback(async () => {
     try {
@@ -638,7 +641,11 @@ export default function AppShell({
 
       {activeSection === "campanas" && (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
-          <Campanas campaigns={campaigns} onNewCampaign={() => setWizardOpen(true)} />
+          <Campanas
+            campaigns={campaigns}
+            onNewCampaign={() => setWizardOpen(true)}
+            onOpenCampaign={(campaignId) => setDetailCampaignId(campaignId)}
+          />
         </div>
       )}
 
@@ -906,6 +913,18 @@ export default function AppShell({
           router.refresh();
           return { error: null };
         }}
+      />
+
+      <CampaignDetailModal
+        campaignId={detailCampaignId}
+        tenantId={user.tenantId}
+        onClose={() => setDetailCampaignId(null)}
+        onFetchDetail={getCampaignDetailAction}
+        onFetchInsight={async () => {
+          const result = await getCampaignInsightAction();
+          return { insight: result.insight, error: result.error };
+        }}
+        key={detailCampaignId ?? "closed"}
       />
 
       <CreateGroupModal
