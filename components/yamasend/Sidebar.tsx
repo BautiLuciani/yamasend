@@ -11,7 +11,6 @@ interface SidebarProps {
   userName: string;
   planLabel: string;
   onLogout: () => void;
-  onOpenSettings: () => void;
 }
 
 const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
@@ -86,7 +85,6 @@ export default function Sidebar({
   userName,
   planLabel,
   onLogout,
-  onOpenSettings,
 }: SidebarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { t } = useLang();
@@ -140,19 +138,13 @@ export default function Sidebar({
               </svg>
               Mi perfil
             </div>
-            <button
-              onClick={() => {
-                setMenuOpen(false);
-                onOpenSettings();
-              }}
-              className="flex items-center gap-2.5 px-[11px] py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-pointer hover:bg-ys-el2 transition-colors text-left"
-            >
+            <div className="flex items-center gap-2.5 px-[11px] py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
                 <path d="M8 1.8v1.6M8 12.6v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9 12 12M12 4l-1.1 1.1M5.1 10.9 4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
               {t("profile_settings")}
-            </button>
+            </div>
             <div className="h-px bg-ys-border-softest my-1 mx-1.5" />
             <button
               onClick={onLogout}

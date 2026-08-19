@@ -475,6 +475,10 @@ export default function AppShell({
     router.refresh();
   }
 
+  // Configuración (tema/idioma) deshabilitada a pedido de Bauti (2026-08-18):
+  // el botón que abría este panel se ocultó, pero se deja la función lista
+  // para reactivar fácilmente el acceso más adelante.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleOpenSettings() {
     setProfileView("settings");
     setProfileOpen(true);
@@ -490,7 +494,6 @@ export default function AppShell({
         userName={user.contactoNombre}
         planLabel={planLabel}
         onLogout={handleLogout}
-        onOpenSettings={handleOpenSettings}
       />
 
       <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} />
@@ -502,7 +505,6 @@ export default function AppShell({
         userName={user.contactoNombre}
         planLabel={planLabel}
         onLogout={handleLogout}
-        onOpenSettings={handleOpenSettings}
       />
 
       <ProfileDrawer
