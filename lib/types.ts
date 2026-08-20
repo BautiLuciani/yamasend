@@ -105,10 +105,74 @@ export interface AppUser {
 
 export type ChatMsgType = "user" | "bot" | "error";
 
+/**
+ * Payload opcional que acompaña un mensaje del bot y le dice a IA.tsx qué
+ * tarjeta interactiva renderizar debajo del texto (espejo de los `hasX` del
+ * prototipo de Claude Design: hasGrupo, hasContactos, hasCampana, etc).
+ * Cada variante trae solo los datos que esa tarjeta necesita para pintarse
+ * y para poder ejecutar su acción de confirmación.
+ */
+export type ChatPayload =
+  | {
+      kind: "seleccionar_contactos";
+      // Ids preseleccionados (ej: si el usuario pidió "los que preguntaron
+      // por X" y ya corrimos el análisis de IA sobre esa consulta).
+      preselectedIds: string[];
+      // Si viene de una búsqueda por IA, mostramos de dónde salió el filtro.
+      consultaUsada?: string | null;
+    }
+  | {
+      kind: "confirmar_grupo";
+      nombre: string;
+      contactosIds: string[];
+    }
+  | {
+      kind: "grupo_creado";
+      grupoId: string;
+      nombre: string;
+      totalContactos: number;
+    }
+  | {
+      kind: "follow_ups";
+      opciones: string[];
+    };
+
 export interface ChatMessage {
   id: string;
   text: string;
   type: ChatMsgType;
+  payload?: ChatPayload;
+}
+
+/** Flujos guiados que el agente de IA puede llevar adelante paso a paso. */
+export type IAFlowKind = "crear_grupo" | "crear_template" | "crear_campana";
+
+export type IAFlowStep =
+  // crear_grupo
+  | "grupo_esperando_nombre"
+  | "grupo_esperando_contactos"
+  | "grupo_esperando_confirmacion";
+
+export interface IAFlowState {
+  kind: IAFlowKind | null;
+  step: IAFlowStep | null;
+  draft: {
+    nombre?: string;
+    contactosIds?: string[];
+    consultaUsada?: string | null;
+  };
+}
+
+export const IA_FLOW_IDLE: IAFlowState = {
+  kind: null,
+  step: null,
+  draft: {},
+};
+
+/** Historial resumido que se le manda al clasificador de intención (LLM). */
+export interface IAHistoryTurn {
+  role: "user" | "assistant";
+  text: string;
 }
 
 export type KpiFilterKey =

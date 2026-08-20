@@ -7,12 +7,16 @@ import type {
   AppUser,
   Campaign,
   ChatMessage,
+  ChatPayload,
   Contact,
   ContactList,
+  IAFlowState,
+  IAHistoryTurn,
   KpiFilterKey,
   StatusState,
   Template,
 } from "@/lib/types";
+import { IA_FLOW_IDLE } from "@/lib/types";
 import Sidebar from "./Sidebar";
 import MobileHeader from "./MobileHeader";
 import MobileDrawer from "./MobileDrawer";
@@ -56,6 +60,11 @@ import {
   generarTemplateConIAAction,
 } from "@/lib/actions/sync";
 import { getCampaignDetailAction } from "@/lib/actions/campaigns";
+import {
+  sendIAMessageAction,
+  confirmarSeleccionContactosAction,
+  confirmarCreacionGrupoAction,
+} from "@/lib/actions/ia";
 import { createClient } from "@/lib/supabase/client";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -295,15 +304,20 @@ export default function AppShell({
     {
       id: "welcome",
       type: "bot",
-      text: "Hola 👋 Soy tu asistente AI. Podés pedirme que arme listas, redacte mensajes o te ayude con la campaña.",
+      text: "Hola 👋 Soy tu asistente AI. Podés pedirme que arme un grupo de contactos hablando conmigo.",
     },
   ]);
+  const [iaFlowState, setIaFlowState] = useState<IAFlowState>(IA_FLOW_IDLE);
+  const [iaSending, setIaSending] = useState(false);
 
-  function addMsg(text: string, type: ChatMessage["type"] = "bot") {
-    setMessages((prev) => [
-      ...prev,
-      { id: `${Date.now()}-${Math.random()}`, text, type },
-    ]);
+  function addMsg(
+    text: string,
+    type: ChatMessage["type"] = "bot",
+    payload?: ChatPayload,
+  ) {
+    const id = `${Date.now()}-${Math.random()}`;
+    setMessages((prev) => [...prev, { id, text, type, payload }]);
+    return id;
   }
 
   // ── filtrado combinado, replicando la lógica del original ──
@@ -551,13 +565,68 @@ export default function AppShell({
     );
   }
 
-  function handleChatSend(text: string) {
+  // Historial corto (solo texto, sin payloads) que se le manda al
+  // clasificador de intención del orquestador — no hace falta mandar la
+  // conversación entera, con los últimos turnos alcanza para dar contexto.
+  function buildHistory(): IAHistoryTurn[] {
+    return messages
+      .filter((m) => m.type === "user" || m.type === "bot")
+      .slice(-8)
+      .map((m) => ({
+        role: m.type === "user" ? ("user" as const) : ("assistant" as const),
+        text: m.text,
+      }));
+  }
+
+  async function handleChatSend(text: string) {
     addMsg(text, "user");
-    setTimeout(() => {
+    setIaSending(true);
+    try {
+      const res = await sendIAMessageAction(text, buildHistory(), iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } catch {
       addMsg(
-        "Podés pedirme que arme una lista, te sugiera un template, o te diga el costo estimado del envío. ¿Qué necesitás?",
+        "Tuve un problema para procesar tu pedido. Probá de nuevo en unos segundos.",
+        "error",
       );
-    }, 500);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAConfirmSeleccion(contactosIds: string[]) {
+    setIaSending(true);
+    try {
+      const res = await confirmarSeleccionContactosAction(
+        iaFlowState,
+        contactosIds,
+      );
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAConfirmGrupo() {
+    setIaSending(true);
+    try {
+      const res = await confirmarCreacionGrupoAction(iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // El grupo se creó server-side (saveListAction) — refrescamos la
+      // prop `lists` desde el Server Component padre para que la sección
+      // Grupos y el botón "Ver grupo →" de la tarjeta ya lo encuentren.
+      if (!res.error) router.refresh();
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  function handleIAVerGrupo(grupoId: string) {
+    setActiveSection("grupos");
+    setOpenGroupId(grupoId);
   }
 
   function handleLogout() {
@@ -660,7 +729,16 @@ export default function AppShell({
       )}
 
       {activeSection === "ia" && (
-        <IA userName={user.contactoNombre} messages={messages} onSend={handleChatSend} />
+        <IA
+          userName={user.contactoNombre}
+          messages={messages}
+          contacts={contacts}
+          onSend={handleChatSend}
+          onConfirmSeleccion={handleIAConfirmSeleccion}
+          onConfirmGrupo={handleIAConfirmGrupo}
+          onVerGrupo={handleIAVerGrupo}
+          sending={iaSending}
+        />
       )}
 
       {activeSection === "contactos" && (

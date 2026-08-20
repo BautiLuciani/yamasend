@@ -1,24 +1,62 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, Contact } from "@/lib/types";
+import { renderChatCard } from "./IAChatCards";
 
 interface IAProps {
   userName: string;
   messages: ChatMessage[];
+  contacts: Contact[];
   onSend: (text: string) => void;
+  onConfirmSeleccion: (ids: string[]) => void;
+  onConfirmGrupo: () => void;
+  onVerGrupo: (grupoId: string) => void;
+  sending?: boolean;
 }
 
 const SUGERENCIAS = [
-  "¿Cuántos leads calientes tengo esta semana?",
-  "Armame una lista con mis contactos calientes",
+  "Creame un grupo con mis contactos calientes",
+  "Quiero armar un grupo nuevo",
   "¿Qué template me recomendás para reactivación?",
   "¿Cuál es el mejor horario para enviar campañas?",
 ];
 
-export default function IA({ userName, messages, onSend }: IAProps) {
+// Variantes del mensaje de bienvenida — se elige una al azar por sesión de
+// chat (no en cada render) para que la pantalla inicial no se sienta
+// siempre igual, sin perder la claridad de qué puede hacer el asistente.
+const BIENVENIDAS = [
+  {
+    titulo: "¿Qué querés saber sobre tu negocio?",
+    texto: "Puedo analizar tus contactos, grupos, templates y campañas para ayudarte a tomar mejores decisiones.",
+  },
+  {
+    titulo: "¿En qué te ayudo hoy?",
+    texto: "Puedo armar un grupo de contactos por vos, solo pedímelo en lenguaje natural — por ejemplo, los que preguntaron por algo puntual.",
+  },
+  {
+    titulo: "Hagamos algo juntos",
+    texto: "Además de responder preguntas sobre tu negocio, puedo crear grupos de contactos hablando conmigo, sin que tengas que armarlos a mano.",
+  },
+];
+
+export default function IA({
+  userName,
+  messages,
+  contacts,
+  onSend,
+  onConfirmSeleccion,
+  onConfirmGrupo,
+  onVerGrupo,
+  sending,
+}: IAProps) {
   const [value, setValue] = useState("");
   const [historialOpen, setHistorialOpen] = useState(false);
+  // Inicializador lazy: se elige una sola vez al montar el componente, no
+  // en cada render — así el mensaje no "salta" mientras el usuario lo lee.
+  const [bienvenida] = useState(
+    () => BIENVENIDAS[Math.floor(Math.random() * BIENVENIDAS.length)],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const firstName = userName.split(" ")[0] || userName;
 
@@ -30,10 +68,12 @@ export default function IA({ userName, messages, onSend }: IAProps) {
 
   function handleSend() {
     const text = value.trim();
-    if (!text) return;
+    if (!text || sending) return;
     onSend(text);
     setValue("");
   }
+
+  const lastBotMessageId = [...messages].reverse().find((m) => m.type === "bot")?.id;
 
   // Solo se cuenta como "conversación iniciada" cuando hay algo más que el
   // mensaje de bienvenida fijo que ya trae AppShell.
@@ -102,10 +142,10 @@ export default function IA({ userName, messages, onSend }: IAProps) {
                 Hola, {firstName} 👋
               </div>
               <div className="text-[17px] font-bold text-[#3f4844]">
-                ¿Qué querés saber sobre tu negocio?
+                {bienvenida.titulo}
               </div>
               <div className="text-sm text-ys-muted font-medium max-w-[480px] leading-[1.55]">
-                Puedo analizar tus contactos, grupos, templates y campañas para ayudarte a tomar mejores decisiones.
+                {bienvenida.texto}
               </div>
             </div>
           )}
@@ -138,8 +178,38 @@ export default function IA({ userName, messages, onSend }: IAProps) {
                 >
                   {m.text}
                 </div>
+
+                {m.payload &&
+                  renderChatCard(
+                    m.payload,
+                    contacts,
+                    { onConfirmSeleccion, onConfirmGrupo, onVerGrupo },
+                    m.id === lastBotMessageId,
+                  )}
               </div>
             ),
+          )}
+
+          {sending && (
+            <div className="flex flex-col gap-2.5" style={{ animation: "ys-msg .2s ease both" }}>
+              <div className="flex items-center gap-2">
+                <div className="w-[22px] h-[22px] rounded-lg bg-ys-green-bg flex items-center justify-center">
+                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                    <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.6" strokeLinejoin="round" />
+                  </svg>
+                </div>
+                <div className="text-xs font-extrabold tracking-[0.04em] text-ys-green-text">
+                  YamaSend IA
+                </div>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="flex gap-1.5 bg-white border border-ys-border rounded-full px-3.5 py-2.5">
+                  <span className="w-[6px] h-[6px] rounded-full bg-ys-green" style={{ animation: "ys-dot 1.2s infinite" }} />
+                  <span className="w-[6px] h-[6px] rounded-full bg-ys-green" style={{ animation: "ys-dot 1.2s infinite .15s" }} />
+                  <span className="w-[6px] h-[6px] rounded-full bg-ys-green" style={{ animation: "ys-dot 1.2s infinite .3s" }} />
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -176,7 +246,7 @@ export default function IA({ userName, messages, onSend }: IAProps) {
             />
             <button
               onClick={handleSend}
-              disabled={!value.trim()}
+              disabled={!value.trim() || sending}
               className="flex-none w-[38px] h-[38px] rounded-xl bg-ys-green flex items-center justify-center cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
             >
               <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
