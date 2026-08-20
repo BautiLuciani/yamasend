@@ -22,7 +22,6 @@ const CATEGORIAS = [
   { key: "marketing", label: "Marketing" },
   { key: "utility", label: "Utilidad" },
   { key: "authentication", label: "Autenticación" },
-  { key: "service", label: "Servicio" },
 ] as const;
 
 export default function TemplateCreateModal({

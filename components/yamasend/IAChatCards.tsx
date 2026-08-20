@@ -315,13 +315,15 @@ export function renderChatCard(
 
 // -------------------------------------------------------------------------
 // Tarjeta: elegir_categoria_template
-// Mismas 4 categorías fijas que el modal manual (Meta no acepta otras).
+// Mismas 3 categorías fijas que el modal manual y que acepta Meta/YCloud
+// a nivel API (MARKETING, UTILITY, AUTHENTICATION — "Servicio" no es una
+// categoría válida en la API de templates, aunque algunas plataformas lo
+// usen como término de UX; mandarla causa PARAM_INVALID en YCloud).
 // -------------------------------------------------------------------------
 const CATEGORIAS_TEMPLATE = [
   { key: "marketing", label: "Marketing" },
   { key: "utility", label: "Utilidad" },
   { key: "authentication", label: "Autenticación" },
-  { key: "service", label: "Servicio" },
 ] as const;
 
 interface ElegirCategoriaTemplateCardProps {
@@ -423,7 +425,6 @@ const CATEGORIA_LABELS: Record<string, string> = {
   marketing: "Marketing",
   utility: "Utilidad",
   authentication: "Autenticación",
-  service: "Servicio",
 };
 
 interface ConfirmarTemplateCardProps {

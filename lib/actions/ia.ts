@@ -478,14 +478,13 @@ export async function getContactsForIAAction(): Promise<Contact[]> {
 // webhook de n8n (generarTemplateConIAAction) que ya usa el modal.
 // -----------------------------------------------------------------------
 
-const CATEGORIAS_TEMPLATE = ["marketing", "utility", "authentication", "service"] as const;
+const CATEGORIAS_TEMPLATE = ["marketing", "utility", "authentication"] as const;
 type CategoriaTemplate = (typeof CATEGORIAS_TEMPLATE)[number];
 
 const CATEGORIA_LABELS: Record<CategoriaTemplate, string> = {
   marketing: "Marketing",
   utility: "Utilidad",
   authentication: "Autenticación",
-  service: "Servicio",
 };
 
 function esCategoriaValida(v: string): v is CategoriaTemplate {
