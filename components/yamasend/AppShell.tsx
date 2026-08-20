@@ -64,6 +64,11 @@ import {
   sendIAMessageAction,
   confirmarSeleccionContactosAction,
   confirmarCreacionGrupoAction,
+  seleccionarCategoriaTemplateAction,
+  usarSugerenciaTemplateAction,
+  pedirOtraSugerenciaTemplateAction,
+  guardarBorradorTemplateAction,
+  confirmarEnvioTemplateAction,
 } from "@/lib/actions/ia";
 import { createClient } from "@/lib/supabase/client";
 
@@ -271,6 +276,10 @@ export default function AppShell({
   // revisión de Meta), consultamos cada 20s para reflejar el cambio a
   // "verificado"/"rechazado" apenas llegue, sin que el usuario tenga que
   // refrescar la página. Se frena solo cuando ya no queda ningún "enviado".
+  // Además, si detecta que alguno pasó de "enviado" a un estado final
+  // (verificado/rechazado), avisa por el chat de IA — así el flujo
+  // conversacional de creación de templates cierra el círculo completo,
+  // igual que ya pasaba con los creados desde el modal manual.
   const templatesPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hayTemplatesEnviados = templates.some((t) => t.status === "enviado");
 
@@ -285,7 +294,23 @@ export default function AppShell({
     async function pollTemplates() {
       const result = await refreshTemplatesAction();
       if (!cancelled && result.templates) {
-        setTemplates(result.templates);
+        const nuevos = result.templates;
+        setTemplates((prev) => {
+          for (const t of nuevos) {
+            const anterior = prev.find((p) => p.id === t.id);
+            if (anterior?.status === "enviado" && t.status !== "enviado") {
+              if (t.status === "verificado") {
+                addMsg(`✅ Tu template "${t.nombre}" fue aprobado por Meta. Ya podés usarlo en una campaña.`);
+              } else if (t.status === "rechazado") {
+                addMsg(
+                  `Meta rechazó el template "${t.nombre}"${t.rechazoMotivo ? `: ${t.rechazoMotivo}` : "."}`,
+                  "error",
+                );
+              }
+            }
+          }
+          return nuevos;
+        });
       }
       if (!cancelled) {
         templatesPollTimeoutRef.current = setTimeout(pollTemplates, 20000);
@@ -629,6 +654,70 @@ export default function AppShell({
     setOpenGroupId(grupoId);
   }
 
+  async function handleIAElegirCategoria(categoria: string) {
+    setIaSending(true);
+    try {
+      const res = await seleccionarCategoriaTemplateAction(iaFlowState, categoria);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAUsarSugerencia() {
+    setIaSending(true);
+    try {
+      const res = await usarSugerenciaTemplateAction(iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAPedirOtraSugerencia() {
+    setIaSending(true);
+    try {
+      const res = await pedirOtraSugerenciaTemplateAction(iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAGuardarBorrador() {
+    setIaSending(true);
+    try {
+      const res = await guardarBorradorTemplateAction(iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      if (!res.error) router.refresh();
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAEnviarAMeta() {
+    setIaSending(true);
+    try {
+      const res = await confirmarEnvioTemplateAction(iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // El template se mandó a Meta (o falló al intentarlo) — refrescamos
+      // `templates` para que la sección Templates y el polling de estado
+      // ya lo vean sin que el usuario tenga que recargar la página.
+      if (!res.error) router.refresh();
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  function handleIAVerTemplates() {
+    setActiveSection("templates");
+  }
+
   function handleLogout() {
     setProfileOpen(false);
     setDrawerOpen(false);
@@ -737,6 +826,12 @@ export default function AppShell({
           onConfirmSeleccion={handleIAConfirmSeleccion}
           onConfirmGrupo={handleIAConfirmGrupo}
           onVerGrupo={handleIAVerGrupo}
+          onElegirCategoria={handleIAElegirCategoria}
+          onUsarSugerencia={handleIAUsarSugerencia}
+          onPedirOtraSugerencia={handleIAPedirOtraSugerencia}
+          onGuardarBorrador={handleIAGuardarBorrador}
+          onEnviarAMeta={handleIAEnviarAMeta}
+          onVerTemplates={handleIAVerTemplates}
           sending={iaSending}
         />
       )}

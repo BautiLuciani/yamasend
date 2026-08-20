@@ -12,13 +12,19 @@ interface IAProps {
   onConfirmSeleccion: (ids: string[]) => void;
   onConfirmGrupo: () => void;
   onVerGrupo: (grupoId: string) => void;
+  onElegirCategoria: (categoria: string) => void;
+  onUsarSugerencia: () => void;
+  onPedirOtraSugerencia: () => void;
+  onGuardarBorrador: () => void;
+  onEnviarAMeta: () => void;
+  onVerTemplates: () => void;
   sending?: boolean;
 }
 
 const SUGERENCIAS = [
   "Creame un grupo con mis contactos calientes",
+  "Quiero armar un template nuevo",
   "Quiero armar un grupo nuevo",
-  "¿Qué template me recomendás para reactivación?",
   "¿Cuál es el mejor horario para enviar campañas?",
 ];
 
@@ -32,11 +38,11 @@ const BIENVENIDAS = [
   },
   {
     titulo: "¿En qué te ayudo hoy?",
-    texto: "Puedo armar un grupo de contactos por vos, solo pedímelo en lenguaje natural — por ejemplo, los que preguntaron por algo puntual.",
+    texto: "Puedo armar un grupo de contactos o un template por vos, solo pedímelo en lenguaje natural.",
   },
   {
     titulo: "Hagamos algo juntos",
-    texto: "Además de responder preguntas sobre tu negocio, puedo crear grupos de contactos hablando conmigo, sin que tengas que armarlos a mano.",
+    texto: "Además de responder preguntas sobre tu negocio, puedo crear grupos de contactos y templates hablando conmigo, sin que tengas que armarlos a mano.",
   },
 ];
 
@@ -48,6 +54,12 @@ export default function IA({
   onConfirmSeleccion,
   onConfirmGrupo,
   onVerGrupo,
+  onElegirCategoria,
+  onUsarSugerencia,
+  onPedirOtraSugerencia,
+  onGuardarBorrador,
+  onEnviarAMeta,
+  onVerTemplates,
   sending,
 }: IAProps) {
   const [value, setValue] = useState("");
@@ -183,7 +195,17 @@ export default function IA({
                   renderChatCard(
                     m.payload,
                     contacts,
-                    { onConfirmSeleccion, onConfirmGrupo, onVerGrupo },
+                    {
+                      onConfirmSeleccion,
+                      onConfirmGrupo,
+                      onVerGrupo,
+                      onElegirCategoria,
+                      onUsarSugerencia,
+                      onPedirOtraSugerencia,
+                      onGuardarBorrador,
+                      onEnviarAMeta,
+                      onVerTemplates,
+                    },
                     m.id === lastBotMessageId,
                   )}
               </div>

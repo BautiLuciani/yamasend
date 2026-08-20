@@ -133,6 +133,26 @@ export type ChatPayload =
       totalContactos: number;
     }
   | {
+      kind: "elegir_categoria_template";
+    }
+  | {
+      kind: "sugerencia_template";
+      sugerencia: string;
+    }
+  | {
+      kind: "confirmar_template";
+      nombre: string;
+      contenido: string;
+      categoria: string;
+    }
+  | {
+      kind: "template_guardado";
+      // "borrador": se guardó sin mandar a Meta. "enviado": se mandó a
+      // aprobación y queda esperando el resultado (async, vía polling).
+      resultado: "borrador" | "enviado";
+      nombre: string;
+    }
+  | {
       kind: "follow_ups";
       opciones: string[];
     };
@@ -151,7 +171,12 @@ export type IAFlowStep =
   // crear_grupo
   | "grupo_esperando_nombre"
   | "grupo_esperando_contactos"
-  | "grupo_esperando_confirmacion";
+  | "grupo_esperando_confirmacion"
+  // crear_template
+  | "template_esperando_nombre"
+  | "template_esperando_categoria"
+  | "template_esperando_descripcion"
+  | "template_esperando_confirmacion";
 
 export interface IAFlowState {
   kind: IAFlowKind | null;
@@ -160,6 +185,8 @@ export interface IAFlowState {
     nombre?: string;
     contactosIds?: string[];
     consultaUsada?: string | null;
+    categoria?: string;
+    contenido?: string;
   };
 }
 

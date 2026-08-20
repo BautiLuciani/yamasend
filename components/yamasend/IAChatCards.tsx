@@ -232,6 +232,12 @@ export function renderChatCard(
     onConfirmSeleccion: (ids: string[]) => void;
     onConfirmGrupo: () => void;
     onVerGrupo: (grupoId: string) => void;
+    onElegirCategoria: (categoria: string) => void;
+    onUsarSugerencia: () => void;
+    onPedirOtraSugerencia: () => void;
+    onGuardarBorrador: () => void;
+    onEnviarAMeta: () => void;
+    onVerTemplates: () => void;
   },
   isLatest: boolean,
 ) {
@@ -265,5 +271,266 @@ export function renderChatCard(
       />
     );
   }
+  if (payload.kind === "elegir_categoria_template") {
+    return (
+      <ElegirCategoriaTemplateCard
+        onElegir={handlers.onElegirCategoria}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "sugerencia_template") {
+    return (
+      <SugerenciaTemplateCard
+        sugerencia={payload.sugerencia}
+        onUsar={handlers.onUsarSugerencia}
+        onPedirOtra={handlers.onPedirOtraSugerencia}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "confirmar_template") {
+    return (
+      <ConfirmarTemplateCard
+        nombre={payload.nombre}
+        contenido={payload.contenido}
+        categoria={payload.categoria}
+        onGuardarBorrador={handlers.onGuardarBorrador}
+        onEnviarAMeta={handlers.onEnviarAMeta}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "template_guardado") {
+    return (
+      <TemplateGuardadoCard
+        nombre={payload.nombre}
+        resultado={payload.resultado}
+        onVerTemplates={handlers.onVerTemplates}
+      />
+    );
+  }
   return null;
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_categoria_template
+// Mismas 4 categorías fijas que el modal manual (Meta no acepta otras).
+// -------------------------------------------------------------------------
+const CATEGORIAS_TEMPLATE = [
+  { key: "marketing", label: "Marketing" },
+  { key: "utility", label: "Utilidad" },
+  { key: "authentication", label: "Autenticación" },
+  { key: "service", label: "Servicio" },
+] as const;
+
+interface ElegirCategoriaTemplateCardProps {
+  onElegir: (categoria: string) => void;
+  disabled?: boolean;
+}
+
+export function ElegirCategoriaTemplateCard({
+  onElegir,
+  disabled,
+}: ElegirCategoriaTemplateCardProps) {
+  const [elegida, setElegida] = useState<string | null>(null);
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3">
+      <div className="flex gap-2 flex-wrap">
+        {CATEGORIAS_TEMPLATE.map((c) => {
+          const active = elegida === c.key;
+          return (
+            <button
+              key={c.key}
+              onClick={() => {
+                if (disabled || elegida) return;
+                setElegida(c.key);
+                onElegir(c.key);
+              }}
+              disabled={disabled || !!elegida}
+              className={`text-[12.5px] font-bold rounded-full px-3.5 py-2 cursor-pointer transition-colors disabled:cursor-not-allowed ${
+                active
+                  ? "border-[1.5px] border-ys-green bg-ys-green-bg text-ys-green-text"
+                  : "border border-ys-border text-[#3f4844] hover:bg-[#f7fbf9] hover:border-ys-green-border disabled:hover:bg-transparent"
+              }`}
+            >
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: sugerencia_template
+// Muestra el mensaje que propuso la IA, con opción de usarlo o pedir otro.
+// -------------------------------------------------------------------------
+interface SugerenciaTemplateCardProps {
+  sugerencia: string;
+  onUsar: () => void;
+  onPedirOtra: () => void;
+  disabled?: boolean;
+}
+
+export function SugerenciaTemplateCard({
+  sugerencia,
+  onUsar,
+  onPedirOtra,
+  disabled,
+}: SugerenciaTemplateCardProps) {
+  const [resuelto, setResuelto] = useState(false);
+
+  return (
+    <div className="bg-white border border-ys-green-border rounded-2xl px-5 py-[18px] flex flex-col gap-3">
+      <div className="text-[13.5px] leading-[1.55] text-[#2c3531] font-medium whitespace-pre-wrap">
+        {sugerencia}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => {
+            setResuelto(true);
+            onUsar();
+          }}
+          disabled={disabled || resuelto}
+          className="text-[12.5px] font-extrabold text-white bg-ys-green rounded-[9px] px-3.5 py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Usar este mensaje
+        </button>
+        <button
+          onClick={() => {
+            setResuelto(true);
+            onPedirOtra();
+          }}
+          disabled={disabled || resuelto}
+          className="text-[12.5px] font-bold text-[#3f4844] border border-ys-border rounded-[9px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Generar otra opción
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: confirmar_template
+// Resumen final con las dos acciones posibles — guardar borrador o mandar
+// a Meta — el bot nunca ejecuta ninguna de las dos sin este click explícito.
+// -------------------------------------------------------------------------
+const CATEGORIA_LABELS: Record<string, string> = {
+  marketing: "Marketing",
+  utility: "Utilidad",
+  authentication: "Autenticación",
+  service: "Servicio",
+};
+
+interface ConfirmarTemplateCardProps {
+  nombre: string;
+  contenido: string;
+  categoria: string;
+  onGuardarBorrador: () => void;
+  onEnviarAMeta: () => void;
+  disabled?: boolean;
+}
+
+export function ConfirmarTemplateCard({
+  nombre,
+  contenido,
+  categoria,
+  onGuardarBorrador,
+  onEnviarAMeta,
+  disabled,
+}: ConfirmarTemplateCardProps) {
+  const [accion, setAccion] = useState<"borrador" | "meta" | null>(null);
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5">
+      <div className="flex items-center gap-3">
+        <div className="w-[38px] h-[38px] flex-none rounded-xl bg-ys-green-bg flex items-center justify-center">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+          <div className="text-[15px] font-extrabold text-ys-text truncate">{nombre}</div>
+          <div className="text-xs text-ys-dim font-semibold">
+            {CATEGORIA_LABELS[categoria] ?? categoria}
+          </div>
+        </div>
+      </div>
+      <div className="border border-ys-border-softest rounded-xl bg-[#fbfcfb] px-3.5 py-3 text-[13px] leading-[1.55] text-[#2c3531] font-medium whitespace-pre-wrap">
+        {contenido}
+      </div>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => {
+            setAccion("borrador");
+            onGuardarBorrador();
+          }}
+          disabled={disabled || !!accion}
+          className="text-[12.5px] font-bold text-[#3f4844] border border-ys-border rounded-[9px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {accion === "borrador" ? "Guardando..." : "Guardar borrador"}
+        </button>
+        <button
+          onClick={() => {
+            setAccion("meta");
+            onEnviarAMeta();
+          }}
+          disabled={disabled || !!accion}
+          className="text-[12.5px] font-extrabold text-white bg-ys-green rounded-[9px] px-3.5 py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {accion === "meta" ? "Enviando..." : "Enviar a Meta"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: template_guardado
+// Confirmación final — distingue visualmente borrador (gris) de enviado a
+// Meta (verde, en revisión), en el mismo espíritu que grupo_creado.
+// -------------------------------------------------------------------------
+interface TemplateGuardadoCardProps {
+  nombre: string;
+  resultado: "borrador" | "enviado";
+  onVerTemplates: () => void;
+}
+
+export function TemplateGuardadoCard({
+  nombre,
+  resultado,
+  onVerTemplates,
+}: TemplateGuardadoCardProps) {
+  const esEnviado = resultado === "enviado";
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex items-center gap-3">
+      <div className={`w-[38px] h-[38px] flex-none rounded-xl flex items-center justify-center ${esEnviado ? "bg-ys-green-bg" : "bg-ys-el2"}`}>
+        {esEnviado ? (
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <path d="m3 8.4 4 4L14 3.6" stroke="#12B76A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#5d6560" strokeWidth="1.5" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <div className="text-[14.5px] font-extrabold text-ys-text truncate">{nombre}</div>
+        <div className="text-xs text-ys-dim font-semibold">
+          {esEnviado ? "Enviado a Meta · En revisión" : "Guardado como borrador"}
+        </div>
+      </div>
+      <button
+        onClick={onVerTemplates}
+        className="flex-none text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
+      >
+        Ver templates →
+      </button>
+    </div>
+  );
 }

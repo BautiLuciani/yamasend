@@ -2,8 +2,12 @@
 
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
-import { syncAndAnalyzeAction } from "@/lib/actions/sync";
-import { saveListAction } from "@/lib/actions/write";
+import { syncAndAnalyzeAction, generarTemplateConIAAction } from "@/lib/actions/sync";
+import {
+  saveListAction,
+  saveTemplateDraftAction,
+  sendTemplateToMetaAction,
+} from "@/lib/actions/write";
 import type {
   ChatPayload,
   Contact,
@@ -207,6 +211,11 @@ export async function sendIAMessageAction(
     return handleCrearGrupoStep(texto, flowState);
   }
 
+  // ---- Flujo activo: crear_template -----------------------------------
+  if (flowState.kind === "crear_template") {
+    return handleCrearTemplateStep(texto, flowState);
+  }
+
   // ---- Sin flujo activo: clasificar intención --------------------------
   let intencion: Intencion;
   try {
@@ -226,11 +235,13 @@ export async function sendIAMessageAction(
     return iniciarFlujoCrearGrupo(intencion.consulta);
   }
 
-  if (intencion.tipo === "crear_template" || intencion.tipo === "crear_campana") {
-    const nombreFlujo =
-      intencion.tipo === "crear_template" ? "crear templates" : "crear campañas";
+  if (intencion.tipo === "crear_template") {
+    return iniciarFlujoCrearTemplate();
+  }
+
+  if (intencion.tipo === "crear_campana") {
     return {
-      text: `Todavía estoy aprendiendo a ${nombreFlujo} por acá — esa parte va a estar disponible muy pronto. Por ahora podés hacerlo desde la sección correspondiente en el menú. Mientras tanto, sí puedo ayudarte a crear un grupo de contactos, ¿querés que arranquemos con eso?`,
+      text: "Todavía estoy aprendiendo a crear campañas por acá — esa parte va a estar disponible muy pronto. Por ahora podés hacerlo desde la sección Campañas del menú. Mientras tanto, sí puedo ayudarte a crear un grupo de contactos o un template, ¿querés que arranquemos con alguno de los dos?",
       flowState: IA_FLOW_IDLE,
     };
   }
@@ -239,7 +250,7 @@ export async function sendIAMessageAction(
   // esta iteración, así que respondemos con guía hacia lo que sí sabemos
   // hacer en vez de inventar una respuesta analítica sin datos reales detrás.
   return {
-    text: "Puedo ayudarte a crear un grupo de contactos hablando conmigo. Por ejemplo, pedime: \"creame un grupo con los que preguntaron por casas de 3 ambientes\". ¿Querés que empecemos?",
+    text: "Puedo ayudarte a crear un grupo de contactos o un template hablando conmigo. Por ejemplo, pedime: \"creame un grupo con los que preguntaron por casas de 3 ambientes\" o \"quiero armar un template para avisar una promo\". ¿Querés que empecemos?",
     flowState: IA_FLOW_IDLE,
   };
 }
@@ -457,4 +468,301 @@ export async function getContactsForIAAction(): Promise<Contact[]> {
   if (!tenantId) return [];
   const { getContactsForTenant } = await import("@/lib/actions/user");
   return getContactsForTenant(tenantId);
+}
+
+// -----------------------------------------------------------------------
+// Flujo: crear_template
+// Mismas reglas que TemplateCreateModal.tsx (el modal manual): nombre >= 3
+// caracteres, categoría entre las 4 fijas de Meta, contenido > 10
+// caracteres para poder enviar a Meta. La sugerencia de IA reusa el mismo
+// webhook de n8n (generarTemplateConIAAction) que ya usa el modal.
+// -----------------------------------------------------------------------
+
+const CATEGORIAS_TEMPLATE = ["marketing", "utility", "authentication", "service"] as const;
+type CategoriaTemplate = (typeof CATEGORIAS_TEMPLATE)[number];
+
+const CATEGORIA_LABELS: Record<CategoriaTemplate, string> = {
+  marketing: "Marketing",
+  utility: "Utilidad",
+  authentication: "Autenticación",
+  service: "Servicio",
+};
+
+function esCategoriaValida(v: string): v is CategoriaTemplate {
+  return (CATEGORIAS_TEMPLATE as readonly string[]).includes(v);
+}
+
+function iniciarFlujoCrearTemplate(): IAResponse {
+  return {
+    text: "Dale, armemos un template. ¿Cómo querés que se llame? (usá un nombre corto que te ayude a identificarlo, ej: promo_agosto)",
+    flowState: {
+      kind: "crear_template",
+      step: "template_esperando_nombre",
+      draft: {},
+    },
+  };
+}
+
+async function handleCrearTemplateStep(
+  texto: string,
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  const { step, draft } = flowState;
+
+  // Cancelación en cualquier punto del flujo. Ver nota de diseño equivalente
+  // en handleCrearGrupoStep: match exacto, no "contiene", para no confundir
+  // un nombre de template legítimo con la intención de cancelar.
+  if (/^(cancelar|cancela|olvidalo|dejalo)$/i.test(texto)) {
+    return {
+      text: "Listo, cancelé la creación del template. ¿En qué más te ayudo?",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (step === "template_esperando_nombre") {
+    if (texto.trim().length < 3) {
+      return {
+        text: "El nombre necesita al menos 3 caracteres. ¿Cómo querés que se llame el template?",
+        flowState,
+      };
+    }
+    const nombre = texto.trim().slice(0, 120);
+    return {
+      text: `Buenísimo, "${nombre}". Ahora elegí la categoría del template.`,
+      payload: { kind: "elegir_categoria_template" },
+      flowState: {
+        kind: "crear_template",
+        step: "template_esperando_categoria",
+        draft: { ...draft, nombre },
+      },
+    };
+  }
+
+  if (step === "template_esperando_categoria") {
+    // Este paso se resuelve por click en la tarjeta (ver
+    // seleccionarCategoriaTemplateAction), no por texto libre. Si el
+    // usuario igual escribe, lo guiamos de vuelta a la tarjeta.
+    return {
+      text: "Elegí una categoría desde las opciones de arriba.",
+      payload: { kind: "elegir_categoria_template" },
+      flowState,
+    };
+  }
+
+  if (step === "template_esperando_descripcion") {
+    return generarSugerenciaTemplate(texto, flowState);
+  }
+
+  if (step === "template_esperando_confirmacion") {
+    return {
+      text: "Confirmá desde la tarjeta de arriba (Guardar borrador o Enviar a Meta), o escribí \"cancelar\" si preferís no continuar.",
+      flowState,
+    };
+  }
+
+  // Estado inesperado: reseteamos por seguridad.
+  return {
+    text: "Se ve que algo se desconfiguró en la conversación. Empecemos de nuevo: ¿qué necesitás?",
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+/**
+ * Se llama cuando el usuario elige una categoría desde la tarjeta
+ * `elegir_categoria_template` (click, no texto libre).
+ */
+export async function seleccionarCategoriaTemplateAction(
+  flowState: IAFlowState,
+  categoria: string,
+): Promise<IAResponse> {
+  if (flowState.kind !== "crear_template" || !flowState.draft.nombre) {
+    return {
+      text: "Se perdió el contexto del template que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (!esCategoriaValida(categoria)) {
+    return {
+      text: "Esa categoría no es válida. Elegí una de las opciones de arriba.",
+      payload: { kind: "elegir_categoria_template" },
+      flowState,
+    };
+  }
+
+  return {
+    text: `"${CATEGORIA_LABELS[categoria]}", listo. Contame en pocas palabras qué querés comunicar y te armo una propuesta de mensaje — por ejemplo: "quiero avisar que tenemos 20% de descuento en agosto".`,
+    flowState: {
+      kind: "crear_template",
+      step: "template_esperando_descripcion",
+      draft: { ...flowState.draft, categoria },
+    },
+  };
+}
+
+/**
+ * Genera (o regenera) la sugerencia de mensaje vía IA a partir de una
+ * descripción en lenguaje natural. Reusa generarTemplateConIAAction, el
+ * mismo webhook de n8n que usa el botón "Crear con IA" del modal manual.
+ */
+async function generarSugerenciaTemplate(
+  descripcion: string,
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (!flowState.draft.categoria) {
+    return {
+      text: "Se perdió el contexto del template que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const result = await generarTemplateConIAAction(descripcion, flowState.draft.categoria);
+
+  if (result.error || !result.sugerencia) {
+    return {
+      text: `No pude generar el mensaje: ${result.error ?? "error desconocido"}. ¿Querés intentar con otra descripción?`,
+      flowState,
+    };
+  }
+
+  return {
+    text: "Te dejo una propuesta de mensaje:",
+    payload: { kind: "sugerencia_template", sugerencia: result.sugerencia },
+    flowState: {
+      ...flowState,
+      draft: { ...flowState.draft, contenido: result.sugerencia },
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario pide "Generar otra opción" desde la tarjeta de
+ * sugerencia — reintenta con la misma descripción original que escribió.
+ * Como no guardamos la descripción textual en el draft (no hace falta para
+ * nada más), le pedimos al usuario que la repita o la ajuste; es un costo
+ * bajo y evita guardar estado que no se usa en ningún otro lado.
+ */
+export async function pedirOtraSugerenciaTemplateAction(
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (flowState.kind !== "crear_template") {
+    return {
+      text: "Se perdió el contexto del template que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+  return {
+    text: "Contame de nuevo (o con otras palabras) qué querés comunicar y te propongo otra versión.",
+    flowState: {
+      ...flowState,
+      step: "template_esperando_descripcion",
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario confirma "Usar este mensaje" desde la tarjeta
+ * de sugerencia. Avanza a la tarjeta de confirmación final.
+ */
+export async function usarSugerenciaTemplateAction(
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "crear_template" ||
+    !flowState.draft.nombre ||
+    !flowState.draft.categoria ||
+    !flowState.draft.contenido
+  ) {
+    return {
+      text: "Se perdió el contexto del template que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const { nombre, categoria, contenido } = flowState.draft;
+
+  return {
+    text: `Perfecto. Revisá cómo quedó "${nombre}" antes de confirmar.`,
+    payload: { kind: "confirmar_template", nombre, contenido, categoria },
+    flowState: {
+      kind: "crear_template",
+      step: "template_esperando_confirmacion",
+      draft: flowState.draft,
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario confirma "Guardar borrador" desde la tarjeta
+ * final. Ejecuta la Server Action real (saveTemplateDraftAction), la misma
+ * que usa el modal manual.
+ */
+export async function guardarBorradorTemplateAction(
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "crear_template" ||
+    !flowState.draft.nombre ||
+    !flowState.draft.categoria
+  ) {
+    return {
+      text: "Se perdió el contexto del template que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const { nombre, categoria, contenido } = flowState.draft;
+  const result = await saveTemplateDraftAction(nombre, contenido ?? "", categoria);
+
+  if (result.error || !result.id) {
+    return {
+      text: `No pude guardar el borrador: ${result.error ?? "error desconocido"}. ¿Querés reintentar?`,
+      flowState,
+    };
+  }
+
+  return {
+    text: `Listo, guardé "${nombre}" como borrador. Podés retomarlo cuando quieras desde Templates. ¿Qué más necesitás?`,
+    payload: { kind: "template_guardado", resultado: "borrador", nombre },
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+/**
+ * Se llama cuando el usuario confirma "Enviar a Meta" desde la tarjeta
+ * final. Ejecuta la Server Action real (sendTemplateToMetaAction), la
+ * misma que usa el modal manual. El resultado final (verificado/rechazado)
+ * llega async — lo cubre el polling ya existente en AppShell, que ahora
+ * también avisa por el chat cuando detecta el cambio de estado.
+ */
+export async function confirmarEnvioTemplateAction(
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "crear_template" ||
+    !flowState.draft.nombre ||
+    !flowState.draft.categoria ||
+    !flowState.draft.contenido
+  ) {
+    return {
+      text: "Se perdió el contexto del template que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const { nombre, categoria, contenido } = flowState.draft;
+  const result = await sendTemplateToMetaAction(nombre, contenido, categoria);
+
+  if (!result.ok) {
+    return {
+      text: `No se pudo enviar el template a Meta: ${result.error ?? "error desconocido"}`,
+      flowState,
+    };
+  }
+
+  return {
+    text: `${result.mensaje} El template quedó "En revisión" — Meta puede tardar unos minutos (a veces más) en aprobarlo. Te aviso por acá apenas cambie el estado.`,
+    payload: { kind: "template_guardado", resultado: "enviado", nombre },
+    flowState: IA_FLOW_IDLE,
+  };
 }
