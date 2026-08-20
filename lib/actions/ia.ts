@@ -212,6 +212,9 @@ export async function sendIAMessageAction(
   try {
     intencion = await clasificarIntencion(texto, history);
   } catch (e) {
+    // Log server-side con el detalle real (nunca se muestra tal cual al
+    // usuario, pero queda en los runtime logs de Vercel para diagnosticar).
+    console.error("[IA] Error en clasificarIntencion:", e);
     return {
       text: "Tuve un problema para entender tu pedido. ¿Podés reformularlo?",
       flowState: IA_FLOW_IDLE,
