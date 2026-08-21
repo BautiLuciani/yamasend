@@ -6,6 +6,7 @@ import type {
   AppSection,
   AppUser,
   Campaign,
+  CampaignStatus,
   ChatMessage,
   ChatPayload,
   Contact,
@@ -112,7 +113,7 @@ export default function AppShell({
   contacts,
   templates: templatesProp,
   lists,
-  campaigns,
+  campaigns: campaignsProp,
   onLogout,
 }: AppShellProps) {
   const router = useRouter();
@@ -123,6 +124,81 @@ export default function AppShell({
   useEffect(() => {
     setTemplates(templatesProp);
   }, [templatesProp]);
+
+  // Mismo patrón que templates: estado local sincronizado con la prop del
+  // server component, para poder actualizarlo en tiempo real (Realtime de
+  // Supabase sobre yamas_send_campanas) sin depender de router.refresh(),
+  // que recarga todo /panel. Usado tanto por la sección Campañas como por
+  // el Dashboard ("Campañas recientes").
+  const [campaigns, setCampaigns] = useState<Campaign[]>(campaignsProp);
+  useEffect(() => {
+    setCampaigns(campaignsProp);
+  }, [campaignsProp]);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel(`campaigns-${user.tenantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "yamas_send_campanas",
+          filter: `tenant_id=eq.${user.tenantId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const deletedId = (payload.old as { id?: string })?.id;
+            if (!deletedId) return;
+            setCampaigns((prev) => prev.filter((c) => c.id !== deletedId));
+            return;
+          }
+
+          const row = payload.new as {
+            id: string;
+            nombre: string;
+            lista_id: string | null;
+            template_id: string | null;
+            lista_nombre: string | null;
+            template_nombre: string | null;
+            status: CampaignStatus;
+            contactos_count: number | null;
+            fecha_programada: string | null;
+            enviado_at: string | null;
+            created_at: string | null;
+          };
+
+          const actualizada: Campaign = {
+            id: row.id,
+            nombre: row.nombre,
+            listaId: row.lista_id,
+            templateId: row.template_id,
+            listaNombre: row.lista_nombre,
+            templateNombre: row.template_nombre,
+            status: row.status,
+            contactosCount: row.contactos_count ?? 0,
+            fechaProgramada: row.fecha_programada,
+            enviadoAt: row.enviado_at,
+            createdAt: row.created_at,
+          };
+
+          setCampaigns((prev) => {
+            const existe = prev.some((c) => c.id === actualizada.id);
+            if (existe) {
+              return prev.map((c) => (c.id === actualizada.id ? actualizada : c));
+            }
+            return [actualizada, ...prev];
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user.tenantId]);
 
   const VALID_SECTIONS: AppSection[] = [
     "dashboard",
@@ -980,7 +1056,12 @@ export default function AppShell({
 
       {activeSection === "dashboard" && (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
-          <Dashboard userName={user.contactoNombre} tenantId={user.tenantId} />
+          <Dashboard
+            userName={user.contactoNombre}
+            tenantId={user.tenantId}
+            campaigns={campaigns}
+            onViewAllCampaigns={() => setActiveSection("campanas")}
+          />
         </div>
       )}
 

@@ -3,11 +3,51 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getRecentActivityAction } from "@/lib/actions/activity";
-import type { ActivityLogEntry, ActivityTipo } from "@/lib/types";
+import type { ActivityLogEntry, ActivityTipo, Campaign, CampaignStatus } from "@/lib/types";
 
 interface DashboardProps {
   userName: string;
   tenantId: string;
+  campaigns: Campaign[];
+  onViewAllCampaigns: () => void;
+}
+
+// Mismo mapeo de label/color por status que usa CampaignDetailModal, para
+// que "Campañas recientes" del Dashboard se vea consistente con el resto
+// de la app.
+const ESTADO_CAMPANA: Record<
+  CampaignStatus,
+  { label: string; text: string; bg: string; stroke: string }
+> = {
+  borrador: { label: "BORRADOR", text: "text-[#5d6560]", bg: "bg-ys-el2", stroke: "#5d6560" },
+  programada: { label: "PROGRAMADA", text: "text-[#3f4844]", bg: "bg-ys-el2", stroke: "#5d6560" },
+  enviando: { label: "ENVIANDO", text: "text-ys-warn-text", bg: "bg-ys-warn-bg", stroke: "#8a5a00" },
+  enviado: { label: "COMPLETADA", text: "text-ys-green-text", bg: "bg-ys-green-bg", stroke: "#067647" },
+  error: { label: "ERROR", text: "text-[#a8443b]", bg: "bg-[#fdeeec]", stroke: "#a8443b" },
+  cancelado: { label: "CANCELADO", text: "text-[#5d6560]", bg: "bg-ys-el2", stroke: "#5d6560" },
+};
+
+function formatFechaCorta(iso: string): string {
+  return new Date(iso).toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+// Línea de detalle bajo el nombre de la campaña: si está programada (a
+// futuro) muestra la fecha objetivo, igual que hacía el mock; para el
+// resto de los estados muestra grupo + contactos, ya que el listado
+// liviano de campañas no trae mensajes_ok/mensajes_error/respuestas (esos
+// números solo están en el detalle ampliado, pedido on-demand).
+function detalleCampana(c: Campaign): string {
+  if (c.status === "programada" && c.fechaProgramada) {
+    return `Programada para ${formatFechaCorta(c.fechaProgramada)}`;
+  }
+  const grupo = c.listaNombre ?? "Sin grupo";
+  const contactos = `${c.contactosCount} contacto${c.contactosCount === 1 ? "" : "s"}`;
+  return `${grupo} · ${contactos}`;
 }
 
 const BARRAS = [
@@ -18,33 +58,6 @@ const BARRAS = [
   { dia: "Vie", alto: 95, altoFallidos: 2 },
   { dia: "Sáb", alto: 40, altoFallidos: 3 },
   { dia: "Dom", alto: 30, altoFallidos: 2 },
-];
-
-const CAMPANAS_RECIENTES = [
-  {
-    nombre: "Promo Día del Padre",
-    detalle: "8.420 enviados · 14,3% respuestas",
-    estado: "COMPLETADA",
-    color: "green" as const,
-  },
-  {
-    nombre: "Recordatorio de turnos",
-    detalle: "3.180 enviados · 642 respuestas",
-    estado: "ENVIANDO",
-    color: "warn" as const,
-  },
-  {
-    nombre: "Encuesta de satisfacción",
-    detalle: "Programada para 18 jun · 10:00",
-    estado: "PROGRAMADA",
-    color: "gray" as const,
-  },
-  {
-    nombre: "Reactivación clientes 2024",
-    detalle: "6.905 enviados · 12,1% respuestas",
-    estado: "COMPLETADA",
-    color: "green" as const,
-  },
 ];
 
 // Configuración visual por tipo de actividad: ícono + color de fondo/trazo,
@@ -156,24 +169,30 @@ function formatearCuando(iso: string): string {
   return fecha.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
 }
 
-function EstadoBadge({ estado, color }: { estado: string; color: "green" | "warn" | "gray" }) {
-  const styles =
-    color === "green"
-      ? "text-ys-green-text bg-ys-green-bg"
-      : color === "warn"
-        ? "text-ys-warn-text bg-ys-warn-bg"
-        : "text-[#5d6560] bg-ys-el2";
+function EstadoBadge({ estado, textClass, bgClass }: { estado: string; textClass: string; bgClass: string }) {
   return (
-    <div className={`font-mono text-[11px] rounded-md px-[9px] py-[5px] ${styles}`}>
+    <div className={`font-mono text-[11px] rounded-md px-[9px] py-[5px] ${textClass} ${bgClass}`}>
       {estado}
     </div>
   );
 }
 
-export default function Dashboard({ userName, tenantId }: DashboardProps) {
+export default function Dashboard({ userName, tenantId, campaigns, onViewAllCampaigns }: DashboardProps) {
   const [periodo, setPeriodo] = useState<"7d" | "30d" | "ano">("7d");
   const [actividad, setActividad] = useState<ActivityLogEntry[]>([]);
   const firstName = userName.split(" ")[0] || userName;
+
+  // Ordena por el timestamp más relevante de cada campaña (enviado_at si ya
+  // se envió, si no created_at) para que una campaña recién completada
+  // salte al frente aunque se haya creado hace rato — el estado en
+  // AppShell actualiza in-place vía Realtime y no reordena por sí solo.
+  const campanasRecientes = [...campaigns]
+    .sort((a, b) => {
+      const fechaA = new Date(a.enviadoAt ?? a.createdAt ?? 0).getTime();
+      const fechaB = new Date(b.enviadoAt ?? b.createdAt ?? 0).getTime();
+      return fechaB - fechaA;
+    })
+    .slice(0, 5);
 
   // Carga inicial de las últimas 5 actividades vía Server Action.
   useEffect(() => {
@@ -400,39 +419,42 @@ export default function Dashboard({ userName, tenantId }: DashboardProps) {
         <div className="bg-white border border-ys-border rounded-2xl flex flex-col overflow-hidden">
           <div className="px-5 md:px-6 pt-[18px] pb-3.5 flex items-center justify-between">
             <div className="text-[15px] font-extrabold text-ys-text">Campañas recientes</div>
-            <span className="text-[12.5px] font-bold text-ys-green-text opacity-60 cursor-not-allowed">
+            <button
+              onClick={onViewAllCampaigns}
+              className="text-[12.5px] font-bold text-ys-green-text hover:underline cursor-pointer"
+            >
               Ver todas →
-            </span>
+            </button>
           </div>
-          {CAMPANAS_RECIENTES.map((c) => (
-            <div key={c.nombre} className="flex items-center gap-3.5 px-5 md:px-6 py-3.5 border-t border-ys-border-soft">
-              <div
-                className={`w-9 h-9 flex-none rounded-[11px] flex items-center justify-center ${
-                  c.color === "green" ? "bg-ys-green-bg" : c.color === "warn" ? "bg-ys-warn-bg" : "bg-ys-el2"
-                }`}
-              >
-                <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z"
-                    stroke={c.color === "green" ? "#067647" : c.color === "warn" ? "#8a5a00" : "#5d6560"}
-                    strokeWidth="1.5"
-                    strokeLinejoin="round"
-                  />
-                  <path
-                    d="M12 6v4"
-                    stroke={c.color === "green" ? "#067647" : c.color === "warn" ? "#8a5a00" : "#5d6560"}
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </div>
-              <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                <div className="text-sm font-bold text-ys-text truncate">{c.nombre}</div>
-                <div className="text-[12.5px] text-ys-dim font-medium truncate">{c.detalle}</div>
-              </div>
-              <EstadoBadge estado={c.estado} color={c.color} />
+          {campanasRecientes.length === 0 ? (
+            <div className="px-5 md:px-6 py-6 text-[13px] text-ys-dim font-medium">
+              Todavía no creaste ninguna campaña.
             </div>
-          ))}
+          ) : (
+            campanasRecientes.map((c) => {
+              const estilo = ESTADO_CAMPANA[c.status];
+              return (
+                <div key={c.id} className="flex items-center gap-3.5 px-5 md:px-6 py-3.5 border-t border-ys-border-soft">
+                  <div className={`w-9 h-9 flex-none rounded-[11px] flex items-center justify-center ${estilo.bg}`}>
+                    <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+                      <path
+                        d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z"
+                        stroke={estilo.stroke}
+                        strokeWidth="1.5"
+                        strokeLinejoin="round"
+                      />
+                      <path d="M12 6v4" stroke={estilo.stroke} strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                    <div className="text-sm font-bold text-ys-text truncate">{c.nombre}</div>
+                    <div className="text-[12.5px] text-ys-dim font-medium truncate">{detalleCampana(c)}</div>
+                  </div>
+                  <EstadoBadge estado={estilo.label} textClass={estilo.text} bgClass={estilo.bg} />
+                </div>
+              );
+            })
+          )}
         </div>
 
         <div className="bg-white border border-ys-border rounded-2xl px-5 md:px-[22px] pt-[18px] pb-5 flex flex-col gap-1.5">
