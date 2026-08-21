@@ -350,6 +350,13 @@ export default function AppShell({
   const iaConversacionIdRef = useRef<string | null>(null);
   const iaTituloGeneradoRef = useRef(false);
   const iaGuardadoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Encadena guardados: cada llamada a guardarConversacionIAAction espera a
+  // que la anterior termine antes de ejecutarse, incluso si dos timeouts de
+  // debounce llegan a dispararse casi en simultáneo (ej: el usuario escribe
+  // y la IA responde con menos de 1.2s de diferencia). Sin esto, dos
+  // guardados en paralelo podían ver iaConversacionIdRef.current === null al
+  // mismo tiempo y crear dos filas para la misma conversación.
+  const iaGuardadoEnCursoRef = useRef<Promise<void>>(Promise.resolve());
 
   function addMsg(
     text: string,
@@ -373,31 +380,37 @@ export default function AppShell({
 
     if (iaGuardadoTimeoutRef.current) clearTimeout(iaGuardadoTimeoutRef.current);
 
-    iaGuardadoTimeoutRef.current = setTimeout(async () => {
-      // Genera el título una sola vez, apenas hay el primer mensaje de
-      // usuario — no en cada guardado posterior.
-      let tituloParaGuardar: string | null = null;
-      if (!iaTituloGeneradoRef.current) {
-        const primerMensajeUsuario = messages.find((m) => m.type === "user");
-        if (primerMensajeUsuario) {
-          iaTituloGeneradoRef.current = true;
-          tituloParaGuardar = await generarTituloConversacionAction(
-            primerMensajeUsuario.text,
-          );
+    iaGuardadoTimeoutRef.current = setTimeout(() => {
+      // Encadenamos sobre la promesa anterior: si un guardado previo todavía
+      // está en curso (ej: generando el título), este espera a que termine
+      // antes de leer iaConversacionIdRef.current — así nunca hay dos
+      // guardados creando una fila nueva al mismo tiempo.
+      iaGuardadoEnCursoRef.current = iaGuardadoEnCursoRef.current.then(async () => {
+        // Genera el título una sola vez, apenas hay el primer mensaje de
+        // usuario — no en cada guardado posterior.
+        let tituloParaGuardar: string | null = null;
+        if (!iaTituloGeneradoRef.current) {
+          const primerMensajeUsuario = messages.find((m) => m.type === "user");
+          if (primerMensajeUsuario) {
+            iaTituloGeneradoRef.current = true;
+            tituloParaGuardar = await generarTituloConversacionAction(
+              primerMensajeUsuario.text,
+            );
+          }
         }
-      }
 
-      const result = await guardarConversacionIAAction(
-        iaConversacionIdRef.current,
-        messages,
-        iaFlowState,
-        tituloParaGuardar,
-      );
+        const result = await guardarConversacionIAAction(
+          iaConversacionIdRef.current,
+          messages,
+          iaFlowState,
+          tituloParaGuardar,
+        );
 
-      if (result.id && !iaConversacionIdRef.current) {
-        iaConversacionIdRef.current = result.id;
-        setIaConversacionId(result.id);
-      }
+        if (result.id && !iaConversacionIdRef.current) {
+          iaConversacionIdRef.current = result.id;
+          setIaConversacionId(result.id);
+        }
+      });
     }, 1200);
 
     return () => {
