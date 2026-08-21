@@ -74,6 +74,8 @@ import {
   seleccionarMomentoCampanaAction,
   seleccionarFechaCampanaAction,
   confirmarCreacionCampanaAction,
+  confirmarImportarContactosAction,
+  iniciarGrupoDesdeResultadosBusquedaAction,
 } from "@/lib/actions/ia";
 import { createClient } from "@/lib/supabase/client";
 
@@ -787,6 +789,37 @@ export default function AppShell({
     setDetailCampaignId(campanaId);
   }
 
+  async function handleIAConfirmarImportarContactos() {
+    setIaSending(true);
+    try {
+      const res = await confirmarImportarContactosAction(iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // La importación pudo haber traído contactos/leads nuevos — refrescamos
+      // para que Contactos y el resto de la app los vean sin recargar.
+      if (!res.error) router.refresh();
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIACrearGrupoDesdeBusqueda(
+    consulta: string,
+    contactosIds: string[],
+  ) {
+    setIaSending(true);
+    try {
+      const res = await iniciarGrupoDesdeResultadosBusquedaAction(
+        consulta,
+        contactosIds,
+      );
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
   function handleLogout() {
     setProfileOpen(false);
     setDrawerOpen(false);
@@ -907,6 +940,8 @@ export default function AppShell({
           onElegirFechaCampana={handleIAElegirFechaCampana}
           onConfirmarCampana={handleIAConfirmarCampana}
           onVerCampana={handleIAVerCampana}
+          onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
+          onCrearGrupoDesdeBusqueda={handleIACrearGrupoDesdeBusqueda}
           sending={iaSending}
         />
       )}

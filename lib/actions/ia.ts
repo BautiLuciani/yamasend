@@ -59,6 +59,8 @@ type Intencion =
   | { tipo: "crear_grupo"; consulta: string | null }
   | { tipo: "crear_template" }
   | { tipo: "crear_campana" }
+  | { tipo: "importar_contactos" }
+  | { tipo: "buscar_contactos"; consulta: string }
   | { tipo: "otra" };
 
 async function clasificarIntencion(
@@ -83,15 +85,18 @@ async function clasificarIntencion(
 
 Tu única tarea es decidir qué quiere hacer el usuario a partir de su último mensaje (y el historial reciente como contexto). Devolvé ÚNICAMENTE un JSON con esta forma exacta:
 
-{"tipo": "crear_grupo" | "crear_template" | "crear_campana" | "otra", "consulta": string | null}
+{"tipo": "crear_grupo" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "otra", "consulta": string | null}
 
-- "crear_grupo": el usuario quiere armar/crear una lista o grupo de contactos.
-  - Si además especificó un criterio de selección en lenguaje natural (ej: "los que preguntaron por cocina americana", "los interesados en la casa de 3 ambientes"), poné ese criterio tal cual en "consulta". Si no especificó ningún criterio (solo dijo "quiero crear un grupo"), "consulta" debe ser null.
+- "crear_grupo": el usuario quiere armar/crear una lista o grupo de contactos directamente (ej: "creame un grupo con los que preguntaron por X", "quiero armar un grupo nuevo").
+  - Si además especificó un criterio de selección en lenguaje natural, poné ese criterio tal cual en "consulta". Si no especificó ningún criterio, "consulta" debe ser null.
 - "crear_template": el usuario quiere crear/redactar un template o mensaje para mandar a aprobar a Meta/WhatsApp.
 - "crear_campana": el usuario quiere armar o enviar una campaña de mensajes.
+- "importar_contactos": el usuario quiere importar, sincronizar o traer sus contactos de WhatsApp (ej: "importá mis contactos", "sincronizá mis chats", "traé mis contactos nuevos").
+- "buscar_contactos": el usuario quiere VER o ENCONTRAR contactos según un tema que se haya hablado en las conversaciones, SIN pedir explícitamente crear un grupo (ej: "mostrame los que hablamos de Coca-Cola", "quiénes preguntaron por el departamento de 3 ambientes", "buscá contactos que mencionaron descuentos"). La clave para diferenciarlo de "crear_grupo": acá el usuario quiere VER/EXPLORAR resultados primero, no está pidiendo crear un grupo de una.
+  - En este caso, "consulta" es obligatorio: el tema o palabra clave que hay que buscar (ej: "coca cola", "departamento de 3 ambientes").
 - "otra": cualquier otra cosa (preguntas sobre sus datos, métricas, charla general, etc).
 
-Para tipo distinto de "crear_grupo", "consulta" siempre va null.
+Para "crear_template", "crear_campana", "importar_contactos" y "otra", "consulta" siempre va null.
 No agregues texto fuera del JSON.`,
       },
       {
@@ -111,6 +116,10 @@ No agregues texto fuera del JSON.`,
     }
     if (parsed.tipo === "crear_template") return { tipo: "crear_template" };
     if (parsed.tipo === "crear_campana") return { tipo: "crear_campana" };
+    if (parsed.tipo === "importar_contactos") return { tipo: "importar_contactos" };
+    if (parsed.tipo === "buscar_contactos" && parsed.consulta) {
+      return { tipo: "buscar_contactos", consulta: String(parsed.consulta) };
+    }
     return { tipo: "otra" };
   } catch {
     return { tipo: "otra" };
@@ -230,6 +239,11 @@ export async function sendIAMessageAction(
     return handleCrearCampanaStep(texto, flowState);
   }
 
+  // ---- Flujo activo: importar_contactos --------------------------------
+  if (flowState.kind === "importar_contactos") {
+    return handleImportarContactosStep(texto, flowState);
+  }
+
   // ---- Sin flujo activo: clasificar intención --------------------------
   let intencion: Intencion;
   try {
@@ -257,11 +271,19 @@ export async function sendIAMessageAction(
     return iniciarFlujoCrearCampana();
   }
 
+  if (intencion.tipo === "importar_contactos") {
+    return iniciarFlujoImportarContactos();
+  }
+
+  if (intencion.tipo === "buscar_contactos") {
+    return buscarContactosPorTema(intencion.consulta);
+  }
+
   // "otra": placeholder conversacional (analítica libre) — no es el foco de
   // esta iteración, así que respondemos con guía hacia lo que sí sabemos
   // hacer en vez de inventar una respuesta analítica sin datos reales detrás.
   return {
-    text: "Puedo ayudarte a crear un grupo de contactos, un template o una campaña hablando conmigo. Por ejemplo, pedime: \"creame un grupo con los que preguntaron por casas de 3 ambientes\", \"quiero armar un template para avisar una promo\" o \"quiero mandar una campaña\". ¿Querés que empecemos?",
+    text: "Puedo ayudarte a importar contactos, crear un grupo, un template o una campaña, y buscar contactos por tema hablando conmigo. Por ejemplo, pedime: \"mostrame los que hablamos de casas de 3 ambientes\" o \"quiero mandar una campaña\". ¿Querés que empecemos?",
     flowState: IA_FLOW_IDLE,
   };
 }
@@ -313,6 +335,27 @@ async function handleCrearGrupoStep(
   if (step === "grupo_esperando_nombre") {
     const nombre = texto.slice(0, 120);
     const nuevoDraft = { ...draft, nombre };
+
+    // Si los contactos ya vienen resueltos (ej: desde resultados de
+    // búsqueda de texto completo), saltamos directo a la tarjeta de
+    // selección ya preseleccionada, SIN volver a correr syncAndAnalyzeAction
+    // ni pisar la preselección con preseleccionarPorConsulta (que busca en
+    // yamas_send_leads, una fuente distinta).
+    if (draft.contactosIdsResueltos && draft.contactosIds) {
+      return {
+        text: `Listo, "${nombre}". Ya tengo los ${draft.contactosIds.length} contacto${draft.contactosIds.length === 1 ? "" : "s"} que encontramos — revisá la lista y ajustá lo que necesites.`,
+        payload: {
+          kind: "seleccionar_contactos",
+          preselectedIds: draft.contactosIds,
+          consultaUsada: draft.consultaUsada,
+        },
+        flowState: {
+          kind: "crear_grupo",
+          step: "grupo_esperando_contactos",
+          draft: nuevoDraft,
+        },
+      };
+    }
 
     // Si el usuario ya había dado un criterio de selección al iniciar el
     // flujo (ej: "los que preguntaron por X"), corremos el análisis de IA
@@ -1214,5 +1257,237 @@ export async function confirmarCreacionCampanaAction(
       fechaProgramada: null,
     },
     flowState: IA_FLOW_IDLE,
+  };
+}
+
+// -----------------------------------------------------------------------
+// Flujo: importar_contactos
+// Expone syncAndAnalyzeAction como su propio flujo conversacional — el
+// mismo mecanismo que ya usa el botón "Analizar contactos" de la sección
+// Contactos (SyncConfigModal.tsx). No hay "importar" separado de
+// "analizar": sincronizar contactos de WAHA y correr el análisis de IA
+// ocurren en la misma llamada al webhook.
+// -----------------------------------------------------------------------
+
+const IMPORT_DIAS_DEFAULT = 30;
+const IMPORT_LIMITE_DEFAULT = 50;
+
+function iniciarFlujoImportarContactos(): IAResponse {
+  return {
+    text: `Dale, puedo importar y analizar tus contactos de WhatsApp. Por defecto reviso los últimos ${IMPORT_DIAS_DEFAULT} días y hasta ${IMPORT_LIMITE_DEFAULT} contactos. ¿Confirmás con esos valores, o preferís ajustarlos antes (por ejemplo "90 días, 100 contactos")?`,
+    payload: {
+      kind: "confirmar_importar_contactos",
+      diasAnalisis: IMPORT_DIAS_DEFAULT,
+      limiteContactos: IMPORT_LIMITE_DEFAULT,
+    },
+    flowState: {
+      kind: "importar_contactos",
+      step: "importar_esperando_confirmacion",
+      draft: { diasAnalisis: IMPORT_DIAS_DEFAULT, limiteContactos: IMPORT_LIMITE_DEFAULT },
+    },
+  };
+}
+
+/**
+ * Mientras se espera confirmación, el usuario puede escribir ajustes en
+ * lenguaje natural (ej: "90 días y 100 contactos") en vez de tocar la
+ * tarjeta. Interpretamos números sueltos del mensaje como día/límite si
+ * aparecen — sin IA, con una heurística simple: el primer número que
+ * aparece junto a "día"/"dias" es diasAnalisis, el que aparece junto a
+ * "contacto" es limiteContactos. Si no se puede interpretar nada,
+ * mantenemos los valores actuales y volvemos a mostrar la tarjeta.
+ */
+async function handleImportarContactosStep(
+  texto: string,
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (/^(cancelar|cancela|olvidalo|dejalo)$/i.test(texto)) {
+    return {
+      text: "Listo, cancelé la importación. ¿En qué más te ayudo?",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const draft = flowState.draft;
+  const matchDias = texto.match(/(\d+)\s*d[ií]as?/i);
+  const matchLimite = texto.match(/(\d+)\s*contactos?/i);
+
+  const diasAnalisis = matchDias
+    ? Math.max(1, Math.min(365, parseInt(matchDias[1], 10)))
+    : (draft.diasAnalisis ?? IMPORT_DIAS_DEFAULT);
+  const limiteContactos = matchLimite
+    ? Math.max(1, Math.min(500, parseInt(matchLimite[1], 10)))
+    : (draft.limiteContactos ?? IMPORT_LIMITE_DEFAULT);
+
+  return {
+    text: `Listo: ${diasAnalisis} días, hasta ${limiteContactos} contactos. Confirmá desde la tarjeta para arrancar.`,
+    payload: {
+      kind: "confirmar_importar_contactos",
+      diasAnalisis,
+      limiteContactos,
+    },
+    flowState: {
+      kind: "importar_contactos",
+      step: "importar_esperando_confirmacion",
+      draft: { diasAnalisis, limiteContactos },
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario confirma "Importar contactos" desde la
+ * tarjeta. Ejecuta syncAndAnalyzeAction — puede tardar bastante (varios
+ * segundos por contacto), el front debe mostrar el estado "pensando"
+ * mientras se resuelve esta promesa.
+ */
+export async function confirmarImportarContactosAction(
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (flowState.kind !== "importar_contactos") {
+    return {
+      text: "Se perdió el contexto de la importación. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const diasAnalisis = flowState.draft.diasAnalisis ?? IMPORT_DIAS_DEFAULT;
+  const limiteContactos = flowState.draft.limiteContactos ?? IMPORT_LIMITE_DEFAULT;
+
+  const result = await syncAndAnalyzeAction({
+    diasAnalisis,
+    limiteContactos,
+    consulta: "",
+  });
+
+  if (!result.success) {
+    return {
+      text: `No pude completar la importación: ${result.error ?? "error desconocido"}. ¿Querés reintentar?`,
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text:
+      result.contactosAnalizados > 0
+        ? `Listo, analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés. Ya podés verlos en Contactos, crear un grupo, o pedirme que busque algo puntual entre ellos.`
+        : `Terminé de revisar, pero no encontré contactos con mensajes en ese rango. ${result.mensaje ?? ""}`.trim(),
+    payload: {
+      kind: "importacion_completada",
+      contactosAnalizados: result.contactosAnalizados,
+      leadsIdentificados: result.leadsIdentificados,
+      contactosProcesados: result.contactosProcesados,
+    },
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+// -----------------------------------------------------------------------
+// Flujo: buscar_contactos
+// Búsqueda de texto completo (Postgres tsvector) sobre el histórico de
+// mensajes ya persistido por el workflow de sync — NO vuelve a llamar a
+// la IA ni a WAHA en vivo, por eso responde en milisegundos incluso con
+// miles de mensajes acumulados. Si no hay resultados, ofrece de una el
+// flujo de importar/sincronizar contactos (que es lo que llena esta
+// tabla), en vez de solo avisar que no encontró nada.
+// -----------------------------------------------------------------------
+
+const MAX_RESULTADOS_BUSQUEDA = 15;
+
+async function buscarContactosPorTema(consulta: string): Promise<IAResponse> {
+  const tenantId = await resolverTenantId();
+  if (!tenantId) {
+    return {
+      text: "No pude identificar tu cuenta. Probá recargar la página e intentar de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const supabase = await createClient();
+
+  // to_tsquery con websearch_to_tsquery permite escribir la consulta en
+  // lenguaje natural ("coca cola", "casas de 3 ambientes") sin que el
+  // usuario tenga que aprender la sintaxis de tsquery de Postgres.
+  const { data: rows, error } = await supabase.rpc("buscar_mensajes_historico", {
+    p_tenant_id: tenantId,
+    p_consulta: consulta,
+    p_limite: MAX_RESULTADOS_BUSQUEDA,
+  });
+
+  if (error) {
+    console.error("[IA] Error en buscar_mensajes_historico:", error);
+    return {
+      text: "Tuve un problema buscando en tus conversaciones. Probá de nuevo en un momento.",
+      flowState: IA_FLOW_IDLE,
+      error: error.message,
+    };
+  }
+
+  const resultados = (rows ?? []) as {
+    contacto_id: string | null;
+    nombre: string | null;
+    telefono: string;
+    menciones: number;
+    fragmento: string;
+  }[];
+
+  if (resultados.length === 0) {
+    return {
+      text: `No encontré ningún contacto que haya hablado de "${consulta}". Puede ser que todavía no hayas importado/sincronizado tus contactos, o que ese tema no haya salido en las conversaciones que ya tenemos guardadas. ¿Querés que importe y analice tus contactos ahora?`,
+      payload: {
+        kind: "confirmar_importar_contactos",
+        diasAnalisis: IMPORT_DIAS_DEFAULT,
+        limiteContactos: IMPORT_LIMITE_DEFAULT,
+      },
+      flowState: {
+        kind: "importar_contactos",
+        step: "importar_esperando_confirmacion",
+        draft: { diasAnalisis: IMPORT_DIAS_DEFAULT, limiteContactos: IMPORT_LIMITE_DEFAULT },
+      },
+    };
+  }
+
+  return {
+    text: `Encontré ${resultados.length} contacto${resultados.length === 1 ? "" : "s"} que hablaron de "${consulta}":`,
+    payload: {
+      kind: "resultados_busqueda_contactos",
+      consulta,
+      resultados: resultados.map((r) => ({
+        contactoId: r.contacto_id,
+        nombre: r.nombre ?? "Sin nombre",
+        telefono: r.telefono,
+        menciones: r.menciones,
+        fragmento: r.fragmento,
+      })),
+    },
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+/**
+ * Se llama cuando el usuario toca "Crear grupo con estos contactos" desde
+ * la tarjeta de resultados de búsqueda. Reutiliza el flujo de crear_grupo
+ * ya existente, preseleccionando los contactos encontrados — mismo patrón
+ * que la búsqueda por IA dentro de handleCrearGrupoStep, pero acá los IDs
+ * ya vienen resueltos de la búsqueda de texto, sin correr análisis de IA
+ * de nuevo.
+ */
+export async function iniciarGrupoDesdeResultadosBusquedaAction(
+  consulta: string,
+  contactosIds: string[],
+): Promise<IAResponse> {
+  if (contactosIds.length === 0) {
+    return {
+      text: "No hay contactos para agrupar en estos resultados.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text: `Dale, armemos un grupo con estos ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}. ¿Cómo querés que se llame?`,
+    flowState: {
+      kind: "crear_grupo",
+      step: "grupo_esperando_nombre",
+      draft: { consultaUsada: consulta, contactosIds, contactosIdsResueltos: true },
+    },
   };
 }

@@ -184,6 +184,28 @@ export type ChatPayload =
       fechaProgramada: string | null;
     }
   | {
+      kind: "confirmar_importar_contactos";
+      diasAnalisis: number;
+      limiteContactos: number;
+    }
+  | {
+      kind: "importacion_completada";
+      contactosAnalizados: number;
+      leadsIdentificados: number;
+      contactosProcesados: number;
+    }
+  | {
+      kind: "resultados_busqueda_contactos";
+      consulta: string;
+      resultados: {
+        contactoId: string | null;
+        nombre: string;
+        telefono: string;
+        menciones: number;
+        fragmento: string;
+      }[];
+    }
+  | {
       kind: "follow_ups";
       opciones: string[];
     };
@@ -196,7 +218,11 @@ export interface ChatMessage {
 }
 
 /** Flujos guiados que el agente de IA puede llevar adelante paso a paso. */
-export type IAFlowKind = "crear_grupo" | "crear_template" | "crear_campana";
+export type IAFlowKind =
+  | "crear_grupo"
+  | "crear_template"
+  | "crear_campana"
+  | "importar_contactos";
 
 export type IAFlowStep =
   // crear_grupo
@@ -214,7 +240,9 @@ export type IAFlowStep =
   | "campana_esperando_template"
   | "campana_esperando_momento"
   | "campana_esperando_fecha"
-  | "campana_esperando_confirmacion";
+  | "campana_esperando_confirmacion"
+  // importar_contactos
+  | "importar_esperando_confirmacion";
 
 export interface IAFlowState {
   kind: IAFlowKind | null;
@@ -223,12 +251,18 @@ export interface IAFlowState {
     nombre?: string;
     contactosIds?: string[];
     consultaUsada?: string | null;
+    // Cuando true, contactosIds ya viene resuelto (ej: desde resultados de
+    // búsqueda de texto) y el flujo de crear_grupo NO debe volver a correr
+    // syncAndAnalyzeAction ni pisar la preselección con preseleccionarPorConsulta.
+    contactosIdsResueltos?: boolean;
     categoria?: string;
     contenido?: string;
     grupoId?: string;
     templateId?: string;
     momento?: "ahora" | "programar";
     fechaProgramada?: string | null;
+    diasAnalisis?: number;
+    limiteContactos?: number;
   };
 }
 

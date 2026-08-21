@@ -244,6 +244,8 @@ export function renderChatCard(
     onElegirFechaCampana: (fechaIso: string) => void;
     onConfirmarCampana: () => void;
     onVerCampana: (campanaId: string) => void;
+    onConfirmarImportarContactos: () => void;
+    onCrearGrupoDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
   },
   isLatest: boolean,
 ) {
@@ -372,6 +374,35 @@ export function renderChatCard(
         momento={payload.momento}
         fechaProgramada={payload.fechaProgramada}
         onVerCampana={() => handlers.onVerCampana(payload.campanaId)}
+      />
+    );
+  }
+  if (payload.kind === "confirmar_importar_contactos") {
+    return (
+      <ConfirmarImportarContactosCard
+        diasAnalisis={payload.diasAnalisis}
+        limiteContactos={payload.limiteContactos}
+        onConfirmar={handlers.onConfirmarImportarContactos}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "importacion_completada") {
+    return (
+      <ImportacionCompletadaCard
+        contactosAnalizados={payload.contactosAnalizados}
+        leadsIdentificados={payload.leadsIdentificados}
+        contactosProcesados={payload.contactosProcesados}
+      />
+    );
+  }
+  if (payload.kind === "resultados_busqueda_contactos") {
+    return (
+      <ResultadosBusquedaContactosCard
+        consulta={payload.consulta}
+        resultados={payload.resultados}
+        onCrearGrupo={(ids) => handlers.onCrearGrupoDesdeBusqueda(payload.consulta, ids)}
+        disabled={!isLatest}
       />
     );
   }
@@ -953,6 +984,208 @@ export function CampanaCreadaCard({
       >
         Ver campaña →
       </button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: confirmar_importar_contactos
+// Resumen de la config (días/límite) antes de disparar syncAndAnalyzeAction
+// — puede tardar bastante (varios segundos por contacto), por eso el botón
+// muestra un estado "Importando..." explícito.
+// -------------------------------------------------------------------------
+interface ConfirmarImportarContactosCardProps {
+  diasAnalisis: number;
+  limiteContactos: number;
+  onConfirmar: () => void;
+  disabled?: boolean;
+}
+
+export function ConfirmarImportarContactosCard({
+  diasAnalisis,
+  limiteContactos,
+  onConfirmar,
+  disabled,
+}: ConfirmarImportarContactosCardProps) {
+  const [confirmado, setConfirmado] = useState(false);
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5">
+      <div className="bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-3.5 py-3 grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-0.5">
+          <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Rango</div>
+          <div className="text-[12.5px] font-bold text-ys-text">Últimos {diasAnalisis} días</div>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Contactos</div>
+          <div className="text-[12.5px] font-bold text-ys-text">Hasta {limiteContactos}</div>
+        </div>
+      </div>
+      <button
+        onClick={() => {
+          setConfirmado(true);
+          onConfirmar();
+        }}
+        disabled={confirmado || disabled}
+        className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {confirmado ? "Importando..." : "Importar contactos"}
+      </button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: importacion_completada
+// Resumen de resultados — mismo espíritu que StatBox en SyncConfigModal.
+// -------------------------------------------------------------------------
+interface ImportacionCompletadaCardProps {
+  contactosAnalizados: number;
+  leadsIdentificados: number;
+  contactosProcesados: number;
+}
+
+export function ImportacionCompletadaCard({
+  contactosAnalizados,
+  leadsIdentificados,
+  contactosProcesados,
+}: ImportacionCompletadaCardProps) {
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-4 py-3.5 grid grid-cols-3 gap-2.5">
+      <div className="flex flex-col gap-0.5 rounded-xl border border-ys-border bg-[#fbfcfb] px-3 py-2.5">
+        <div className="font-mono text-base font-medium text-ys-text">{contactosProcesados}</div>
+        <div className="text-[10px] uppercase tracking-[0.03em] font-semibold text-ys-dim">Procesados</div>
+      </div>
+      <div className="flex flex-col gap-0.5 rounded-xl border border-ys-border bg-[#fbfcfb] px-3 py-2.5">
+        <div className="font-mono text-base font-medium text-ys-text">{contactosAnalizados}</div>
+        <div className="text-[10px] uppercase tracking-[0.03em] font-semibold text-ys-dim">Analizados</div>
+      </div>
+      <div className="flex flex-col gap-0.5 rounded-xl bg-ys-green px-3 py-2.5">
+        <div className="font-mono text-base font-medium text-white">{leadsIdentificados}</div>
+        <div className="text-[10px] uppercase tracking-[0.03em] font-semibold text-white/80">Con interés</div>
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: resultados_busqueda_contactos
+// Lista de contactos encontrados por búsqueda de texto completo, con
+// cantidad de menciones y el fragmento que hizo match (viene con **bold**
+// desde ts_headline de Postgres — lo parseamos a <mark> acá). Selección
+// múltiple con checkboxes (todos preseleccionados por default) + botón
+// para crear grupo con los elegidos, reusando el flujo de crear_grupo.
+// -------------------------------------------------------------------------
+interface ResultadoBusquedaContacto {
+  contactoId: string | null;
+  nombre: string;
+  telefono: string;
+  menciones: number;
+  fragmento: string;
+}
+
+function renderFragmentoConResaltado(fragmento: string) {
+  const partes = fragmento.split(/(\*\*[^*]+\*\*)/g);
+  return partes.map((parte, i) => {
+    if (parte.startsWith("**") && parte.endsWith("**")) {
+      return (
+        <mark key={i} className="bg-ys-green-bg text-ys-green-text rounded-[3px] px-0.5 font-bold not-italic">
+          {parte.slice(2, -2)}
+        </mark>
+      );
+    }
+    return <span key={i}>{parte}</span>;
+  });
+}
+
+interface ResultadosBusquedaContactosCardProps {
+  consulta: string;
+  resultados: ResultadoBusquedaContacto[];
+  onCrearGrupo: (contactosIds: string[]) => void;
+  disabled?: boolean;
+}
+
+export function ResultadosBusquedaContactosCard({
+  resultados,
+  onCrearGrupo,
+  disabled,
+}: ResultadosBusquedaContactosCardProps) {
+  // Solo los que tienen contactoId resuelto se pueden agrupar (los que no
+  // matchean con yamas_send_contactos quedan visibles pero no seleccionables
+  // para el grupo, ya que saveListAction necesita el id real del contacto).
+  const seleccionables = resultados.filter((r) => r.contactoId);
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(seleccionables.map((r) => r.contactoId as string)),
+  );
+  const [confirmado, setConfirmado] = useState(false);
+
+  function toggle(id: string) {
+    if (confirmado || disabled) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl overflow-hidden flex flex-col">
+      <div className="max-h-[320px] overflow-y-auto flex flex-col">
+        {resultados.map((r) => {
+          const active = r.contactoId ? selected.has(r.contactoId) : false;
+          const seleccionable = !!r.contactoId;
+          return (
+            <button
+              key={r.telefono}
+              onClick={() => r.contactoId && toggle(r.contactoId)}
+              disabled={confirmado || disabled || !seleccionable}
+              className="w-full flex items-start gap-3 px-4 py-3 border-b border-ys-border-softest last:border-b-0 text-left transition-colors hover:bg-[#f7fbf9] disabled:hover:bg-transparent disabled:cursor-default"
+            >
+              {seleccionable && (
+                <div className="w-[18px] h-[18px] flex-none rounded-[6px] border-[1.5px] border-ys-border bg-white flex items-center justify-center mt-0.5">
+                  {active && (
+                    <div className="w-[18px] h-[18px] -m-[1.5px] rounded-[6px] bg-ys-green flex items-center justify-center">
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                        <path d="m3 8.4 3.4 3L13 4.6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="flex-1 min-w-0 flex flex-col gap-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="text-[13.5px] font-bold text-ys-text truncate">{r.nombre}</div>
+                  <div className="font-mono text-[11.5px] text-ys-dim">{r.telefono}</div>
+                  <div className="text-[10.5px] font-bold text-ys-green-text bg-ys-green-bg rounded-full px-2 py-0.5">
+                    {r.menciones} menci{r.menciones === 1 ? "ón" : "ones"}
+                  </div>
+                </div>
+                <div className="text-[12.5px] text-ys-muted font-medium leading-[1.5] italic">
+                  &ldquo;{renderFragmentoConResaltado(r.fragmento)}&rdquo;
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {seleccionables.length > 0 && (
+        <div className="px-4 py-3 border-t border-ys-border-softest">
+          <button
+            onClick={() => {
+              setConfirmado(true);
+              onCrearGrupo(Array.from(selected));
+            }}
+            disabled={confirmado || disabled || selected.size === 0}
+            className="w-full text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {confirmado
+              ? "Creando grupo..."
+              : `Crear grupo con ${selected.size} contacto${selected.size === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -24,14 +24,16 @@ interface IAProps {
   onElegirFechaCampana: (fechaIso: string) => void;
   onConfirmarCampana: () => void;
   onVerCampana: (campanaId: string) => void;
+  onConfirmarImportarContactos: () => void;
+  onCrearGrupoDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
   sending?: boolean;
 }
 
 const SUGERENCIAS = [
-  "Creame un grupo con mis contactos calientes",
+  "Mostrame contactos que hablaron de algo puntual",
+  "Quiero importar mis contactos",
   "Quiero armar un template nuevo",
   "Quiero mandar una campaña",
-  "Quiero armar un grupo nuevo",
 ];
 
 // Variantes del mensaje de bienvenida — se elige una al azar por sesión de
@@ -48,7 +50,7 @@ const BIENVENIDAS = [
   },
   {
     titulo: "Hagamos algo juntos",
-    texto: "Puedo crear grupos de contactos, templates y campañas completas hablando conmigo, sin que tengas que armarlos a mano.",
+    texto: "Puedo importar tus contactos, buscar quién habló de un tema puntual, y crear grupos, templates y campañas hablando conmigo.",
   },
 ];
 
@@ -72,6 +74,8 @@ export default function IA({
   onElegirFechaCampana,
   onConfirmarCampana,
   onVerCampana,
+  onConfirmarImportarContactos,
+  onCrearGrupoDesdeBusqueda,
   sending,
 }: IAProps) {
   const [value, setValue] = useState("");
@@ -223,6 +227,8 @@ export default function IA({
                       onElegirFechaCampana,
                       onConfirmarCampana,
                       onVerCampana,
+                      onConfirmarImportarContactos,
+                      onCrearGrupoDesdeBusqueda,
                     },
                     m.id === lastBotMessageId,
                   )}
