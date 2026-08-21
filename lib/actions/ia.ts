@@ -7,7 +7,10 @@ import {
   saveListAction,
   saveTemplateDraftAction,
   sendTemplateToMetaAction,
+  saveCampaignAction,
+  sendCampaignAction,
 } from "@/lib/actions/write";
+import { getListsForTenant, getTemplatesForTenant } from "@/lib/actions/campaigns";
 import type {
   ChatPayload,
   Contact,
@@ -15,6 +18,12 @@ import type {
   IAHistoryTurn,
 } from "@/lib/types";
 import { IA_FLOW_IDLE } from "@/lib/types";
+
+// Mismo costo por mensaje que usa CampaignWizardModal.tsx (COST_PER_MSG en
+// AppShell.tsx) — se mantiene acá como constante propia porque ese valor
+// vive hoy hardcodeado en el componente, no exportado desde ningún lado
+// reusable. Si alguna vez se centraliza, actualizar ambos lugares.
+const COST_PER_MSG = 0.0618;
 
 // -----------------------------------------------------------------------
 // Cliente OpenAI. Se instancia perezosamente adentro de cada función (no a
@@ -216,6 +225,11 @@ export async function sendIAMessageAction(
     return handleCrearTemplateStep(texto, flowState);
   }
 
+  // ---- Flujo activo: crear_campana -------------------------------------
+  if (flowState.kind === "crear_campana") {
+    return handleCrearCampanaStep(texto, flowState);
+  }
+
   // ---- Sin flujo activo: clasificar intención --------------------------
   let intencion: Intencion;
   try {
@@ -240,17 +254,14 @@ export async function sendIAMessageAction(
   }
 
   if (intencion.tipo === "crear_campana") {
-    return {
-      text: "Todavía estoy aprendiendo a crear campañas por acá — esa parte va a estar disponible muy pronto. Por ahora podés hacerlo desde la sección Campañas del menú. Mientras tanto, sí puedo ayudarte a crear un grupo de contactos o un template, ¿querés que arranquemos con alguno de los dos?",
-      flowState: IA_FLOW_IDLE,
-    };
+    return iniciarFlujoCrearCampana();
   }
 
   // "otra": placeholder conversacional (analítica libre) — no es el foco de
   // esta iteración, así que respondemos con guía hacia lo que sí sabemos
   // hacer en vez de inventar una respuesta analítica sin datos reales detrás.
   return {
-    text: "Puedo ayudarte a crear un grupo de contactos o un template hablando conmigo. Por ejemplo, pedime: \"creame un grupo con los que preguntaron por casas de 3 ambientes\" o \"quiero armar un template para avisar una promo\". ¿Querés que empecemos?",
+    text: "Puedo ayudarte a crear un grupo de contactos, un template o una campaña hablando conmigo. Por ejemplo, pedime: \"creame un grupo con los que preguntaron por casas de 3 ambientes\", \"quiero armar un template para avisar una promo\" o \"quiero mandar una campaña\". ¿Querés que empecemos?",
     flowState: IA_FLOW_IDLE,
   };
 }
@@ -762,6 +773,446 @@ export async function confirmarEnvioTemplateAction(
   return {
     text: `${result.mensaje} El template quedó "En revisión" — Meta puede tardar unos minutos (a veces más) en aprobarlo. Te aviso por acá apenas cambie el estado.`,
     payload: { kind: "template_guardado", resultado: "enviado", nombre },
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+// -----------------------------------------------------------------------
+// Flujo: crear_campana
+// Mismas reglas que CampaignWizardModal.tsx (el wizard manual): grupo →
+// template → momento (ahora/programar) → confirmar. A diferencia del
+// wizard manual, acá SÍ filtramos los templates a solo "verificado" —
+// decisión explícita para no ofrecer por chat un template rechazado o en
+// borrador (ver conversación del 21/08 con Bauti).
+// -----------------------------------------------------------------------
+
+async function iniciarFlujoCrearCampana(): Promise<IAResponse> {
+  const tenantId = await resolverTenantId();
+  if (!tenantId) {
+    return {
+      text: "No pude identificar tu cuenta. Probá recargar la página e intentar de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const lists = await getListsForTenant(tenantId);
+  if (lists.length === 0) {
+    return {
+      text: "Todavía no tenés ningún grupo de contactos creado, así que no puedo armar una campaña. Pedime que te cree un grupo primero, o hacelo desde la sección Grupos.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const templates = await getTemplatesForTenant(tenantId);
+  const templatesAprobados = templates.filter((t) => t.status === "verificado");
+  if (templatesAprobados.length === 0) {
+    return {
+      text: "Todavía no tenés ningún template aprobado por Meta, así que no puedo armar una campaña. Pedime que te cree un template, o esperá a que se apruebe uno que ya tengas en revisión.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text: "Dale, armemos una campaña. ¿Cómo querés que se llame?",
+    flowState: {
+      kind: "crear_campana",
+      step: "campana_esperando_nombre",
+      draft: {},
+    },
+  };
+}
+
+async function handleCrearCampanaStep(
+  texto: string,
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  const { step, draft } = flowState;
+
+  // Cancelación en cualquier punto del flujo. Ver nota de diseño equivalente
+  // en handleCrearGrupoStep/handleCrearTemplateStep: match exacto, no
+  // "contiene", para no confundir un nombre de campaña legítimo con la
+  // intención de cancelar.
+  if (/^(cancelar|cancela|olvidalo|dejalo)$/i.test(texto)) {
+    return {
+      text: "Listo, cancelé la creación de la campaña. ¿En qué más te ayudo?",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (step === "campana_esperando_nombre") {
+    if (texto.trim().length < 3) {
+      return {
+        text: "El nombre necesita al menos 3 caracteres. ¿Cómo querés que se llame la campaña?",
+        flowState,
+      };
+    }
+    const nombre = texto.trim().slice(0, 120);
+    return mostrarSelectorGrupoCampana(nombre, draft);
+  }
+
+  if (step === "campana_esperando_grupo") {
+    return {
+      text: "Elegí un grupo desde las opciones de arriba.",
+      payload: await payloadElegirGrupoCampana(),
+      flowState,
+    };
+  }
+
+  if (step === "campana_esperando_template") {
+    return {
+      text: "Elegí un template desde las opciones de arriba.",
+      payload: await payloadElegirTemplateCampana(),
+      flowState,
+    };
+  }
+
+  if (step === "campana_esperando_momento") {
+    return {
+      text: "Elegí cuándo enviarla desde las opciones de arriba.",
+      payload: { kind: "elegir_momento_campana" },
+      flowState,
+    };
+  }
+
+  if (step === "campana_esperando_fecha") {
+    return {
+      text: "Elegí la fecha y hora desde el selector de arriba.",
+      payload: { kind: "elegir_fecha_campana" },
+      flowState,
+    };
+  }
+
+  if (step === "campana_esperando_confirmacion") {
+    return {
+      text: "Confirmá desde la tarjeta de arriba, o escribí \"cancelar\" si preferís no continuar.",
+      flowState,
+    };
+  }
+
+  // Estado inesperado: reseteamos por seguridad.
+  return {
+    text: "Se ve que algo se desconfiguró en la conversación. Empecemos de nuevo: ¿qué necesitás?",
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+async function payloadElegirGrupoCampana(): Promise<ChatPayload> {
+  const tenantId = await resolverTenantId();
+  const lists = tenantId ? await getListsForTenant(tenantId) : [];
+  return {
+    kind: "elegir_grupo_campana",
+    grupos: lists.map((l) => ({
+      id: l.id,
+      nombre: l.nombre,
+      totalContactos: l.contactosIds.length,
+    })),
+  };
+}
+
+async function payloadElegirTemplateCampana(): Promise<ChatPayload> {
+  const tenantId = await resolverTenantId();
+  const templates = tenantId ? await getTemplatesForTenant(tenantId) : [];
+  const aprobados = templates.filter((t) => t.status === "verificado");
+  return {
+    kind: "elegir_template_campana",
+    templates: aprobados.map((t) => ({
+      id: t.id,
+      nombre: t.nombre,
+      contenido: t.contenido,
+    })),
+  };
+}
+
+async function mostrarSelectorGrupoCampana(
+  nombre: string,
+  draft: IAFlowState["draft"],
+): Promise<IAResponse> {
+  return {
+    text: `Buenísimo, "${nombre}". Ahora elegí a qué grupo se la vas a mandar.`,
+    payload: await payloadElegirGrupoCampana(),
+    flowState: {
+      kind: "crear_campana",
+      step: "campana_esperando_grupo",
+      draft: { ...draft, nombre },
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario elige un grupo desde la tarjeta
+ * `elegir_grupo_campana` (click, no texto libre).
+ */
+export async function seleccionarGrupoCampanaAction(
+  flowState: IAFlowState,
+  grupoId: string,
+): Promise<IAResponse> {
+  if (flowState.kind !== "crear_campana" || !flowState.draft.nombre) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const tenantId = await resolverTenantId();
+  const lists = tenantId ? await getListsForTenant(tenantId) : [];
+  const grupo = lists.find((l) => l.id === grupoId);
+
+  if (!grupo) {
+    return {
+      text: "No encontré ese grupo. Elegí uno de las opciones de arriba.",
+      payload: await payloadElegirGrupoCampana(),
+      flowState,
+    };
+  }
+
+  return {
+    text: `"${grupo.nombre}" (${grupo.contactosIds.length} contactos). Ahora elegí qué template querés enviar — solo se muestran los ya aprobados por Meta.`,
+    payload: await payloadElegirTemplateCampana(),
+    flowState: {
+      kind: "crear_campana",
+      step: "campana_esperando_template",
+      draft: { ...flowState.draft, grupoId },
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario elige un template desde la tarjeta
+ * `elegir_template_campana`.
+ */
+export async function seleccionarTemplateCampanaAction(
+  flowState: IAFlowState,
+  templateId: string,
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "crear_campana" ||
+    !flowState.draft.nombre ||
+    !flowState.draft.grupoId
+  ) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const tenantId = await resolverTenantId();
+  const templates = tenantId ? await getTemplatesForTenant(tenantId) : [];
+  const template = templates.find((t) => t.id === templateId && t.status === "verificado");
+
+  if (!template) {
+    return {
+      text: "No encontré ese template entre los aprobados. Elegí uno de las opciones de arriba.",
+      payload: await payloadElegirTemplateCampana(),
+      flowState,
+    };
+  }
+
+  return {
+    text: `"${template.nombre}", listo. ¿Cuándo la enviamos?`,
+    payload: { kind: "elegir_momento_campana" },
+    flowState: {
+      kind: "crear_campana",
+      step: "campana_esperando_momento",
+      draft: { ...flowState.draft, templateId },
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario elige el momento de envío desde la tarjeta
+ * `elegir_momento_campana`.
+ */
+export async function seleccionarMomentoCampanaAction(
+  flowState: IAFlowState,
+  momento: "ahora" | "programar",
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "crear_campana" ||
+    !flowState.draft.nombre ||
+    !flowState.draft.grupoId ||
+    !flowState.draft.templateId
+  ) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (momento === "programar") {
+    return {
+      text: "Elegí la fecha y hora de envío.",
+      payload: { kind: "elegir_fecha_campana" },
+      flowState: {
+        kind: "crear_campana",
+        step: "campana_esperando_fecha",
+        draft: { ...flowState.draft, momento },
+      },
+    };
+  }
+
+  return mostrarConfirmacionCampana({ ...flowState.draft, momento, fechaProgramada: null });
+}
+
+/**
+ * Se llama cuando el usuario confirma una fecha/hora desde la tarjeta
+ * `elegir_fecha_campana` (input datetime-local + botón).
+ */
+export async function seleccionarFechaCampanaAction(
+  flowState: IAFlowState,
+  fechaProgramadaIso: string,
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "crear_campana" ||
+    !flowState.draft.nombre ||
+    !flowState.draft.grupoId ||
+    !flowState.draft.templateId
+  ) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return mostrarConfirmacionCampana({
+    ...flowState.draft,
+    momento: "programar",
+    fechaProgramada: fechaProgramadaIso,
+  });
+}
+
+async function mostrarConfirmacionCampana(
+  draft: IAFlowState["draft"],
+): Promise<IAResponse> {
+  const tenantId = await resolverTenantId();
+  const [lists, templates] = await Promise.all([
+    tenantId ? getListsForTenant(tenantId) : Promise.resolve([]),
+    tenantId ? getTemplatesForTenant(tenantId) : Promise.resolve([]),
+  ]);
+
+  const grupo = lists.find((l) => l.id === draft.grupoId);
+  const template = templates.find((t) => t.id === draft.templateId);
+
+  if (!grupo || !template || !draft.nombre || !draft.momento) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const totalContactos = grupo.contactosIds.length;
+  const costoUsd = totalContactos * COST_PER_MSG;
+
+  return {
+    text: `Revisá cómo quedó "${draft.nombre}" antes de confirmar.`,
+    payload: {
+      kind: "confirmar_campana",
+      nombre: draft.nombre,
+      grupoNombre: grupo.nombre,
+      totalContactos,
+      templateNombre: template.nombre,
+      momento: draft.momento,
+      fechaProgramada: draft.fechaProgramada ?? null,
+      costoUsd,
+    },
+    flowState: {
+      kind: "crear_campana",
+      step: "campana_esperando_confirmacion",
+      draft,
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario confirma "Crear campaña" desde la tarjeta
+ * final. Ejecuta saveCampaignAction y, si el momento es "ahora", además
+ * sendCampaignAction — mismo patrón exacto que el wizard manual en
+ * AppShell.tsx (incluyendo ventana24h: false), cero lógica duplicada.
+ */
+export async function confirmarCreacionCampanaAction(
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "crear_campana" ||
+    !flowState.draft.nombre ||
+    !flowState.draft.grupoId ||
+    !flowState.draft.templateId ||
+    !flowState.draft.momento
+  ) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const { nombre, grupoId, templateId, momento, fechaProgramada } = flowState.draft;
+
+  const tenantId = await resolverTenantId();
+  const lists = tenantId ? await getListsForTenant(tenantId) : [];
+  const templates = tenantId ? await getTemplatesForTenant(tenantId) : [];
+  const grupo = lists.find((l) => l.id === grupoId);
+  const template = templates.find((t) => t.id === templateId);
+
+  if (!grupo || !template) {
+    return {
+      text: "No pude encontrar el grupo o el template seleccionados. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const saveResult = await saveCampaignAction(
+    nombre,
+    grupoId,
+    templateId,
+    grupo.contactosIds,
+    momento === "programar" ? fechaProgramada ?? null : null,
+  );
+
+  if (saveResult.error || !saveResult.id) {
+    return {
+      text: `No pude crear la campaña: ${saveResult.error ?? "error desconocido"}. ¿Querés reintentar?`,
+      flowState,
+    };
+  }
+
+  if (momento === "programar") {
+    return {
+      text: `Listo, "${nombre}" quedó programada para ${fechaProgramada ? new Date(fechaProgramada).toLocaleString("es-AR") : ""}. Te aviso cuando se envíe.`,
+      payload: {
+        kind: "campana_creada",
+        campanaId: saveResult.id,
+        nombre,
+        momento,
+        fechaProgramada: fechaProgramada ?? null,
+      },
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const sendResult = await sendCampaignAction(
+    saveResult.id,
+    grupoId,
+    template.nombre,
+    template.templateLang ?? "es_AR",
+    false,
+    grupo.contactosIds.length,
+  );
+
+  if (sendResult.error) {
+    return {
+      text: `La campaña se guardó pero no se pudo enviar: ${sendResult.error}. Podés reintentar el envío desde la sección Campañas.`,
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text: `Listo, "${nombre}" se está enviando a ${grupo.contactosIds.length} contacto${grupo.contactosIds.length === 1 ? "" : "s"}.`,
+    payload: {
+      kind: "campana_creada",
+      campanaId: saveResult.id,
+      nombre,
+      momento,
+      fechaProgramada: null,
+    },
     flowState: IA_FLOW_IDLE,
   };
 }

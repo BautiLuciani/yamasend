@@ -69,6 +69,11 @@ import {
   pedirOtraSugerenciaTemplateAction,
   guardarBorradorTemplateAction,
   confirmarEnvioTemplateAction,
+  seleccionarGrupoCampanaAction,
+  seleccionarTemplateCampanaAction,
+  seleccionarMomentoCampanaAction,
+  seleccionarFechaCampanaAction,
+  confirmarCreacionCampanaAction,
 } from "@/lib/actions/ia";
 import { createClient } from "@/lib/supabase/client";
 
@@ -718,6 +723,70 @@ export default function AppShell({
     setActiveSection("templates");
   }
 
+  async function handleIAElegirGrupoCampana(grupoId: string) {
+    setIaSending(true);
+    try {
+      const res = await seleccionarGrupoCampanaAction(iaFlowState, grupoId);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAElegirTemplateCampana(templateId: string) {
+    setIaSending(true);
+    try {
+      const res = await seleccionarTemplateCampanaAction(iaFlowState, templateId);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAElegirMomentoCampana(momento: "ahora" | "programar") {
+    setIaSending(true);
+    try {
+      const res = await seleccionarMomentoCampanaAction(iaFlowState, momento);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAElegirFechaCampana(fechaIso: string) {
+    setIaSending(true);
+    try {
+      const res = await seleccionarFechaCampanaAction(iaFlowState, fechaIso);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAConfirmarCampana() {
+    setIaSending(true);
+    try {
+      const res = await confirmarCreacionCampanaAction(iaFlowState);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // La campaña se guardó (y, si era inmediata, ya se disparó el envío)
+      // server-side — refrescamos `campaigns` para que la sección Campañas
+      // y el botón "Ver campaña →" de la tarjeta ya la encuentren.
+      if (!res.error) router.refresh();
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  function handleIAVerCampana(campanaId: string) {
+    setActiveSection("campanas");
+    setDetailCampaignId(campanaId);
+  }
+
   function handleLogout() {
     setProfileOpen(false);
     setDrawerOpen(false);
@@ -832,6 +901,12 @@ export default function AppShell({
           onGuardarBorrador={handleIAGuardarBorrador}
           onEnviarAMeta={handleIAEnviarAMeta}
           onVerTemplates={handleIAVerTemplates}
+          onElegirGrupoCampana={handleIAElegirGrupoCampana}
+          onElegirTemplateCampana={handleIAElegirTemplateCampana}
+          onElegirMomentoCampana={handleIAElegirMomentoCampana}
+          onElegirFechaCampana={handleIAElegirFechaCampana}
+          onConfirmarCampana={handleIAConfirmarCampana}
+          onVerCampana={handleIAVerCampana}
           sending={iaSending}
         />
       )}

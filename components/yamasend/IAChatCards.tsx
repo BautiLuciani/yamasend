@@ -238,6 +238,12 @@ export function renderChatCard(
     onGuardarBorrador: () => void;
     onEnviarAMeta: () => void;
     onVerTemplates: () => void;
+    onElegirGrupoCampana: (grupoId: string) => void;
+    onElegirTemplateCampana: (templateId: string) => void;
+    onElegirMomentoCampana: (momento: "ahora" | "programar") => void;
+    onElegirFechaCampana: (fechaIso: string) => void;
+    onConfirmarCampana: () => void;
+    onVerCampana: (campanaId: string) => void;
   },
   isLatest: boolean,
 ) {
@@ -307,6 +313,65 @@ export function renderChatCard(
         nombre={payload.nombre}
         resultado={payload.resultado}
         onVerTemplates={handlers.onVerTemplates}
+      />
+    );
+  }
+  if (payload.kind === "elegir_grupo_campana") {
+    return (
+      <ElegirGrupoCampanaCard
+        grupos={payload.grupos}
+        onElegir={handlers.onElegirGrupoCampana}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "elegir_template_campana") {
+    return (
+      <ElegirTemplateCampanaCard
+        templates={payload.templates}
+        onElegir={handlers.onElegirTemplateCampana}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "elegir_momento_campana") {
+    return (
+      <ElegirMomentoCampanaCard
+        onElegir={handlers.onElegirMomentoCampana}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "elegir_fecha_campana") {
+    return (
+      <ElegirFechaCampanaCard
+        onConfirmar={handlers.onElegirFechaCampana}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "confirmar_campana") {
+    return (
+      <ConfirmarCampanaCard
+        nombre={payload.nombre}
+        grupoNombre={payload.grupoNombre}
+        totalContactos={payload.totalContactos}
+        templateNombre={payload.templateNombre}
+        momento={payload.momento}
+        fechaProgramada={payload.fechaProgramada}
+        costoUsd={payload.costoUsd}
+        onConfirmar={handlers.onConfirmarCampana}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "campana_creada") {
+    return (
+      <CampanaCreadaCard
+        nombre={payload.nombre}
+        momento={payload.momento}
+        fechaProgramada={payload.fechaProgramada}
+        onVerCampana={() => handlers.onVerCampana(payload.campanaId)}
       />
     );
   }
@@ -531,6 +596,362 @@ export function TemplateGuardadoCard({
         className="flex-none text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
       >
         Ver templates →
+      </button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_grupo_campana
+// Chips de grupos existentes, con conteo de contactos. No hay grupo activo
+// visualmente hasta que se confirma el click (elección única, no toggle).
+// -------------------------------------------------------------------------
+interface ElegirGrupoCampanaCardProps {
+  grupos: { id: string; nombre: string; totalContactos: number }[];
+  onElegir: (grupoId: string) => void;
+  disabled?: boolean;
+}
+
+export function ElegirGrupoCampanaCard({
+  grupos,
+  onElegir,
+  disabled,
+}: ElegirGrupoCampanaCardProps) {
+  const [elegido, setElegido] = useState<string | null>(null);
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-4 py-3.5 flex flex-col gap-2">
+      {grupos.map((g) => {
+        const active = elegido === g.id;
+        return (
+          <button
+            key={g.id}
+            onClick={() => {
+              if (disabled || elegido) return;
+              setElegido(g.id);
+              onElegir(g.id);
+            }}
+            disabled={disabled || !!elegido}
+            className={`border-[1.5px] rounded-[12px] px-3.5 py-2.5 flex items-center gap-3 cursor-pointer transition-all text-left disabled:cursor-not-allowed ${
+              active ? "border-ys-green bg-ys-green-bg" : "border-ys-border hover:-translate-y-px disabled:hover:translate-y-0"
+            }`}
+          >
+            <div className="w-[30px] h-[30px] flex-none rounded-[10px] bg-ys-green-bg flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="5.2" cy="6" r="2.2" stroke="#067647" strokeWidth="1.5" />
+                <circle cx="10.8" cy="6" r="2.2" stroke="#067647" strokeWidth="1.5" />
+                <path d="M1.8 13c0-1.9 1.5-3 3.4-3s3.4 1.1 3.4 3M7.4 13c0-1.9 1.5-3 3.4-3s3.4 1.1 3.4 3" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+              <div className="text-[13px] font-bold text-ys-text truncate">{g.nombre}</div>
+              <div className="text-[11.5px] text-ys-dim font-semibold">
+                {g.totalContactos} contacto{g.totalContactos === 1 ? "" : "s"}
+              </div>
+            </div>
+            {active && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="7" fill="#12B76A" />
+                <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_template_campana
+// Solo templates aprobados por Meta (filtrado antes de llegar acá).
+// -------------------------------------------------------------------------
+interface ElegirTemplateCampanaCardProps {
+  templates: { id: string; nombre: string; contenido: string }[];
+  onElegir: (templateId: string) => void;
+  disabled?: boolean;
+}
+
+export function ElegirTemplateCampanaCard({
+  templates,
+  onElegir,
+  disabled,
+}: ElegirTemplateCampanaCardProps) {
+  const [elegido, setElegido] = useState<string | null>(null);
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-4 py-3.5 flex flex-col gap-2">
+      {templates.map((t) => {
+        const active = elegido === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => {
+              if (disabled || elegido) return;
+              setElegido(t.id);
+              onElegir(t.id);
+            }}
+            disabled={disabled || !!elegido}
+            className={`border-[1.5px] rounded-[12px] px-3.5 py-2.5 flex items-start gap-3 cursor-pointer transition-all text-left disabled:cursor-not-allowed ${
+              active ? "border-ys-green bg-ys-green-bg" : "border-ys-border hover:-translate-y-px disabled:hover:translate-y-0"
+            }`}
+          >
+            <div className="flex-1 min-w-0 flex flex-col gap-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="font-mono text-[12.5px] text-ys-text">{t.nombre}</div>
+                <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-ys-green-text bg-ys-green-bg rounded-full px-2 py-0.5">
+                  <svg width="9" height="9" viewBox="0 0 16 16" fill="none">
+                    <path d="m3 8.4 3.4 3L13 4.6" stroke="#067647" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Aprobado
+                </span>
+              </div>
+              <div className="text-[12px] text-ys-muted font-medium leading-[1.5] line-clamp-2">
+                {t.contenido}
+              </div>
+            </div>
+            {active && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="flex-none">
+                <circle cx="8" cy="8" r="7" fill="#12B76A" />
+                <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_momento_campana
+// "Enviar ahora" vs. "Programar" — mismo patrón visual que el paso 3 del
+// wizard manual, simplificado a dos opciones tipo chip.
+// -------------------------------------------------------------------------
+interface ElegirMomentoCampanaCardProps {
+  onElegir: (momento: "ahora" | "programar") => void;
+  disabled?: boolean;
+}
+
+export function ElegirMomentoCampanaCard({
+  onElegir,
+  disabled,
+}: ElegirMomentoCampanaCardProps) {
+  const [elegido, setElegido] = useState<"ahora" | "programar" | null>(null);
+
+  const opciones: { key: "ahora" | "programar"; label: string; sub: string }[] = [
+    { key: "ahora", label: "Enviar ahora", sub: "Empieza al confirmar" },
+    { key: "programar", label: "Programar envío", sub: "Elegís fecha y hora" },
+  ];
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-4 py-3.5 flex flex-col gap-2">
+      {opciones.map((o) => {
+        const active = elegido === o.key;
+        return (
+          <button
+            key={o.key}
+            onClick={() => {
+              if (disabled || elegido) return;
+              setElegido(o.key);
+              onElegir(o.key);
+            }}
+            disabled={disabled || !!elegido}
+            className={`border-[1.5px] rounded-[12px] px-3.5 py-2.5 flex items-center gap-3 cursor-pointer transition-all text-left disabled:cursor-not-allowed ${
+              active ? "border-ys-green bg-ys-green-bg" : "border-ys-border hover:-translate-y-px disabled:hover:translate-y-0"
+            }`}
+          >
+            <div className="flex-1 flex flex-col gap-0.5">
+              <div className="text-[13px] font-bold text-ys-text">{o.label}</div>
+              <div className="text-[11.5px] text-ys-dim font-semibold">{o.sub}</div>
+            </div>
+            {active && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="7" fill="#12B76A" />
+                <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_fecha_campana
+// Input datetime-local + botón de confirmar, con mínimo = ahora (no se
+// puede programar en el pasado).
+// -------------------------------------------------------------------------
+interface ElegirFechaCampanaCardProps {
+  onConfirmar: (fechaIso: string) => void;
+  disabled?: boolean;
+}
+
+function defaultFechaProgramadaChat(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(10, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function ElegirFechaCampanaCard({
+  onConfirmar,
+  disabled,
+}: ElegirFechaCampanaCardProps) {
+  const [fecha, setFecha] = useState(defaultFechaProgramadaChat());
+  const [confirmado, setConfirmado] = useState(false);
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-4 py-3.5 flex flex-col gap-3">
+      <input
+        type="datetime-local"
+        value={fecha}
+        min={new Date().toISOString().slice(0, 16)}
+        disabled={confirmado || disabled}
+        onChange={(e) => setFecha(e.target.value)}
+        className="border border-ys-border rounded-[10px] px-3.5 py-[11px] text-[13.5px] font-semibold text-ys-text outline-none transition-colors focus:border-ys-green disabled:opacity-60"
+      />
+      <button
+        onClick={() => {
+          if (!fecha) return;
+          setConfirmado(true);
+          onConfirmar(new Date(fecha).toISOString());
+        }}
+        disabled={confirmado || disabled || !fecha}
+        className="text-[12.5px] font-extrabold text-white bg-ys-green rounded-[9px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {confirmado ? "Confirmado" : "Confirmar fecha"}
+      </button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: confirmar_campana
+// Resumen final con costo estimado — mismo espíritu que el paso "Revisar"
+// del wizard manual, pero condensado a una sola tarjeta con un solo botón.
+// -------------------------------------------------------------------------
+interface ConfirmarCampanaCardProps {
+  nombre: string;
+  grupoNombre: string;
+  totalContactos: number;
+  templateNombre: string;
+  momento: "ahora" | "programar";
+  fechaProgramada: string | null;
+  costoUsd: number;
+  onConfirmar: () => void;
+  disabled?: boolean;
+}
+
+export function ConfirmarCampanaCard({
+  nombre,
+  grupoNombre,
+  totalContactos,
+  templateNombre,
+  momento,
+  fechaProgramada,
+  costoUsd,
+  onConfirmar,
+  disabled,
+}: ConfirmarCampanaCardProps) {
+  const [confirmado, setConfirmado] = useState(false);
+
+  const fechaLabel =
+    momento === "ahora"
+      ? "Ahora"
+      : fechaProgramada
+        ? new Date(fechaProgramada).toLocaleString("es-AR", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "Sin definir";
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5">
+      <div className="text-[15px] font-extrabold text-ys-text">{nombre}</div>
+      <div className="bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-3.5 py-3 grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-0.5">
+          <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Envío</div>
+          <div className="text-[12.5px] font-bold text-ys-text">{fechaLabel}</div>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Destinatarios</div>
+          <div className="text-[12.5px] font-bold text-ys-text">{grupoNombre}</div>
+          <div className="font-mono text-[11px] text-ys-muted">{totalContactos} contactos</div>
+        </div>
+        <div className="flex flex-col gap-0.5 col-span-2">
+          <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Mensaje</div>
+          <div className="font-mono text-[12.5px] text-ys-text">{templateNombre}</div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-[12.5px] font-bold text-ys-text border-t border-ys-border-soft pt-2.5">
+        <span className="font-semibold text-ys-muted">Costo estimado</span>
+        <span className="font-mono">USD {costoUsd.toFixed(2)}</span>
+      </div>
+      <button
+        onClick={() => {
+          setConfirmado(true);
+          onConfirmar();
+        }}
+        disabled={confirmado || disabled}
+        className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {confirmado ? "Creando..." : "Crear campaña"}
+      </button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: campana_creada
+// Confirmación final — distingue enviada ahora vs. programada.
+// -------------------------------------------------------------------------
+interface CampanaCreadaCardProps {
+  nombre: string;
+  momento: "ahora" | "programar";
+  fechaProgramada: string | null;
+  onVerCampana: () => void;
+}
+
+export function CampanaCreadaCard({
+  nombre,
+  momento,
+  fechaProgramada,
+  onVerCampana,
+}: CampanaCreadaCardProps) {
+  const esProgramada = momento === "programar";
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex items-center gap-3">
+      <div className="w-[38px] h-[38px] flex-none rounded-xl bg-ys-green-bg flex items-center justify-center">
+        {esProgramada ? (
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <rect x="2.5" y="3.5" width="11" height="10" rx="2" stroke="#12B76A" strokeWidth="1.5" />
+            <path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" stroke="#12B76A" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <path d="m3 8.4 4 4L14 3.6" stroke="#12B76A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <div className="text-[14.5px] font-extrabold text-ys-text truncate">{nombre}</div>
+        <div className="text-xs text-ys-dim font-semibold">
+          {esProgramada
+            ? `Programada${fechaProgramada ? ` · ${new Date(fechaProgramada).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}`
+            : "Enviándose ahora"}
+        </div>
+      </div>
+      <button
+        onClick={onVerCampana}
+        className="flex-none text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
+      >
+        Ver campaña →
       </button>
     </div>
   );

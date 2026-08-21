@@ -18,14 +18,20 @@ interface IAProps {
   onGuardarBorrador: () => void;
   onEnviarAMeta: () => void;
   onVerTemplates: () => void;
+  onElegirGrupoCampana: (grupoId: string) => void;
+  onElegirTemplateCampana: (templateId: string) => void;
+  onElegirMomentoCampana: (momento: "ahora" | "programar") => void;
+  onElegirFechaCampana: (fechaIso: string) => void;
+  onConfirmarCampana: () => void;
+  onVerCampana: (campanaId: string) => void;
   sending?: boolean;
 }
 
 const SUGERENCIAS = [
   "Creame un grupo con mis contactos calientes",
   "Quiero armar un template nuevo",
+  "Quiero mandar una campaña",
   "Quiero armar un grupo nuevo",
-  "¿Cuál es el mejor horario para enviar campañas?",
 ];
 
 // Variantes del mensaje de bienvenida — se elige una al azar por sesión de
@@ -38,11 +44,11 @@ const BIENVENIDAS = [
   },
   {
     titulo: "¿En qué te ayudo hoy?",
-    texto: "Puedo armar un grupo de contactos o un template por vos, solo pedímelo en lenguaje natural.",
+    texto: "Puedo armar un grupo, un template o una campaña entera por vos, solo pedímelo en lenguaje natural.",
   },
   {
     titulo: "Hagamos algo juntos",
-    texto: "Además de responder preguntas sobre tu negocio, puedo crear grupos de contactos y templates hablando conmigo, sin que tengas que armarlos a mano.",
+    texto: "Puedo crear grupos de contactos, templates y campañas completas hablando conmigo, sin que tengas que armarlos a mano.",
   },
 ];
 
@@ -60,6 +66,12 @@ export default function IA({
   onGuardarBorrador,
   onEnviarAMeta,
   onVerTemplates,
+  onElegirGrupoCampana,
+  onElegirTemplateCampana,
+  onElegirMomentoCampana,
+  onElegirFechaCampana,
+  onConfirmarCampana,
+  onVerCampana,
   sending,
 }: IAProps) {
   const [value, setValue] = useState("");
@@ -205,6 +217,12 @@ export default function IA({
                       onGuardarBorrador,
                       onEnviarAMeta,
                       onVerTemplates,
+                      onElegirGrupoCampana,
+                      onElegirTemplateCampana,
+                      onElegirMomentoCampana,
+                      onElegirFechaCampana,
+                      onConfirmarCampana,
+                      onVerCampana,
                     },
                     m.id === lastBotMessageId,
                   )}

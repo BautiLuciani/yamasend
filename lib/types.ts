@@ -153,6 +153,37 @@ export type ChatPayload =
       nombre: string;
     }
   | {
+      kind: "elegir_grupo_campana";
+      grupos: { id: string; nombre: string; totalContactos: number }[];
+    }
+  | {
+      kind: "elegir_template_campana";
+      templates: { id: string; nombre: string; contenido: string }[];
+    }
+  | {
+      kind: "elegir_momento_campana";
+    }
+  | {
+      kind: "elegir_fecha_campana";
+    }
+  | {
+      kind: "confirmar_campana";
+      nombre: string;
+      grupoNombre: string;
+      totalContactos: number;
+      templateNombre: string;
+      momento: "ahora" | "programar";
+      fechaProgramada: string | null;
+      costoUsd: number;
+    }
+  | {
+      kind: "campana_creada";
+      campanaId: string;
+      nombre: string;
+      momento: "ahora" | "programar";
+      fechaProgramada: string | null;
+    }
+  | {
       kind: "follow_ups";
       opciones: string[];
     };
@@ -176,7 +207,14 @@ export type IAFlowStep =
   | "template_esperando_nombre"
   | "template_esperando_categoria"
   | "template_esperando_descripcion"
-  | "template_esperando_confirmacion";
+  | "template_esperando_confirmacion"
+  // crear_campana
+  | "campana_esperando_nombre"
+  | "campana_esperando_grupo"
+  | "campana_esperando_template"
+  | "campana_esperando_momento"
+  | "campana_esperando_fecha"
+  | "campana_esperando_confirmacion";
 
 export interface IAFlowState {
   kind: IAFlowKind | null;
@@ -187,6 +225,10 @@ export interface IAFlowState {
     consultaUsada?: string | null;
     categoria?: string;
     contenido?: string;
+    grupoId?: string;
+    templateId?: string;
+    momento?: "ahora" | "programar";
+    fechaProgramada?: string | null;
   };
 }
 
