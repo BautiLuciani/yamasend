@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ChatMessage, Contact } from "@/lib/types";
+import type { ChatMessage, Contact, IAConversacionResumen } from "@/lib/types";
 import { renderChatCard } from "./IAChatCards";
+import { listarConversacionesIAAction } from "@/lib/actions/ia_conversaciones";
 
 interface IAProps {
   userName: string;
@@ -26,6 +27,9 @@ interface IAProps {
   onVerCampana: (campanaId: string) => void;
   onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
   onCrearGrupoDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
+  onNuevaConversacion: () => void;
+  onSeleccionarConversacion: (conversacionId: string) => void;
+  conversacionActivaId: string | null;
   sending?: boolean;
 }
 
@@ -76,10 +80,17 @@ export default function IA({
   onVerCampana,
   onConfirmarImportarContactos,
   onCrearGrupoDesdeBusqueda,
+  onNuevaConversacion,
+  onSeleccionarConversacion,
+  conversacionActivaId,
   sending,
 }: IAProps) {
   const [value, setValue] = useState("");
   const [historialOpen, setHistorialOpen] = useState(false);
+  const [historialConversaciones, setHistorialConversaciones] = useState<
+    IAConversacionResumen[]
+  >([]);
+  const [historialCargando, setHistorialCargando] = useState(false);
   // Inicializador lazy: se elige una sola vez al montar el componente, no
   // en cada render — así el mensaje no "salta" mientras el usuario lo lee.
   const [bienvenida] = useState(
@@ -93,6 +104,17 @@ export default function IA({
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
+
+  async function handleToggleHistorial() {
+    const abriendo = !historialOpen;
+    setHistorialOpen(abriendo);
+    if (abriendo) {
+      setHistorialCargando(true);
+      const conversaciones = await listarConversacionesIAAction();
+      setHistorialConversaciones(conversaciones);
+      setHistorialCargando(false);
+    }
+  }
 
   function handleSend() {
     const text = value.trim();
@@ -121,7 +143,7 @@ export default function IA({
         <div className="ml-auto flex items-center gap-2.5">
           <div className="relative">
             <button
-              onClick={() => setHistorialOpen((v) => !v)}
+              onClick={handleToggleHistorial}
               className="flex items-center gap-2 bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8]"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
@@ -132,19 +154,58 @@ export default function IA({
             </button>
             {historialOpen && (
               <div
-                className="absolute top-[calc(100%+6px)] right-0 w-[230px] bg-white border border-ys-border rounded-xl p-1.5 shadow-[var(--shadow-popover)] z-30"
+                className="absolute top-[calc(100%+6px)] right-0 w-[280px] max-h-[360px] overflow-y-auto bg-white border border-ys-border rounded-xl p-1.5 shadow-[var(--shadow-popover)] z-30"
                 style={{ animation: "ys-fade-up .17s cubic-bezier(.4,0,.2,1) both" }}
               >
-                <div className="px-2.5 py-2.5 text-[12.5px] text-ys-dim font-medium">
-                  Todavía tenés una sola conversación activa.
-                </div>
+                {historialCargando && (
+                  <div className="px-2.5 py-2.5 text-[12.5px] text-ys-dim font-medium">
+                    Cargando conversaciones...
+                  </div>
+                )}
+                {!historialCargando && historialConversaciones.length === 0 && (
+                  <div className="px-2.5 py-2.5 text-[12.5px] text-ys-dim font-medium">
+                    Todavía no tenés conversaciones guardadas.
+                  </div>
+                )}
+                {!historialCargando &&
+                  historialConversaciones.map((c) => {
+                    const activa = c.id === conversacionActivaId;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => {
+                          onSeleccionarConversacion(c.id);
+                          setHistorialOpen(false);
+                        }}
+                        className={`w-full text-left px-2.5 py-2.5 rounded-lg cursor-pointer transition-colors flex flex-col gap-0.5 ${
+                          activa ? "bg-ys-green-bg" : "hover:bg-[#f7f9f8]"
+                        }`}
+                      >
+                        <div
+                          className={`text-[12.5px] font-bold truncate ${activa ? "text-ys-green-text" : "text-ys-text"}`}
+                        >
+                          {c.titulo}
+                        </div>
+                        <div className="text-[11px] text-ys-dim font-medium">
+                          {new Date(c.updatedAt).toLocaleDateString("es-AR", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </button>
+                    );
+                  })}
               </div>
             )}
           </div>
           <button
-            disabled
-            title="Disponible próximamente"
-            className="flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-4 py-2.5 rounded-[10px] opacity-60 cursor-not-allowed shadow-[var(--shadow-cta)]"
+            onClick={() => {
+              onNuevaConversacion();
+              setHistorialOpen(false);
+            }}
+            className="flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-4 py-2.5 rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />

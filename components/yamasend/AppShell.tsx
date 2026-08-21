@@ -77,6 +77,11 @@ import {
   confirmarImportarContactosAction,
   iniciarGrupoDesdeResultadosBusquedaAction,
 } from "@/lib/actions/ia";
+import {
+  cargarConversacionIAAction,
+  guardarConversacionIAAction,
+  generarTituloConversacionAction,
+} from "@/lib/actions/ia_conversaciones";
 import { createClient } from "@/lib/supabase/client";
 
 const PLAN_LABELS: Record<string, string> = {
@@ -332,15 +337,19 @@ export default function AppShell({
     };
   }, [hayTemplatesEnviados]);
 
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      type: "bot",
-      text: "Hola 👋 Soy tu asistente AI. Podés pedirme que arme un grupo de contactos hablando conmigo.",
-    },
-  ]);
+  const IA_MENSAJE_BIENVENIDA: ChatMessage = {
+    id: "welcome",
+    type: "bot",
+    text: "Hola 👋 Soy tu asistente AI. Podés pedirme que arme un grupo de contactos hablando conmigo.",
+  };
+
+  const [messages, setMessages] = useState<ChatMessage[]>([IA_MENSAJE_BIENVENIDA]);
   const [iaFlowState, setIaFlowState] = useState<IAFlowState>(IA_FLOW_IDLE);
   const [iaSending, setIaSending] = useState(false);
+  const [iaConversacionId, setIaConversacionId] = useState<string | null>(null);
+  const iaConversacionIdRef = useRef<string | null>(null);
+  const iaTituloGeneradoRef = useRef(false);
+  const iaGuardadoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function addMsg(
     text: string,
@@ -350,6 +359,75 @@ export default function AppShell({
     const id = `${Date.now()}-${Math.random()}`;
     setMessages((prev) => [...prev, { id, text, type, payload }]);
     return id;
+  }
+
+  // Persistencia del chat de IA: cada vez que cambian los mensajes o el
+  // estado de flujo, guardamos (con debounce de 1.2s) en
+  // yamas_send_ia_conversaciones. No se guarda la conversación mientras
+  // solo tiene el mensaje de bienvenida fijo — recién se crea la fila
+  // cuando el usuario escribe algo de verdad, para no llenar el historial
+  // de conversaciones vacías nunca usadas.
+  useEffect(() => {
+    const hayConversacionReal = messages.some((m) => m.type === "user");
+    if (!hayConversacionReal) return;
+
+    if (iaGuardadoTimeoutRef.current) clearTimeout(iaGuardadoTimeoutRef.current);
+
+    iaGuardadoTimeoutRef.current = setTimeout(async () => {
+      // Genera el título una sola vez, apenas hay el primer mensaje de
+      // usuario — no en cada guardado posterior.
+      let tituloParaGuardar: string | null = null;
+      if (!iaTituloGeneradoRef.current) {
+        const primerMensajeUsuario = messages.find((m) => m.type === "user");
+        if (primerMensajeUsuario) {
+          iaTituloGeneradoRef.current = true;
+          tituloParaGuardar = await generarTituloConversacionAction(
+            primerMensajeUsuario.text,
+          );
+        }
+      }
+
+      const result = await guardarConversacionIAAction(
+        iaConversacionIdRef.current,
+        messages,
+        iaFlowState,
+        tituloParaGuardar,
+      );
+
+      if (result.id && !iaConversacionIdRef.current) {
+        iaConversacionIdRef.current = result.id;
+        setIaConversacionId(result.id);
+      }
+    }, 1200);
+
+    return () => {
+      if (iaGuardadoTimeoutRef.current) clearTimeout(iaGuardadoTimeoutRef.current);
+    };
+  }, [messages, iaFlowState]);
+
+  function handleIANuevaConversacion() {
+    if (iaGuardadoTimeoutRef.current) clearTimeout(iaGuardadoTimeoutRef.current);
+    iaConversacionIdRef.current = null;
+    iaTituloGeneradoRef.current = false;
+    setIaConversacionId(null);
+    setMessages([IA_MENSAJE_BIENVENIDA]);
+    setIaFlowState(IA_FLOW_IDLE);
+  }
+
+  async function handleIASeleccionarConversacion(conversacionId: string) {
+    if (conversacionId === iaConversacionIdRef.current) return;
+    if (iaGuardadoTimeoutRef.current) clearTimeout(iaGuardadoTimeoutRef.current);
+
+    const conversacion = await cargarConversacionIAAction(conversacionId);
+    if (!conversacion) return;
+
+    iaConversacionIdRef.current = conversacion.id;
+    iaTituloGeneradoRef.current = true;
+    setIaConversacionId(conversacion.id);
+    setMessages(
+      conversacion.messages.length > 0 ? conversacion.messages : [IA_MENSAJE_BIENVENIDA],
+    );
+    setIaFlowState(conversacion.flowState);
   }
 
   // ── filtrado combinado, replicando la lógica del original ──
@@ -949,6 +1027,9 @@ export default function AppShell({
           onVerCampana={handleIAVerCampana}
           onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
           onCrearGrupoDesdeBusqueda={handleIACrearGrupoDesdeBusqueda}
+          onNuevaConversacion={handleIANuevaConversacion}
+          onSeleccionarConversacion={handleIASeleccionarConversacion}
+          conversacionActivaId={iaConversacionId}
           sending={iaSending}
         />
       )}

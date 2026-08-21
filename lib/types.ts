@@ -278,6 +278,26 @@ export interface IAHistoryTurn {
   text: string;
 }
 
+/**
+ * Una conversación completa del chat de IA, tal como se persiste en
+ * yamas_send_ia_conversaciones. `resumen` es solo para el listado del
+ * historial (no incluye messages/flowState completos, para que listar
+ * conversaciones sea liviano).
+ */
+export interface IAConversacionResumen {
+  id: string;
+  titulo: string;
+  updatedAt: string;
+}
+
+export interface IAConversacion {
+  id: string;
+  titulo: string;
+  messages: ChatMessage[];
+  flowState: IAFlowState;
+  updatedAt: string;
+}
+
 export type KpiFilterKey =
   | "cliente"
   | "ai"
