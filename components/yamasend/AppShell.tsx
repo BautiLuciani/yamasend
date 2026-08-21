@@ -1061,6 +1061,10 @@ export default function AppShell({
             tenantId={user.tenantId}
             campaigns={campaigns}
             onViewAllCampaigns={() => setActiveSection("campanas")}
+            onNewCampaign={() => {
+              setWizardInitial(null);
+              setWizardOpen(true);
+            }}
           />
         </div>
       )}

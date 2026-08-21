@@ -11,6 +11,7 @@ interface DashboardProps {
   tenantId: string;
   campaigns: Campaign[];
   onViewAllCampaigns: () => void;
+  onNewCampaign: () => void;
 }
 
 // Mismo mapeo de label/color por status que usa CampaignDetailModal, para
@@ -178,7 +179,7 @@ function EstadoBadge({ estado, textClass, bgClass }: { estado: string; textClass
   );
 }
 
-export default function Dashboard({ userName, tenantId, campaigns, onViewAllCampaigns }: DashboardProps) {
+export default function Dashboard({ userName, tenantId, campaigns, onViewAllCampaigns, onNewCampaign }: DashboardProps) {
   const [periodo, setPeriodo] = useState<"7d" | "30d" | "ano">("7d");
   const [actividad, setActividad] = useState<ActivityLogEntry[]>([]);
   const firstName = userName.split(" ")[0] || userName;
@@ -307,9 +308,8 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
             ))}
           </div>
           <button
-            disabled
-            title="Disponible cuando se implemente Campañas"
-            className="w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] opacity-60 cursor-not-allowed shadow-[var(--shadow-cta)]"
+            onClick={onNewCampaign}
+            className="w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer shadow-[var(--shadow-cta)] hover:brightness-95 transition"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
