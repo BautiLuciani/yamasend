@@ -1274,7 +1274,7 @@ const IMPORT_LIMITE_DEFAULT = 50;
 
 function iniciarFlujoImportarContactos(): IAResponse {
   return {
-    text: `Dale, puedo importar y analizar tus contactos de WhatsApp. Por defecto reviso los últimos ${IMPORT_DIAS_DEFAULT} días y hasta ${IMPORT_LIMITE_DEFAULT} contactos. ¿Confirmás con esos valores, o preferís ajustarlos antes (por ejemplo "90 días, 100 contactos")?`,
+    text: `Dale, puedo importar y analizar tus contactos de WhatsApp. Ajustá el rango de días y la cantidad de contactos si querés, o confirmá directo con los valores por defecto (${IMPORT_DIAS_DEFAULT} días, ${IMPORT_LIMITE_DEFAULT} contactos).`,
     payload: {
       kind: "confirmar_importar_contactos",
       diasAnalisis: IMPORT_DIAS_DEFAULT,
@@ -1342,6 +1342,8 @@ async function handleImportarContactosStep(
  */
 export async function confirmarImportarContactosAction(
   flowState: IAFlowState,
+  diasAnalisisOverride?: number,
+  limiteContactosOverride?: number,
 ): Promise<IAResponse> {
   if (flowState.kind !== "importar_contactos") {
     return {
@@ -1350,8 +1352,18 @@ export async function confirmarImportarContactosAction(
     };
   }
 
-  const diasAnalisis = flowState.draft.diasAnalisis ?? IMPORT_DIAS_DEFAULT;
-  const limiteContactos = flowState.draft.limiteContactos ?? IMPORT_LIMITE_DEFAULT;
+  // Los valores editados en la tarjeta (presets de días + input de
+  // contactos) tienen prioridad sobre lo que quedó guardado en el draft
+  // por texto libre — el usuario pudo haber ajustado la tarjeta sin
+  // escribir ningún mensaje nuevo.
+  const diasAnalisis = Math.max(
+    1,
+    Math.min(365, diasAnalisisOverride ?? flowState.draft.diasAnalisis ?? IMPORT_DIAS_DEFAULT),
+  );
+  const limiteContactos = Math.max(
+    1,
+    Math.min(500, limiteContactosOverride ?? flowState.draft.limiteContactos ?? IMPORT_LIMITE_DEFAULT),
+  );
 
   const result = await syncAndAnalyzeAction({
     diasAnalisis,

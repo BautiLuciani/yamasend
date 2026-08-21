@@ -789,10 +789,17 @@ export default function AppShell({
     setDetailCampaignId(campanaId);
   }
 
-  async function handleIAConfirmarImportarContactos() {
+  async function handleIAConfirmarImportarContactos(
+    diasAnalisis: number,
+    limiteContactos: number,
+  ) {
     setIaSending(true);
     try {
-      const res = await confirmarImportarContactosAction(iaFlowState);
+      const res = await confirmarImportarContactosAction(
+        iaFlowState,
+        diasAnalisis,
+        limiteContactos,
+      );
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
       // La importación pudo haber traído contactos/leads nuevos — refrescamos

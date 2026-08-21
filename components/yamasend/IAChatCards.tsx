@@ -244,7 +244,7 @@ export function renderChatCard(
     onElegirFechaCampana: (fechaIso: string) => void;
     onConfirmarCampana: () => void;
     onVerCampana: (campanaId: string) => void;
-    onConfirmarImportarContactos: () => void;
+    onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
     onCrearGrupoDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
   },
   isLatest: boolean,
@@ -997,9 +997,16 @@ export function CampanaCreadaCard({
 interface ConfirmarImportarContactosCardProps {
   diasAnalisis: number;
   limiteContactos: number;
-  onConfirmar: () => void;
+  onConfirmar: (diasAnalisis: number, limiteContactos: number) => void;
   disabled?: boolean;
 }
+
+const PRESETS_DIAS_CHAT = [
+  { label: "7 días", value: 7 },
+  { label: "30 días", value: 30 },
+  { label: "90 días", value: 90 },
+  { label: "Todo", value: 365 },
+];
 
 export function ConfirmarImportarContactosCard({
   diasAnalisis,
@@ -1008,23 +1015,59 @@ export function ConfirmarImportarContactosCard({
   disabled,
 }: ConfirmarImportarContactosCardProps) {
   const [confirmado, setConfirmado] = useState(false);
+  const [dias, setDias] = useState(diasAnalisis);
+  const [limite, setLimite] = useState(limiteContactos);
 
   return (
     <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5">
-      <div className="bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-3.5 py-3 grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-0.5">
-          <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Rango</div>
-          <div className="text-[12.5px] font-bold text-ys-text">Últimos {diasAnalisis} días</div>
+      <div className="flex flex-col gap-2">
+        <div className="text-[11px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">
+          Rango de fechas
         </div>
-        <div className="flex flex-col gap-0.5">
-          <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Contactos</div>
-          <div className="text-[12.5px] font-bold text-ys-text">Hasta {limiteContactos}</div>
+        <div className="flex gap-[3px] bg-ys-el2 rounded-[10px] p-[3px]">
+          {PRESETS_DIAS_CHAT.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => !confirmado && !disabled && setDias(p.value)}
+              disabled={confirmado || disabled}
+              className={`flex-1 text-center text-[12.5px] rounded-lg py-1.5 cursor-pointer transition-colors disabled:cursor-not-allowed ${
+                dias === p.value
+                  ? "font-bold text-ys-text bg-white shadow-[0_1px_2px_rgba(16,24,20,0.07)]"
+                  : "font-semibold text-[#7b837e]"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      <div className="flex flex-col gap-[7px]">
+        <div className="text-[11px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">
+          Cantidad de contactos
+        </div>
+        <div className="flex items-center gap-2.5">
+          <input
+            type="number"
+            min={1}
+            max={500}
+            value={limite}
+            disabled={confirmado || disabled}
+            onChange={(e) =>
+              setLimite(Math.max(1, Math.min(500, parseInt(e.target.value, 10) || 1)))
+            }
+            className="w-[90px] flex-none border border-ys-border rounded-[10px] px-3 py-2 font-mono text-[13px] text-ys-text outline-none transition-colors focus:border-ys-green disabled:opacity-60"
+          />
+          <div className="min-w-0 text-[11.5px] text-ys-dim font-medium">
+            Priorizamos los más recientes primero.
+          </div>
+        </div>
+      </div>
+
       <button
         onClick={() => {
           setConfirmado(true);
-          onConfirmar();
+          onConfirmar(dias, limite);
         }}
         disabled={confirmado || disabled}
         className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"

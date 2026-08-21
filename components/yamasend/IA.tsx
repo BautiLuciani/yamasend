@@ -24,7 +24,7 @@ interface IAProps {
   onElegirFechaCampana: (fechaIso: string) => void;
   onConfirmarCampana: () => void;
   onVerCampana: (campanaId: string) => void;
-  onConfirmarImportarContactos: () => void;
+  onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
   onCrearGrupoDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
   sending?: boolean;
 }
