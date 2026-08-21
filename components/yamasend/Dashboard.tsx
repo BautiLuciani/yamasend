@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getRecentActivityAction } from "@/lib/actions/activity";
+import { getCampaignInsightAction } from "@/lib/actions/write";
 import type { ActivityLogEntry, ActivityTipo, Campaign, CampaignStatus } from "@/lib/types";
 
 interface DashboardProps {
@@ -209,6 +210,28 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
     };
   }, []);
 
+  // Insight de IA sobre campañas: reutiliza getCampaignInsightAction, la
+  // misma Server Action que ya usa el wizard de "Nueva campaña" — cacheada
+  // en yamas_send_insights_cache (1 por tenant por día), así que esta
+  // llamada no dispara un nuevo análisis salvo que no haya cache vigente.
+  const [insight, setInsight] = useState<string | null>(null);
+  const [insightLoading, setInsightLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelado = false;
+
+    getCampaignInsightAction().then((result) => {
+      if (!cancelado) {
+        setInsight(result.insight);
+        setInsightLoading(false);
+      }
+    });
+
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
   // Suscripción en tiempo real: cualquier INSERT nuevo en
   // yamas_send_activity_log para este tenant se antepone a la lista sin
   // necesidad de refrescar la página, recortando siempre a las últimas 5.
@@ -402,7 +425,9 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
             </div>
           </div>
           <div className="text-[14.5px] leading-[1.55] text-ys-border-softest font-semibold">
-            Los envíos de los martes a las 10:00 obtienen un 31% más de respuestas que el resto de la semana.
+            {insightLoading
+              ? "Analizando tus campañas…"
+              : (insight ?? "Todavía no hay suficientes datos para generar un insight. Mandá algunas campañas y volvé a mirar acá.")}
           </div>
           <button
             disabled
