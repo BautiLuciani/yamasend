@@ -340,3 +340,27 @@ export interface SyncResult {
   mensaje?: string;
   error?: string;
 }
+
+// Valores reales de yamas_send_activity_log.tipo en Supabase (constraint CHECK).
+// Usado por la card "Actividad reciente" del Dashboard para elegir ícono/color.
+export type ActivityTipo =
+  | "contactos_importados"
+  | "grupo_creado"
+  | "grupo_editado"
+  | "grupo_eliminado"
+  | "template_creado"
+  | "template_estado"
+  | "campana_creada"
+  | "campana_duplicada"
+  | "campana_eliminada"
+  | "campana_completada"
+  | "ia_analisis"
+  | "whatsapp_conectado"
+  | "whatsapp_desconectado";
+
+export interface ActivityLogEntry {
+  id: string;
+  tipo: ActivityTipo;
+  descripcion: string;
+  createdAt: string;
+}

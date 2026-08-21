@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { getRecentActivityAction } from "@/lib/actions/activity";
+import type { ActivityLogEntry, ActivityTipo } from "@/lib/types";
 
 interface DashboardProps {
   userName: string;
+  tenantId: string;
 }
 
 const BARRAS = [
@@ -43,12 +47,114 @@ const CAMPANAS_RECIENTES = [
   },
 ];
 
-const ACTIVIDAD = [
-  { texto: "La IA clasificó 52 conversaciones como leads calientes", cuando: "12 min" },
-  { texto: "Plantilla “Confirmación de pedido” aprobada por Meta", cuando: "1 h" },
-  { texto: "Se importaron 1.240 contactos", cuando: "3 h" },
-  { texto: "Grupo “Clientes Premium” creado con 318 contactos", cuando: "Ayer" },
-];
+// Configuración visual por tipo de actividad: ícono + color de fondo/trazo,
+// para que la card "Actividad reciente" distinga de un vistazo qué pasó,
+// igual que EstadoBadge hace con las campañas.
+const ACTIVITY_STYLES: Record<
+  ActivityTipo,
+  { bg: string; stroke: string }
+> = {
+  contactos_importados: { bg: "bg-[#e8f1fd]", stroke: "#2563eb" },
+  grupo_creado: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
+  grupo_editado: { bg: "bg-ys-el2", stroke: "#5d6560" },
+  grupo_eliminado: { bg: "bg-ys-warn-bg", stroke: "#b42318" },
+  template_creado: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
+  template_estado: { bg: "bg-ys-el2", stroke: "#5d6560" },
+  campana_creada: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
+  campana_duplicada: { bg: "bg-ys-el2", stroke: "#5d6560" },
+  campana_eliminada: { bg: "bg-ys-warn-bg", stroke: "#b42318" },
+  campana_completada: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
+  ia_analisis: { bg: "bg-ys-dark", stroke: "#3ddb8f" },
+  whatsapp_conectado: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
+  whatsapp_desconectado: { bg: "bg-ys-warn-bg", stroke: "#b42318" },
+};
+
+function ActivityIcon({ tipo }: { tipo: ActivityTipo }) {
+  const stroke = ACTIVITY_STYLES[tipo].stroke;
+
+  switch (tipo) {
+    case "contactos_importados":
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <circle cx="5.5" cy="5" r="2.2" stroke={stroke} strokeWidth="1.4" />
+          <path d="M1.8 13c.4-2.4 1.9-3.6 3.7-3.6s3.3 1.2 3.7 3.6" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
+          <circle cx="11.2" cy="5.6" r="1.7" stroke={stroke} strokeWidth="1.3" />
+          <path d="M9.5 13c.3-1.9 1.4-2.9 2.9-2.9" stroke={stroke} strokeWidth="1.3" strokeLinecap="round" />
+        </svg>
+      );
+    case "grupo_creado":
+    case "grupo_editado":
+    case "grupo_eliminado":
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.2 1.6h5.2A1.5 1.5 0 0 1 14 6.1v5.4A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5v-7Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
+      );
+    case "template_creado":
+    case "template_estado":
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <path d="M4 2.5h5.5L12 5v8.5a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V3.3a.8.8 0 0 1 .8-.8Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M5.8 7h4.4M5.8 9.4h4.4" stroke={stroke} strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      );
+    case "campana_creada":
+    case "campana_duplicada":
+    case "campana_eliminada":
+    case "campana_completada":
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <path d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
+          <path d="M12 6v4" stroke={stroke} strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      );
+    case "ia_analisis":
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
+          <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke={stroke} strokeWidth="1.3" strokeLinejoin="round" />
+        </svg>
+      );
+    case "whatsapp_conectado":
+    case "whatsapp_desconectado":
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <path d="M8 2.2a5.6 5.6 0 0 0-4.8 8.5L2.3 13.7l3.1-.9A5.6 5.6 0 1 0 8 2.2Z" stroke={stroke} strokeWidth="1.3" strokeLinejoin="round" />
+          <path d="M5.9 6.6c-.1.9.6 2.2 1.5 3.1.9.9 2.2 1.6 3.1 1.5.4 0 1-.5 1.1-.9.1-.2 0-.4-.1-.5l-1.2-.9c-.2-.1-.4-.1-.5 0l-.4.4c-.5-.2-1-.6-1.4-1s-.8-.9-1-1.4l.4-.4c.1-.1.1-.3 0-.5l-.9-1.2c-.1-.1-.3-.2-.5-.1-.4.1-.9.6-1.1.9Z" stroke={stroke} strokeWidth="1.1" strokeLinejoin="round" />
+        </svg>
+      );
+    default:
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="3" stroke={stroke} strokeWidth="1.4" />
+        </svg>
+      );
+  }
+}
+
+// Formatea el timestamp como "hace X min/h" o fecha corta si es de otro día,
+// siguiendo el mismo estilo compacto que ya usaba el mock ("12 min", "Ayer").
+function formatearCuando(iso: string): string {
+  const fecha = new Date(iso);
+  const ahoraMs = Date.now();
+  const diffMs = ahoraMs - fecha.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+
+  if (diffMin < 1) return "Ahora";
+  if (diffMin < 60) return `${diffMin} min`;
+
+  const diffHoras = Math.floor(diffMin / 60);
+  if (diffHoras < 24) return `${diffHoras} h`;
+
+  const hoy = new Date();
+  const esAyer =
+    fecha.getDate() === hoy.getDate() - 1 &&
+    fecha.getMonth() === hoy.getMonth() &&
+    fecha.getFullYear() === hoy.getFullYear();
+
+  if (esAyer) return "Ayer";
+
+  return fecha.toLocaleDateString("es-AR", { day: "2-digit", month: "short" });
+}
 
 function EstadoBadge({ estado, color }: { estado: string; color: "green" | "warn" | "gray" }) {
   const styles =
@@ -64,9 +170,66 @@ function EstadoBadge({ estado, color }: { estado: string; color: "green" | "warn
   );
 }
 
-export default function Dashboard({ userName }: DashboardProps) {
+export default function Dashboard({ userName, tenantId }: DashboardProps) {
   const [periodo, setPeriodo] = useState<"7d" | "30d" | "ano">("7d");
+  const [actividad, setActividad] = useState<ActivityLogEntry[]>([]);
   const firstName = userName.split(" ")[0] || userName;
+
+  // Carga inicial de las últimas 5 actividades vía Server Action.
+  useEffect(() => {
+    let cancelado = false;
+
+    getRecentActivityAction(5).then((result) => {
+      if (!cancelado && !result.error) {
+        setActividad(result.activity);
+      }
+    });
+
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  // Suscripción en tiempo real: cualquier INSERT nuevo en
+  // yamas_send_activity_log para este tenant se antepone a la lista sin
+  // necesidad de refrescar la página, recortando siempre a las últimas 5.
+  useEffect(() => {
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel(`activity-log-${tenantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "yamas_send_activity_log",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        (payload) => {
+          const nueva = payload.new as {
+            id: string;
+            tipo: ActivityTipo;
+            descripcion: string;
+            created_at: string;
+          };
+          setActividad((prev) => [
+            {
+              id: nueva.id,
+              tipo: nueva.tipo,
+              descripcion: nueva.descripcion,
+              createdAt: nueva.created_at,
+            },
+            ...prev,
+          ].slice(0, 5));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tenantId]);
 
   return (
     <div className="flex-1 min-w-0 bg-ys-bg px-4 md:px-[38px] pt-3 md:pt-[34px] pb-7 md:pb-10 flex flex-col gap-5 md:gap-6 overflow-y-auto">
@@ -274,19 +437,25 @@ export default function Dashboard({ userName }: DashboardProps) {
 
         <div className="bg-white border border-ys-border rounded-2xl px-5 md:px-[22px] pt-[18px] pb-5 flex flex-col gap-1.5">
           <div className="text-[15px] font-extrabold text-ys-text pb-1.5">Actividad reciente</div>
-          {ACTIVIDAD.map((a, i) => (
-            <div key={i} className="flex gap-3 py-[11px] border-t border-ys-border-softer">
-              <div className="w-[26px] h-[26px] flex-none rounded-lg bg-ys-el2 flex items-center justify-center">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-                  <circle cx="8" cy="8" r="3" stroke="#5d6560" strokeWidth="1.4" />
-                </svg>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <div className="text-[13px] font-semibold text-[#2c3531] leading-[1.45]">{a.texto}</div>
-                <div className="font-mono text-[11px] text-ys-dimmer">{a.cuando}</div>
-              </div>
+          {actividad.length === 0 ? (
+            <div className="text-[13px] text-ys-dim font-medium py-3">
+              Todavía no hay actividad registrada.
             </div>
-          ))}
+          ) : (
+            actividad.map((a) => (
+              <div key={a.id} className="flex gap-3 py-[11px] border-t border-ys-border-softer">
+                <div
+                  className={`w-[26px] h-[26px] flex-none rounded-lg flex items-center justify-center ${ACTIVITY_STYLES[a.tipo].bg}`}
+                >
+                  <ActivityIcon tipo={a.tipo} />
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <div className="text-[13px] font-semibold text-[#2c3531] leading-[1.45]">{a.descripcion}</div>
+                  <div className="font-mono text-[11px] text-ys-dimmer">{formatearCuando(a.createdAt)}</div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

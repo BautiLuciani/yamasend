@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { SyncConfig, SyncResult } from "@/lib/types";
+import { logActivity } from "@/lib/actions/activity";
 
 // Webhook del workflow "Yamasend: Sincronizar Contactos + Análisis de Chats (v2)"
 // en n8n. El nodo "0. Resolver auth.uid" del workflow espera el token en el
@@ -66,12 +67,46 @@ export async function syncAndAnalyzeAction(
 
     const data = await res.json();
 
+    const contactosProcesados = data.contactos_procesados ?? 0;
+    const leadsIdentificados = data.leads_identificados ?? 0;
+
+    // Logging de actividad: no bloquea la respuesta al usuario. Resolvemos
+    // tenant_id acá porque esta acción, a diferencia de las demás, delega
+    // esa resolución al workflow de n8n (vía access_token) y no lo necesita
+    // para nada más que este log.
+    if (contactosProcesados > 0 || leadsIdentificados > 0) {
+      const { data: cliente } = await supabase
+        .from("yamas_inmo_clientes")
+        .select("tenant_id")
+        .eq("auth_user_id", session.user.id)
+        .maybeSingle();
+
+      if (cliente?.tenant_id) {
+        if (contactosProcesados > 0) {
+          logActivity(
+            cliente.tenant_id,
+            "contactos_importados",
+            `Se importaron ${contactosProcesados} contacto${contactosProcesados === 1 ? "" : "s"}`,
+            { contactos_procesados: contactosProcesados },
+          );
+        }
+        if (leadsIdentificados > 0) {
+          logActivity(
+            cliente.tenant_id,
+            "ia_analisis",
+            `La IA identificó ${leadsIdentificados} lead${leadsIdentificados === 1 ? "" : "s"} nuevo${leadsIdentificados === 1 ? "" : "s"}`,
+            { leads_identificados: leadsIdentificados },
+          );
+        }
+      }
+    }
+
     return {
       success: data.success ?? true,
-      contactosProcesados: data.contactos_procesados ?? 0,
+      contactosProcesados,
       contactosAnalizados: data.contactos_analizados ?? 0,
       contactosOmitidos: data.contactos_omitidos ?? 0,
-      leadsIdentificados: data.leads_identificados ?? 0,
+      leadsIdentificados,
       erroresGuardado: data.errores_guardado ?? 0,
       mensaje: data.mensaje,
     };

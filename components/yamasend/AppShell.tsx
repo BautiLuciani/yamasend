@@ -203,6 +203,7 @@ export default function AppShell({
     listaId: string | null;
     templateId: string | null;
     paso: 1 | 2 | 3 | 4;
+    esDuplicada?: boolean;
   } | null>(null);
 
   const fetchQrStatus = useCallback(async () => {
@@ -979,7 +980,7 @@ export default function AppShell({
 
       {activeSection === "dashboard" && (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
-          <Dashboard userName={user.contactoNombre} />
+          <Dashboard userName={user.contactoNombre} tenantId={user.tenantId} />
         </div>
       )}
 
@@ -1275,6 +1276,7 @@ export default function AppShell({
             templateId,
             contactosIds,
             momento === "programar" ? fechaProgramada : null,
+            wizardInitial?.esDuplicada ?? false,
           );
 
           if (saveResult.error || !saveResult.id) {
@@ -1329,6 +1331,7 @@ export default function AppShell({
             listaId: listaExiste ? detail.listaId : null,
             templateId: templateExiste ? detail.templateId : null,
             paso: listaExiste && templateExiste ? 4 : 1,
+            esDuplicada: true,
           });
           setWizardOpen(true);
         }}

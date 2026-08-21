@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { Template } from "@/lib/types";
+import { logActivity } from "@/lib/actions/activity";
 
 export interface SaveResult {
   id: string | null;
@@ -48,6 +49,13 @@ export async function saveListAction(
   if (error || !data) {
     return { id: null, error: error?.message ?? "Error guardando la lista." };
   }
+
+  logActivity(
+    cliente.tenant_id,
+    "grupo_creado",
+    `Grupo "${nombre}" creado con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}`,
+    { lista_id: data.id, contactos_count: contactosIds.length },
+  );
 
   return { id: data.id, error: null };
 }
@@ -135,6 +143,11 @@ export async function renameListAction(
     .eq("tenant_id", cliente.tenant_id);
 
   if (error) return { error: error.message };
+
+  logActivity(cliente.tenant_id, "grupo_editado", `Grupo renombrado a "${nombre}"`, {
+    lista_id: listaId,
+  });
+
   return { error: null };
 }
 
@@ -212,6 +225,13 @@ export async function deleteListAction(
     return { error: "No se pudo resolver el tenant del usuario." };
   }
 
+  const { data: listaAborrar } = await supabase
+    .from("yamas_send_listas")
+    .select("nombre")
+    .eq("id", listaId)
+    .eq("tenant_id", cliente.tenant_id)
+    .maybeSingle();
+
   const { error } = await supabase
     .from("yamas_send_listas")
     .delete()
@@ -219,6 +239,14 @@ export async function deleteListAction(
     .eq("tenant_id", cliente.tenant_id);
 
   if (error) return { error: error.message };
+
+  logActivity(
+    cliente.tenant_id,
+    "grupo_eliminado",
+    `Grupo "${listaAborrar?.nombre ?? listaId}" eliminado`,
+    { lista_id: listaId },
+  );
+
   return { error: null };
 }
 
@@ -239,6 +267,11 @@ const CAMPAIGN_SEND_WEBHOOK_URL =
  * no necesite hacer joins para mostrarse.
  * status inicial: "programada" si se pasa fechaProgramada (futura), si no
  * "enviando" (el llamador dispara sendCampaignAction a continuación).
+ *
+ * esDuplicada: true cuando el llamador pre-cargó el wizard a partir de
+ * "Duplicar" en el modal de detalle de campaña (ver onDuplicate en
+ * AppShell.tsx). No cambia la lógica de guardado — solo el tipo de evento
+ * que se registra en el log de actividad del Dashboard.
  */
 export async function saveCampaignAction(
   nombre: string,
@@ -246,6 +279,7 @@ export async function saveCampaignAction(
   templateId: string | null,
   contactosIds: string[],
   fechaProgramada: string | null = null,
+  esDuplicada: boolean = false,
 ): Promise<SaveResult> {
   const supabase = await createClient();
 
@@ -307,6 +341,15 @@ export async function saveCampaignAction(
       error: error?.message ?? "Error guardando la campaña.",
     };
   }
+
+  logActivity(
+    cliente.tenant_id,
+    esDuplicada ? "campana_duplicada" : "campana_creada",
+    esDuplicada
+      ? `Campaña "${nombre}" duplicada`
+      : `Campaña "${nombre}" creada`,
+    { campana_id: data.id, contactos_count: contactosIds.length },
+  );
 
   return { id: data.id, error: null };
 }
@@ -439,7 +482,7 @@ export async function deleteCampaignAction(
 
   const { data: campana, error: campanaError } = await supabase
     .from("yamas_send_campanas")
-    .select("id, status")
+    .select("id, nombre, status")
     .eq("id", campaignId)
     .eq("tenant_id", cliente.tenant_id)
     .maybeSingle();
@@ -469,6 +512,13 @@ export async function deleteCampaignAction(
     .eq("tenant_id", cliente.tenant_id);
 
   if (campanaDeleteError) return { error: campanaDeleteError.message };
+
+  logActivity(
+    cliente.tenant_id,
+    "campana_eliminada",
+    `Campaña "${campana.nombre}" eliminada`,
+    { campana_id: campaignId },
+  );
 
   return { error: null };
 }
@@ -580,6 +630,13 @@ export async function saveTemplateDraftAction(
   if (error || !data) {
     return { id: null, error: error?.message ?? "Error guardando el borrador." };
   }
+
+  logActivity(
+    cliente.tenant_id,
+    "template_creado",
+    `Template "${nombre.trim()}" creado`,
+    { template_id: data.id },
+  );
 
   return { id: data.id, error: null };
 }
