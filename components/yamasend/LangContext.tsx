@@ -48,7 +48,7 @@ const i18n = {
     myprofile_title: "Mi perfil",
     myprofile_nav_personal: "Perfil personal",
     myprofile_nav_security: "Seguridad",
-    myprofile_nav_agency: "Datos de la agencia",
+    myprofile_nav_agency: "Datos de la empresa",
     myprofile_nav_billing: "Plan y facturación",
 
     myprofile_personal_title: "Perfil personal",
@@ -73,9 +73,9 @@ const i18n = {
     myprofile_password_mismatch: "Las contraseñas nuevas no coinciden.",
     myprofile_password_too_short: "La nueva contraseña debe tener al menos 8 caracteres.",
 
-    myprofile_agency_title: "Datos de la agencia",
-    myprofile_agency_desc: "Información de tu inmobiliaria visible en YamaSend.",
-    myprofile_field_agency_name: "Nombre de la agencia",
+    myprofile_agency_title: "Datos de la empresa",
+    myprofile_agency_desc: "Información de tu empresa disponible en YamaSend.",
+    myprofile_field_agency_name: "Nombre de la empresa",
     myprofile_field_agency_field: "Rubro",
 
     myprofile_billing_title: "Plan y facturación",
@@ -181,7 +181,7 @@ const i18n = {
     myprofile_title: "My profile",
     myprofile_nav_personal: "Personal profile",
     myprofile_nav_security: "Security",
-    myprofile_nav_agency: "Agency details",
+    myprofile_nav_agency: "Company details",
     myprofile_nav_billing: "Plan & billing",
 
     myprofile_personal_title: "Personal profile",
@@ -206,9 +206,9 @@ const i18n = {
     myprofile_password_mismatch: "New passwords don't match.",
     myprofile_password_too_short: "New password must be at least 8 characters.",
 
-    myprofile_agency_title: "Agency details",
-    myprofile_agency_desc: "Your agency's information within YamaSend.",
-    myprofile_field_agency_name: "Agency name",
+    myprofile_agency_title: "Company details",
+    myprofile_agency_desc: "Your company's information within YamaSend.",
+    myprofile_field_agency_name: "Company name",
     myprofile_field_agency_field: "Industry",
 
     myprofile_billing_title: "Plan & billing",
