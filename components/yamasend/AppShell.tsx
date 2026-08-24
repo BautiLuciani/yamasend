@@ -215,6 +215,50 @@ export default function AppShell({
     };
   }, [user.tenantId]);
 
+  // Estado de vinculación de WhatsApp (yamas_send_waha_sessions.estado), en
+  // memoria y sincronizado en tiempo real por Realtime — evita tener que
+  // pollear o volver a pedirle al servidor cada vez que se toca "Analizar".
+  // Sin esto, si el usuario desvincula el WhatsApp desde el celular estando
+  // ya en el dashboard, el chequeo seguía viendo el último estado conocido
+  // (el que trajo la carga inicial de la página) hasta el próximo refresh.
+  // Arranca en null ("todavía no sabemos") mientras se resuelve el chequeo
+  // inicial, para no dejar pasar un "Analizar" antes de tener certeza.
+  const [wahaConectada, setWahaConectada] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    isWahaConectadaAction().then((conectada) => {
+      if (!cancelado) setWahaConectada(conectada);
+    });
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`waha-session-${user.tenantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "yamas_send_waha_sessions",
+          filter: `tenant_id=eq.${user.tenantId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            setWahaConectada(false);
+            return;
+          }
+          const row = payload.new as { estado?: string };
+          setWahaConectada(row.estado === "conectada");
+        },
+      )
+      .subscribe();
+
+    return () => {
+      cancelado = true;
+      supabase.removeChannel(channel);
+    };
+  }, [user.tenantId]);
+
   const VALID_SECTIONS: AppSection[] = [
     "dashboard",
     "contactos",
@@ -1180,9 +1224,8 @@ export default function AppShell({
         onSelectTotal={handleSelectTotal}
         onToggleFilter={handleToggleFilter}
         onImportClick={() => setQrOpen(true)}
-        onAnalyzeClick={async () => {
-          const conectada = await isWahaConectadaAction();
-          if (conectada) {
+        onAnalyzeClick={() => {
+          if (wahaConectada) {
             setSyncModalOpen(true);
           } else {
             setWahaRequiredOpen(true);
@@ -1349,6 +1392,7 @@ export default function AppShell({
       <SyncConfigModal
         open={syncModalOpen}
         onClose={() => setSyncModalOpen(false)}
+        wahaConectada={wahaConectada === true}
         onWahaDesconectada={() => setWahaRequiredOpen(true)}
         onRun={async (config) => {
           const result = await syncAndAnalyzeAction(config);

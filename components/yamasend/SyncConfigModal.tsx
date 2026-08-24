@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { SyncConfig, SyncResult } from "@/lib/types";
-import { isWahaConectadaAction } from "@/lib/actions/sync";
 
 type Step = "config" | "running" | "done" | "error";
 
@@ -10,9 +9,12 @@ interface SyncConfigModalProps {
   open: boolean;
   onClose: () => void;
   onRun: (config: SyncConfig) => Promise<SyncResult>;
-  // Se llama si, al confirmar, el WhatsApp ya no está vinculado (por ejemplo si
-  // el usuario lo desvinculó con este modal abierto). Cierra este modal y
-  // muestra el aviso de vinculación en vez de disparar el análisis igual.
+  // Estado en tiempo real (Realtime) de si el WhatsApp está vinculado, que
+  // AppShell mantiene sincronizado. Se re-chequea acá al confirmar por si
+  // el celular se desvincula con este modal ya abierto.
+  wahaConectada: boolean;
+  // Se llama si, al confirmar, el WhatsApp ya no está vinculado. Cierra este
+  // modal y muestra el aviso de vinculación en vez de disparar el análisis.
   onWahaDesconectada: () => void;
 }
 
@@ -27,6 +29,7 @@ export default function SyncConfigModal({
   open,
   onClose,
   onRun,
+  wahaConectada,
   onWahaDesconectada,
 }: SyncConfigModalProps) {
   const [step, setStep] = useState<Step>("config");
@@ -45,12 +48,11 @@ export default function SyncConfigModal({
   }
 
   async function handleStart() {
-    // Refuerzo: re-chequeamos acá por si el celular se desvinculó mientras
-    // este modal ya estaba abierto (el chequeo original ocurre al abrirlo,
-    // en AppShell). Evita disparar un análisis que el backend va a rechazar
-    // igual, y le muestra al usuario el aviso correcto en vez de un error.
-    const conectada = await isWahaConectadaAction();
-    if (!conectada) {
+    // Refuerzo: re-chequeamos acá (con el estado ya sincronizado por Realtime
+    // en AppShell, sin round-trip extra al servidor) por si el celular se
+    // desvinculó mientras este modal ya estaba abierto. Evita disparar un
+    // análisis que el backend va a rechazar igual.
+    if (!wahaConectada) {
       handleClose();
       onWahaDesconectada();
       return;
