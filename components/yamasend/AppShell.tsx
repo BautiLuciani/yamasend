@@ -150,10 +150,34 @@ export default function AppShell({
     setCampaigns(campaignsProp);
   }, [campaignsProp]);
 
-  useEffect(() => {
-    const supabase = createClient();
+  // Cliente de Supabase compartido para Realtime, autenticado explícitamente
+  // con el access_token de la sesión. Realtime autentica el WebSocket por
+  // separado de las cookies que usa el cliente REST (@supabase/ssr) — sin
+  // este setAuth, el socket queda autenticado como "anon" y las policies de
+  // RLS (que exigen auth.uid()) nunca dejan pasar el evento, aunque la
+  // suscripción se vea "SUBSCRIBED" sin ningún error. Se resuelve una sola
+  // vez y lo comparten todos los canales (campaigns, waha session, etc.).
+  const [realtimeClient, setRealtimeClient] = useState<ReturnType<
+    typeof createClient
+  > | null>(null);
 
-    const channel = supabase
+  useEffect(() => {
+    let cancelado = false;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelado || !session?.access_token) return;
+      supabase.realtime.setAuth(session.access_token);
+      setRealtimeClient(supabase);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!realtimeClient) return;
+
+    const channel = realtimeClient
       .channel(`campaigns-${user.tenantId}`)
       .on(
         "postgres_changes",
@@ -211,9 +235,9 @@ export default function AppShell({
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      realtimeClient.removeChannel(channel);
     };
-  }, [user.tenantId]);
+  }, [realtimeClient, user.tenantId]);
 
   // Estado de vinculación de WhatsApp (yamas_send_waha_sessions.estado), en
   // memoria y sincronizado en tiempo real por Realtime — evita tener que
@@ -226,13 +250,13 @@ export default function AppShell({
   const [wahaConectada, setWahaConectada] = useState<boolean | null>(null);
 
   useEffect(() => {
-    let cancelado = false;
-    isWahaConectadaAction().then((conectada) => {
-      if (!cancelado) setWahaConectada(conectada);
-    });
+    isWahaConectadaAction().then(setWahaConectada);
+  }, []);
 
-    const supabase = createClient();
-    const channel = supabase
+  useEffect(() => {
+    if (!realtimeClient) return;
+
+    const channel = realtimeClient
       .channel(`waha-session-${user.tenantId}`)
       .on(
         "postgres_changes",
@@ -254,10 +278,9 @@ export default function AppShell({
       .subscribe();
 
     return () => {
-      cancelado = true;
-      supabase.removeChannel(channel);
+      realtimeClient.removeChannel(channel);
     };
-  }, [user.tenantId]);
+  }, [realtimeClient, user.tenantId]);
 
   const VALID_SECTIONS: AppSection[] = [
     "dashboard",
