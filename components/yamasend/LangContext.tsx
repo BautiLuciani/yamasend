@@ -44,6 +44,47 @@ const i18n = {
     settings_language_es: "Español",
     settings_language_en: "Inglés",
 
+    // ── Mi perfil (modal) ──
+    myprofile_title: "Mi perfil",
+    myprofile_nav_personal: "Perfil personal",
+    myprofile_nav_security: "Seguridad",
+    myprofile_nav_agency: "Datos de la agencia",
+    myprofile_nav_billing: "Plan y facturación",
+
+    myprofile_personal_title: "Perfil personal",
+    myprofile_personal_desc: "Tus datos de contacto dentro de YamaSend.",
+    myprofile_field_name: "Nombre completo",
+    myprofile_field_email: "Email",
+    myprofile_field_email_readonly: "El email no se puede modificar por ahora.",
+    myprofile_field_phone: "Teléfono",
+    myprofile_save: "Guardar cambios",
+    myprofile_saved: "Cambios guardados.",
+    myprofile_save_error: "No se pudieron guardar los cambios.",
+
+    myprofile_security_title: "Seguridad",
+    myprofile_security_desc: "Gestioná el acceso a tu cuenta.",
+    myprofile_password_title: "Cambiar contraseña",
+    myprofile_password_desc: "Vas a necesitar tu contraseña actual para confirmar el cambio.",
+    myprofile_field_current_password: "Contraseña actual",
+    myprofile_field_new_password: "Nueva contraseña",
+    myprofile_field_confirm_password: "Confirmar nueva contraseña",
+    myprofile_password_change: "Cambiar contraseña",
+    myprofile_password_changed: "Contraseña actualizada correctamente.",
+    myprofile_password_mismatch: "Las contraseñas nuevas no coinciden.",
+    myprofile_password_too_short: "La nueva contraseña debe tener al menos 8 caracteres.",
+
+    myprofile_agency_title: "Datos de la agencia",
+    myprofile_agency_desc: "Información de tu inmobiliaria visible en YamaSend.",
+    myprofile_field_agency_name: "Nombre de la agencia",
+    myprofile_field_agency_field: "Rubro",
+
+    myprofile_billing_title: "Plan y facturación",
+    myprofile_billing_desc: "Administrá tu plan y método de pago.",
+    myprofile_billing_current_plan: "Plan actual",
+    myprofile_billing_construction_title: "Sección en construcción",
+    myprofile_billing_construction_desc:
+      "Estamos preparando la gestión de planes y facturación. Muy pronto vas a poder administrarla desde acá.",
+
     // ── Dashboard ──
     dash_greeting: "Hola",
     dash_subtitle: "Esto pasó con tus envíos en los últimos",
@@ -135,6 +176,47 @@ const i18n = {
     settings_language_desc: "Choose the interface language.",
     settings_language_es: "Spanish",
     settings_language_en: "English",
+
+    // ── My profile (modal) ──
+    myprofile_title: "My profile",
+    myprofile_nav_personal: "Personal profile",
+    myprofile_nav_security: "Security",
+    myprofile_nav_agency: "Agency details",
+    myprofile_nav_billing: "Plan & billing",
+
+    myprofile_personal_title: "Personal profile",
+    myprofile_personal_desc: "Your contact details within YamaSend.",
+    myprofile_field_name: "Full name",
+    myprofile_field_email: "Email",
+    myprofile_field_email_readonly: "Email can't be changed yet.",
+    myprofile_field_phone: "Phone",
+    myprofile_save: "Save changes",
+    myprofile_saved: "Changes saved.",
+    myprofile_save_error: "Couldn't save the changes.",
+
+    myprofile_security_title: "Security",
+    myprofile_security_desc: "Manage access to your account.",
+    myprofile_password_title: "Change password",
+    myprofile_password_desc: "You'll need your current password to confirm the change.",
+    myprofile_field_current_password: "Current password",
+    myprofile_field_new_password: "New password",
+    myprofile_field_confirm_password: "Confirm new password",
+    myprofile_password_change: "Change password",
+    myprofile_password_changed: "Password updated successfully.",
+    myprofile_password_mismatch: "New passwords don't match.",
+    myprofile_password_too_short: "New password must be at least 8 characters.",
+
+    myprofile_agency_title: "Agency details",
+    myprofile_agency_desc: "Your agency's information within YamaSend.",
+    myprofile_field_agency_name: "Agency name",
+    myprofile_field_agency_field: "Industry",
+
+    myprofile_billing_title: "Plan & billing",
+    myprofile_billing_desc: "Manage your plan and payment method.",
+    myprofile_billing_current_plan: "Current plan",
+    myprofile_billing_construction_title: "Section under construction",
+    myprofile_billing_construction_desc:
+      "We're working on plan and billing management. You'll be able to manage it from here soon.",
 
     dash_greeting: "Hi",
     dash_subtitle: "Here's what happened with your sends in the last",

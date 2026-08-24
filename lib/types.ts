@@ -101,6 +101,8 @@ export interface AppUser {
   plan: PlanKey;
   trialEnd: string; // ISO date
   credito?: number;
+  nombreEmpresa: string;
+  rubro: string;
 }
 
 export type ChatMsgType = "user" | "bot" | "error";

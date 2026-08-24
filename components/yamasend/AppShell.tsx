@@ -32,6 +32,7 @@ import CampaignWizardModal from "./CampaignWizardModal";
 import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
+import MyProfileModal from "./MyProfileModal";
 import LogoutModal from "./LogoutModal";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -109,7 +110,7 @@ interface AppShellProps {
 const COST_PER_MSG = 0.0618;
 
 export default function AppShell({
-  user,
+  user: userProp,
   contacts,
   templates: templatesProp,
   lists,
@@ -117,6 +118,18 @@ export default function AppShell({
   onLogout,
 }: AppShellProps) {
   const router = useRouter();
+  // Estado local del usuario, sincronizado con la prop del server component.
+  // Permite reflejar al instante los cambios hechos desde MyProfileModal
+  // (nombre, teléfono, datos de agencia) sin depender de router.refresh().
+  // Se ajusta durante el render (no en un efecto) siguiendo el patrón
+  // recomendado por React para "adjust state when a prop changes".
+  const [user, setUser] = useState<AppUser>(userProp);
+  const [prevUserProp, setPrevUserProp] = useState(userProp);
+  if (userProp !== prevUserProp) {
+    setPrevUserProp(userProp);
+    setUser(userProp);
+  }
+
   // Estado local de templates, sincronizado inicialmente con la prop del
   // server component. Necesario para poder actualizarlo desde el polling de
   // abajo sin depender de router.refresh() (que recarga todo /panel).
@@ -241,6 +254,7 @@ export default function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileView, setProfileView] = useState<"profile" | "settings">("profile");
+  const [myProfileOpen, setMyProfileOpen] = useState(false);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
@@ -1037,6 +1051,7 @@ export default function AppShell({
         userName={user.contactoNombre}
         planLabel={planLabel}
         onLogout={handleLogout}
+        onOpenMyProfile={() => setMyProfileOpen(true)}
       />
 
       <ProfileDrawer
@@ -1046,6 +1061,17 @@ export default function AppShell({
         onViewChange={setProfileView}
         onClose={() => setProfileOpen(false)}
         onLogout={handleLogout}
+        onOpenMyProfile={() => {
+          setProfileOpen(false);
+          setMyProfileOpen(true);
+        }}
+      />
+
+      <MyProfileModal
+        open={myProfileOpen}
+        user={user}
+        onClose={() => setMyProfileOpen(false)}
+        onUserUpdate={(patch) => setUser((prev) => ({ ...prev, ...patch }))}
       />
 
       <LogoutModal

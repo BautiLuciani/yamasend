@@ -12,6 +12,7 @@ interface ProfileDrawerProps {
   onViewChange: (view: "profile" | "settings") => void;
   onClose: () => void;
   onLogout: () => void;
+  onOpenMyProfile: () => void;
 }
 
 const PLAN_LABELS: Record<string, string> = {
@@ -33,6 +34,7 @@ export default function ProfileDrawer({
   onViewChange,
   onClose,
   onLogout,
+  onOpenMyProfile,
 }: ProfileDrawerProps) {
   const [now] = useState(() => Date.now());
   const { t } = useLang();
@@ -135,13 +137,16 @@ export default function ProfileDrawer({
               )}
 
               <div className="flex flex-col gap-0.5 border-t border-ys-border-softest pt-3.5">
-                <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
+                <button
+                  onClick={onOpenMyProfile}
+                  className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-pointer hover:bg-ys-el2 transition-colors text-left w-full"
+                >
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                     <circle cx="8" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
                     <path d="M3 13.5c0-2.4 2.2-3.8 5-3.8s5 1.4 5 3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                   {t("profile_my_profile")}
-                </div>
+                </button>
                 <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                     <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />

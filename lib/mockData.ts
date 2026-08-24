@@ -15,6 +15,8 @@ export const mockUser: AppUser = {
   plan: "starter",
   trialEnd: "2026-04-13",
   credito: 0,
+  nombreEmpresa: "",
+  rubro: "",
 };
 
 export const mockContacts: Contact[] = [
