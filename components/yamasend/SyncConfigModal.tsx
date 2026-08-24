@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { SyncConfig, SyncResult } from "@/lib/types";
+import { isWahaConectadaAction } from "@/lib/actions/sync";
 
 type Step = "config" | "running" | "done" | "error";
 
@@ -9,6 +10,10 @@ interface SyncConfigModalProps {
   open: boolean;
   onClose: () => void;
   onRun: (config: SyncConfig) => Promise<SyncResult>;
+  // Se llama si, al confirmar, el WhatsApp ya no está vinculado (por ejemplo si
+  // el usuario lo desvinculó con este modal abierto). Cierra este modal y
+  // muestra el aviso de vinculación en vez de disparar el análisis igual.
+  onWahaDesconectada: () => void;
 }
 
 const PRESETS_DIAS = [
@@ -22,6 +27,7 @@ export default function SyncConfigModal({
   open,
   onClose,
   onRun,
+  onWahaDesconectada,
 }: SyncConfigModalProps) {
   const [step, setStep] = useState<Step>("config");
   const [diasAnalisis, setDiasAnalisis] = useState(30);
@@ -39,6 +45,17 @@ export default function SyncConfigModal({
   }
 
   async function handleStart() {
+    // Refuerzo: re-chequeamos acá por si el celular se desvinculó mientras
+    // este modal ya estaba abierto (el chequeo original ocurre al abrirlo,
+    // en AppShell). Evita disparar un análisis que el backend va a rechazar
+    // igual, y le muestra al usuario el aviso correcto en vez de un error.
+    const conectada = await isWahaConectadaAction();
+    if (!conectada) {
+      handleClose();
+      onWahaDesconectada();
+      return;
+    }
+
     setStep("running");
     const res = await onRun({ diasAnalisis, limiteContactos, consulta });
     setResult(res);

@@ -2,7 +2,11 @@
 
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
-import { syncAndAnalyzeAction, generarTemplateConIAAction } from "@/lib/actions/sync";
+import {
+  syncAndAnalyzeAction,
+  generarTemplateConIAAction,
+  isWahaConectadaAction,
+} from "@/lib/actions/sync";
 import {
   saveListAction,
   saveTemplateDraftAction,
@@ -272,7 +276,7 @@ export async function sendIAMessageAction(
   }
 
   if (intencion.tipo === "importar_contactos") {
-    return iniciarFlujoImportarContactos();
+    return await iniciarFlujoImportarContactos();
   }
 
   if (intencion.tipo === "buscar_contactos") {
@@ -1272,7 +1276,18 @@ export async function confirmarCreacionCampanaAction(
 const IMPORT_DIAS_DEFAULT = 30;
 const IMPORT_LIMITE_DEFAULT = 50;
 
-function iniciarFlujoImportarContactos(): IAResponse {
+async function iniciarFlujoImportarContactos(): Promise<IAResponse> {
+  // Igual que el guard de SyncConfigModal en el frontend: si el WhatsApp no
+  // está vinculado, WAHA no tiene de dónde leer las conversaciones, así que
+  // ni arrancamos el flujo — le avisamos y cortamos acá.
+  const conectada = await isWahaConectadaAction();
+  if (!conectada) {
+    return {
+      text: "Para analizar tus contactos necesito que tu WhatsApp esté vinculado, y todavía no lo está. Vinculalo desde el botón \"Vincular\" y volvé a pedírmelo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
   return {
     text: `Dale, puedo importar y analizar tus contactos de WhatsApp. Ajustá el rango de días y la cantidad de contactos si querés, o confirmá directo con los valores por defecto (${IMPORT_DIAS_DEFAULT} días, ${IMPORT_LIMITE_DEFAULT} contactos).`,
     payload: {
@@ -1364,6 +1379,16 @@ export async function confirmarImportarContactosAction(
     1,
     Math.min(500, limiteContactosOverride ?? flowState.draft.limiteContactos ?? IMPORT_LIMITE_DEFAULT),
   );
+
+  // Refuerzo: re-chequeamos acá por si el WhatsApp se desvinculó entre que
+  // se mostró la tarjeta de confirmación y que el usuario la confirmó.
+  const conectada = await isWahaConectadaAction();
+  if (!conectada) {
+    return {
+      text: "Tu WhatsApp ya no está vinculado, así que no puedo analizar tus contactos ahora. Vinculalo desde el botón \"Vincular\" y volvé a pedírmelo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
 
   const result = await syncAndAnalyzeAction({
     diasAnalisis,

@@ -216,3 +216,36 @@ export async function setTemperaturaManualAction(
   if (error) return { error: error.message };
   return { error: null };
 }
+
+/**
+ * Chequea si el WhatsApp del tenant logueado está vinculado (yamas_send_waha_sessions.estado
+ * === "conectada") antes de permitir analizar/sincronizar contactos. Se usa tanto en el
+ * modal de análisis (SyncConfigModal, vía AppShell) como en el flujo conversacional de la
+ * IA (lib/actions/ia.ts), para que ambos caminos bloqueen el análisis del mismo modo si el
+ * celular no está vinculado.
+ */
+export async function isWahaConectadaAction(): Promise<boolean> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return false;
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) return false;
+
+  const { data: sesion } = await supabase
+    .from("yamas_send_waha_sessions")
+    .select("estado")
+    .eq("tenant_id", cliente.tenant_id)
+    .maybeSingle();
+
+  return sesion?.estado === "conectada";
+}

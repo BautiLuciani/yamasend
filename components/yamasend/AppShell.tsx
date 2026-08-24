@@ -39,6 +39,7 @@ import ContactsTable from "./ContactsTable";
 import ContactsPagination from "./ContactsPagination";
 import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
+import WahaRequiredModal from "./WahaRequiredModal";
 import ContactDetailModal from "./ContactDetailModal";
 import { CreateGroupModal, AddToGroupModal } from "./GroupModals";
 import {
@@ -60,6 +61,7 @@ import {
   syncAndAnalyzeAction,
   setTemperaturaManualAction,
   generarTemplateConIAAction,
+  isWahaConectadaAction,
 } from "@/lib/actions/sync";
 import { getCampaignDetailAction } from "@/lib/actions/campaigns";
 import {
@@ -280,6 +282,7 @@ export default function AppShell({
   const qrPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrObjectUrlRef = useRef<string | null>(null);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [wahaRequiredOpen, setWahaRequiredOpen] = useState(false);
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
   const [createGroupOpen, setCreateGroupOpen] = useState(false);
   const [addToGroupOpen, setAddToGroupOpen] = useState(false);
@@ -1177,7 +1180,14 @@ export default function AppShell({
         onSelectTotal={handleSelectTotal}
         onToggleFilter={handleToggleFilter}
         onImportClick={() => setQrOpen(true)}
-        onAnalyzeClick={() => setSyncModalOpen(true)}
+        onAnalyzeClick={async () => {
+          const conectada = await isWahaConectadaAction();
+          if (conectada) {
+            setSyncModalOpen(true);
+          } else {
+            setWahaRequiredOpen(true);
+          }
+        }}
         importing={false}
       />
 
@@ -1327,9 +1337,19 @@ export default function AppShell({
         qrImageUrl={qrImageUrl}
       />
 
+      <WahaRequiredModal
+        open={wahaRequiredOpen}
+        onClose={() => setWahaRequiredOpen(false)}
+        onVincular={() => {
+          setWahaRequiredOpen(false);
+          setQrOpen(true);
+        }}
+      />
+
       <SyncConfigModal
         open={syncModalOpen}
         onClose={() => setSyncModalOpen(false)}
+        onWahaDesconectada={() => setWahaRequiredOpen(true)}
         onRun={async (config) => {
           const result = await syncAndAnalyzeAction(config);
           if (result.success) {
