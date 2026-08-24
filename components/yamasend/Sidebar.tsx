@@ -11,6 +11,7 @@ interface SidebarProps {
   userName: string;
   planLabel: string;
   onLogout: () => void;
+  onOpenMyProfile: () => void;
 }
 
 const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
@@ -85,6 +86,7 @@ export default function Sidebar({
   userName,
   planLabel,
   onLogout,
+  onOpenMyProfile,
 }: SidebarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { t } = useLang();
@@ -131,13 +133,19 @@ export default function Sidebar({
       <div className="mt-auto relative">
         {menuOpen && (
           <div className="absolute bottom-[calc(100%+8px)] left-0 right-0 bg-ys-card border border-ys-border rounded-xl p-1.5 shadow-[0_12px_28px_rgba(16,24,20,0.12)] flex flex-col gap-0.5 z-20">
-            <div className="flex items-center gap-2.5 px-[11px] py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenMyProfile();
+              }}
+              className="flex items-center gap-2.5 px-[11px] py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-pointer hover:bg-ys-el2 transition-colors text-left w-full"
+            >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
                 <path d="M3 13.5c0-2.4 2.2-3.8 5-3.8s5 1.4 5 3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
-              Mi perfil
-            </div>
+              {t("profile_my_profile")}
+            </button>
             <div className="flex items-center gap-2.5 px-[11px] py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />

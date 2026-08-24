@@ -1040,6 +1040,7 @@ export default function AppShell({
         userName={user.contactoNombre}
         planLabel={planLabel}
         onLogout={handleLogout}
+        onOpenMyProfile={() => setMyProfileOpen(true)}
       />
 
       <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} />
