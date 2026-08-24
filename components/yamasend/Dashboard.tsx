@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getRecentActivityAction } from "@/lib/actions/activity";
 import { getCampaignInsightAction } from "@/lib/actions/write";
-import type { ActivityLogEntry, ActivityTipo, Campaign, CampaignStatus } from "@/lib/types";
+import { getDashboardStatsAction } from "@/lib/actions/stats";
+import type {
+  ActivityLogEntry,
+  ActivityTipo,
+  Campaign,
+  CampaignStatus,
+  DashboardPeriodo,
+  DashboardStats,
+} from "@/lib/types";
 
 interface DashboardProps {
   userName: string;
@@ -38,6 +46,16 @@ function formatFechaCorta(iso: string): string {
   });
 }
 
+// Formatea un delta (variación % o en puntos) para los KPI cards, con
+// signo explícito. null significa "no hay datos del período anterior
+// para comparar" (ej. tenant nuevo).
+function formatDelta(valor: number | null, sufijo: string = "%"): { texto: string; negativo: boolean } {
+  if (valor === null) return { texto: "Sin datos previos", negativo: false };
+  const signo = valor > 0 ? "+" : "";
+  const texto = `${signo}${valor.toLocaleString("es-AR", { maximumFractionDigits: 1 })}${sufijo}`;
+  return { texto, negativo: valor < 0 };
+}
+
 // Línea de detalle bajo el nombre de la campaña: si está programada (a
 // futuro) muestra la fecha objetivo, igual que hacía el mock; para el
 // resto de los estados muestra grupo + contactos, ya que el listado
@@ -51,16 +69,6 @@ function detalleCampana(c: Campaign): string {
   const contactos = `${c.contactosCount} contacto${c.contactosCount === 1 ? "" : "s"}`;
   return `${grupo} · ${contactos}`;
 }
-
-const BARRAS = [
-  { dia: "Lun", alto: 62, altoFallidos: 4 },
-  { dia: "Mar", alto: 88, altoFallidos: 3 },
-  { dia: "Mié", alto: 54, altoFallidos: 5 },
-  { dia: "Jue", alto: 70, altoFallidos: 4 },
-  { dia: "Vie", alto: 95, altoFallidos: 2 },
-  { dia: "Sáb", alto: 40, altoFallidos: 3 },
-  { dia: "Dom", alto: 30, altoFallidos: 2 },
-];
 
 // Configuración visual por tipo de actividad: ícono + color de fondo/trazo,
 // para que la card "Actividad reciente" distinga de un vistazo qué pasó,
@@ -180,9 +188,35 @@ function EstadoBadge({ estado, textClass, bgClass }: { estado: string; textClass
 }
 
 export default function Dashboard({ userName, tenantId, campaigns, onViewAllCampaigns, onNewCampaign }: DashboardProps) {
-  const [periodo, setPeriodo] = useState<"7d" | "30d" | "ano">("7d");
+  const [periodo, setPeriodo] = useState<DashboardPeriodo>("7d");
   const [actividad, setActividad] = useState<ActivityLogEntry[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  // Período al que corresponden los datos actualmente en `stats`. Mientras
+  // no coincida con `periodo` (o mientras stats sea null), se considera
+  // "cargando" — evita un setState síncrono al inicio del efecto (que
+  // dispara cascading renders) solo para prender un flag de loading.
+  const [statsPeriodo, setStatsPeriodo] = useState<DashboardPeriodo | null>(null);
+  const statsLoading = stats === null || statsPeriodo !== periodo;
   const firstName = userName.split(" ")[0] || userName;
+
+  // Refetch de estadísticas cada vez que cambia el período seleccionado en
+  // el switch (7 días / 30 días / año). Trae tanto el gráfico "Volumen de
+  // envíos" como los 3 KPIs derivados de datos (mensajes enviados, tasa de
+  // entrega, leads calificados por IA).
+  useEffect(() => {
+    let cancelado = false;
+
+    getDashboardStatsAction(tenantId, periodo).then((result) => {
+      if (!cancelado) {
+        setStats(result);
+        setStatsPeriodo(periodo);
+      }
+    });
+
+    return () => {
+      cancelado = true;
+    };
+  }, [tenantId, periodo]);
 
   // Ordena por el timestamp más relevante de cada campaña (enviado_at si ya
   // se envió, si no created_at) para que una campaña recién completada
@@ -327,9 +361,10 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
               <path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5 14 2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
           }
-          value="24.680"
+          value={statsLoading ? "…" : (stats?.mensajesEnviados ?? 0).toLocaleString("es-AR")}
           label="Mensajes enviados"
-          delta="+12,4%"
+          delta={statsLoading ? "" : formatDelta(stats?.mensajesEnviadosDeltaPct ?? null).texto}
+          deltaNegativo={!statsLoading && formatDelta(stats?.mensajesEnviadosDeltaPct ?? null).negativo}
         />
         <KpiCard
           icon={
@@ -337,9 +372,16 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
               <path d="m1.5 8.5 3 3 5-6M7 11.5l1 1 6.5-7.5" stroke="#12B76A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           }
-          value="96,8%"
+          value={
+            statsLoading
+              ? "…"
+              : stats?.tasaEntrega !== null && stats?.tasaEntrega !== undefined
+                ? `${stats.tasaEntrega.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`
+                : "—"
+          }
           label="Tasa de entrega"
-          delta="+0,6%"
+          delta={statsLoading ? "" : formatDelta(stats?.tasaEntregaDeltaPts ?? null, " pts").texto}
+          deltaNegativo={!statsLoading && formatDelta(stats?.tasaEntregaDeltaPts ?? null).negativo}
         />
         <KpiCard
           dark
@@ -348,9 +390,16 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
               <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#3ddb8f" strokeWidth="1.4" strokeLinejoin="round" />
             </svg>
           }
-          value="426"
+          value={statsLoading ? "…" : (stats?.leadsCalificados ?? 0).toLocaleString("es-AR")}
           label="Leads calificados por IA"
-          delta="+58 este período"
+          delta={
+            statsLoading
+              ? ""
+              : stats?.leadsCalificadosDelta !== null && stats?.leadsCalificadosDelta !== undefined
+                ? `${stats.leadsCalificadosDelta >= 0 ? "+" : ""}${stats.leadsCalificadosDelta} este período`
+                : "Sin datos previos"
+          }
+          deltaNegativo={!statsLoading && (stats?.leadsCalificadosDelta ?? 0) < 0}
         />
         <div className="bg-white border border-ys-green-border rounded-2xl px-5 py-[18px] flex flex-col gap-3 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)]">
           <div className="flex items-center gap-[13px]">
@@ -399,20 +448,47 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
               </span>
             </div>
           </div>
-          <div className="flex items-end gap-3 md:gap-4 h-[172px]">
-            {BARRAS.map((b) => (
-              <div key={b.dia} className="flex-1 flex flex-col items-center gap-2.5">
-                <div
-                  className="w-full flex flex-col justify-end gap-0.5 h-[140px]"
-                  style={{ animation: "ys-grow .6s cubic-bezier(.4,0,.2,1) both", transformOrigin: "bottom" }}
-                >
-                  <div className="rounded-t-[3px] bg-ys-border-softest" style={{ height: `${b.altoFallidos}%` }} />
-                  <div className="rounded-b-[3px] bg-ys-green" style={{ height: `${b.alto}%` }} />
+          {statsLoading ? (
+            <div className="flex items-end gap-3 md:gap-4 h-[172px]">
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-2.5">
+                  <div className="w-full h-[140px] rounded-[3px] bg-ys-el2 animate-pulse" />
+                  <div className="text-[11.5px] text-ys-dimmer font-medium">&nbsp;</div>
                 </div>
-                <div className="text-[11.5px] text-ys-dimmer font-medium">{b.dia}</div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : !stats || stats.barras.every((b) => b.entregados === 0 && b.fallidos === 0) ? (
+            <div className="h-[140px] flex items-center justify-center text-[13px] text-ys-dim font-medium">
+              Todavía no hay envíos en este período.
+            </div>
+          ) : (
+            <div className="flex items-end gap-3 md:gap-4 h-[172px]">
+              {(() => {
+                const maxTotal = Math.max(1, ...stats.barras.map((b) => b.entregados + b.fallidos));
+                return stats.barras.map((b, i) => {
+                  const total = b.entregados + b.fallidos;
+                  // Altura mínima visual (2px) para que una barra con datos
+                  // no desaparezca del todo cuando el total es muy chico
+                  // respecto al máximo del set.
+                  const altoEntregados = b.entregados > 0 ? Math.max(2, (b.entregados / maxTotal) * 140) : 0;
+                  const altoFallidos = b.fallidos > 0 ? Math.max(2, (b.fallidos / maxTotal) * 140) : 0;
+                  return (
+                    <div key={`${b.label}-${i}`} className="flex-1 flex flex-col items-center gap-2.5">
+                      <div
+                        className="w-full flex flex-col justify-end gap-0.5 h-[140px]"
+                        style={{ animation: "ys-grow .6s cubic-bezier(.4,0,.2,1) both", transformOrigin: "bottom" }}
+                        title={`${b.label}: ${b.entregados} entregados, ${b.fallidos} fallidos${total === 0 ? " (sin envíos)" : ""}`}
+                      >
+                        <div className="rounded-t-[3px] bg-ys-border-softest" style={{ height: `${altoFallidos}px` }} />
+                        <div className="rounded-b-[3px] bg-ys-green" style={{ height: `${altoEntregados}px` }} />
+                      </div>
+                      <div className="text-[11.5px] text-ys-dimmer font-medium">{b.label}</div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          )}
         </div>
 
         <div className="bg-ys-dark rounded-2xl px-[22px] py-5 flex flex-col gap-3">
@@ -514,12 +590,14 @@ function KpiCard({
   value,
   label,
   delta,
+  deltaNegativo = false,
   dark = false,
 }: {
   icon: React.ReactNode;
   value: string;
   label: string;
   delta: string;
+  deltaNegativo?: boolean;
   dark?: boolean;
 }) {
   return (
@@ -533,7 +611,7 @@ function KpiCard({
           <div className="text-[12.5px] text-ys-muted font-semibold truncate">{label}</div>
         </div>
       </div>
-      <div className="text-[12.5px] font-bold text-ys-green-text">
+      <div className={`text-[12.5px] font-bold ${deltaNegativo ? "text-[#a8443b]" : "text-ys-green-text"}`}>
         {delta} <span className="text-ys-dimmer font-medium">vs. período anterior</span>
       </div>
     </div>
