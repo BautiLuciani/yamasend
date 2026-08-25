@@ -8,7 +8,7 @@ import type { ActivityLogEntry, ActivityTipo } from "@/lib/types";
  * "Actividad reciente" del Dashboard.
  *
  * No lanza ni devuelve error al llamador: el logging de actividad es
- * secundario a la acción principal (crear grupo, enviar campaña, etc.) y
+ * secundario a la acción principal (crear audiencia, enviar campaña, etc.) y
  * nunca debe hacer fallar esa acción si el insert del log falla por algún
  * motivo. Si falla, solo se deja constancia en consola del servidor.
  *

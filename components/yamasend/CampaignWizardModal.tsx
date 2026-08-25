@@ -22,7 +22,7 @@ interface CampaignWizardModalProps {
   }) => Promise<{ error: string | null }>;
   /**
    * Valores iniciales para precargar el wizard, usado por "Duplicar
-   * campaña": arranca directo en el paso de revisión con el mismo grupo,
+   * campaña": arranca directo en el paso de revisión con la misma audiencia,
    * template y un nombre sugerido, en vez de empezar vacío en el paso 1.
    */
   initial?: {
@@ -58,7 +58,7 @@ export default function CampaignWizardModal({
   const [nombre, setNombre] = useState(initial?.nombre ?? "");
   const [momento, setMomento] = useState<"ahora" | "programar">("ahora");
   const [fechaProgramada, setFechaProgramada] = useState(defaultFechaProgramada());
-  const [buscarGrupo, setBuscarGrupo] = useState("");
+  const [buscarAudiencia, setBuscarAudiencia] = useState("");
   const [buscarTpl, setBuscarTpl] = useState("");
   const [confirmando, setConfirmando] = useState(false);
   const [enviando, setEnviando] = useState(false);
@@ -91,7 +91,7 @@ export default function CampaignWizardModal({
     setNombre(initial?.nombre ?? "");
     setMomento("ahora");
     setFechaProgramada(defaultFechaProgramada());
-    setBuscarGrupo("");
+    setBuscarAudiencia("");
     setBuscarTpl("");
     setConfirmando(false);
     setEnviando(false);
@@ -108,8 +108,8 @@ export default function CampaignWizardModal({
   const destinatarios = lista?.contactosIds.length ?? 0;
   const costo = destinatarios * costPerMsg;
 
-  const gruposFiltrados = lists.filter((l) =>
-    l.nombre.toLowerCase().includes(buscarGrupo.toLowerCase()),
+  const audienciasFiltradas = lists.filter((l) =>
+    l.nombre.toLowerCase().includes(buscarAudiencia.toLowerCase()),
   );
   const templatesFiltrados = templates.filter((t) =>
     t.nombre.toLowerCase().includes(buscarTpl.toLowerCase()),
@@ -193,7 +193,7 @@ export default function CampaignWizardModal({
       >
         {/* Stepper */}
         <div className="px-6 md:px-7 pt-[22px] pb-4 flex items-center gap-2.5 border-b border-ys-border-soft overflow-x-auto">
-          <StepIndicator n={1} label="Grupo" active={paso === 1} done={paso > 1} />
+          <StepIndicator n={1} label="Audiencia" active={paso === 1} done={paso > 1} />
           <StepLine done={paso > 1} />
           <StepIndicator n={2} label="Template" active={paso === 2} done={paso > 2} />
           <StepLine done={paso > 2} />
@@ -202,7 +202,7 @@ export default function CampaignWizardModal({
           <StepIndicator n={4} label="Revisar" active={paso === 4} done={false} />
         </div>
 
-        {/* Paso 1: Grupo */}
+        {/* Paso 1: Audiencia */}
         {paso === 1 && (
           <>
             <div className="flex-1 min-h-0 overflow-y-auto px-6 md:px-7 py-5 flex flex-col gap-4">
@@ -211,7 +211,7 @@ export default function CampaignWizardModal({
                   ¿A quién querés enviarle la campaña?
                 </div>
                 <div className="text-[13.5px] text-ys-muted font-medium">
-                  Seleccioná el grupo de contactos que recibirá el mensaje.
+                  Seleccioná la audiencia de contactos que recibirá el mensaje.
                 </div>
               </div>
 
@@ -221,22 +221,22 @@ export default function CampaignWizardModal({
                   <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
                 <input
-                  value={buscarGrupo}
-                  onChange={(e) => setBuscarGrupo(e.target.value)}
-                  placeholder="Buscar grupo..."
+                  value={buscarAudiencia}
+                  onChange={(e) => setBuscarAudiencia(e.target.value)}
+                  placeholder="Buscar audiencia..."
                   className="flex-1 min-w-0 border-none outline-none bg-transparent text-[13.5px] font-semibold text-ys-text"
                 />
               </div>
 
-              {gruposFiltrados.length === 0 ? (
+              {audienciasFiltradas.length === 0 ? (
                 <div className="text-center text-[13px] text-ys-muted font-medium py-8">
                   {lists.length === 0
-                    ? "Todavía no creaste ningún grupo. Andá a Contactos, seleccioná contactos y creá uno."
-                    : "No encontramos grupos con ese nombre."}
+                    ? "Todavía no creaste ninguna audiencia. Andá a Contactos, seleccioná contactos y creá una."
+                    : "No encontramos audiencias con ese nombre."}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {gruposFiltrados.map((g) => {
+                  {audienciasFiltradas.map((g) => {
                     const active = listaId === g.id;
                     return (
                       <button

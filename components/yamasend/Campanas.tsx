@@ -242,7 +242,7 @@ export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign }: C
             Todavía no se crearon campañas
           </div>
           <div className="text-sm text-ys-muted font-medium text-center max-w-[440px]">
-            Elegí un grupo, seleccioná un mensaje y empezá a comunicarte con tus contactos.
+            Elegí una audiencia, seleccioná un mensaje y empezá a comunicarte con tus contactos.
           </div>
           <button
             onClick={onNewCampaign}
@@ -273,7 +273,7 @@ export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign }: C
         <div className="bg-white border border-ys-border rounded-2xl overflow-hidden">
           <div className="hidden md:grid grid-cols-[2.4fr_1.5fr_1.5fr_1.25fr_1.15fr] items-center px-6 py-[11px] bg-[#fbfcfb] border-b border-ys-border-soft text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">
             <div>Campaña</div>
-            <div>Grupo</div>
+            <div>Audiencia</div>
             <div>Template</div>
             <div>Fecha</div>
             <div>Estado</div>

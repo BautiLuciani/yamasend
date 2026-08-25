@@ -135,23 +135,23 @@ export function SeleccionarContactosCard({
 }
 
 // -------------------------------------------------------------------------
-// Tarjeta: confirmar_grupo
+// Tarjeta: confirmar_audiencia
 // Resumen final antes de escribir en Supabase — el usuario tiene que hacer
-// click explícito, el bot nunca crea el grupo solo.
+// click explícito, el bot nunca crea la audiencia sola.
 // -------------------------------------------------------------------------
-interface ConfirmarGrupoCardProps {
+interface ConfirmarAudienciaCardProps {
   nombre: string;
   contactosIds: string[];
   onConfirm: () => void;
   disabled?: boolean;
 }
 
-export function ConfirmarGrupoCard({
+export function ConfirmarAudienciaCard({
   nombre,
   contactosIds,
   onConfirm,
   disabled,
-}: ConfirmarGrupoCardProps) {
+}: ConfirmarAudienciaCardProps) {
   const [confirmed, setConfirmed] = useState(false);
 
   return (
@@ -179,28 +179,28 @@ export function ConfirmarGrupoCard({
         disabled={confirmed || disabled}
         className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {confirmed ? "Creando..." : "Crear grupo"}
+        {confirmed ? "Creando..." : "Crear audiencia"}
       </button>
     </div>
   );
 }
 
 // -------------------------------------------------------------------------
-// Tarjeta: grupo_creado
+// Tarjeta: audiencia_creada
 // Confirmación final + follow-ups, en el mismo espíritu que hasFollowUps
 // del prototipo.
 // -------------------------------------------------------------------------
-interface GrupoCreadoCardProps {
+interface AudienciaCreadaCardProps {
   nombre: string;
   totalContactos: number;
-  onVerGrupo: () => void;
+  onVerAudiencia: () => void;
 }
 
-export function GrupoCreadoCard({
+export function AudienciaCreadaCard({
   nombre,
   totalContactos,
-  onVerGrupo,
-}: GrupoCreadoCardProps) {
+  onVerAudiencia,
+}: AudienciaCreadaCardProps) {
   return (
     <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex items-center gap-3">
       <div className="w-[38px] h-[38px] flex-none rounded-xl bg-ys-green-bg flex items-center justify-center">
@@ -211,14 +211,14 @@ export function GrupoCreadoCard({
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="text-[14.5px] font-extrabold text-ys-text truncate">{nombre}</div>
         <div className="text-xs text-ys-dim font-semibold">
-          {totalContactos} contacto{totalContactos === 1 ? "" : "s"} · Grupo creado
+          {totalContactos} contacto{totalContactos === 1 ? "" : "s"} · Audiencia creada
         </div>
       </div>
       <button
-        onClick={onVerGrupo}
+        onClick={onVerAudiencia}
         className="flex-none text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
       >
-        Ver grupo →
+        Ver audiencia →
       </button>
     </div>
   );
@@ -230,22 +230,22 @@ export function renderChatCard(
   contacts: Contact[],
   handlers: {
     onConfirmSeleccion: (ids: string[]) => void;
-    onConfirmGrupo: () => void;
-    onVerGrupo: (grupoId: string) => void;
+    onConfirmAudiencia: () => void;
+    onVerAudiencia: (audienciaId: string) => void;
     onElegirCategoria: (categoria: string) => void;
     onUsarSugerencia: () => void;
     onPedirOtraSugerencia: () => void;
     onGuardarBorrador: () => void;
     onEnviarAMeta: () => void;
     onVerTemplates: () => void;
-    onElegirGrupoCampana: (grupoId: string) => void;
+    onElegirAudienciaCampana: (audienciaId: string) => void;
     onElegirTemplateCampana: (templateId: string) => void;
     onElegirMomentoCampana: (momento: "ahora" | "programar") => void;
     onElegirFechaCampana: (fechaIso: string) => void;
     onConfirmarCampana: () => void;
     onVerCampana: (campanaId: string) => void;
     onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
-    onCrearGrupoDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
+    onCrearAudienciaDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
   },
   isLatest: boolean,
 ) {
@@ -260,22 +260,22 @@ export function renderChatCard(
       />
     );
   }
-  if (payload.kind === "confirmar_grupo") {
+  if (payload.kind === "confirmar_audiencia") {
     return (
-      <ConfirmarGrupoCard
+      <ConfirmarAudienciaCard
         nombre={payload.nombre}
         contactosIds={payload.contactosIds}
-        onConfirm={handlers.onConfirmGrupo}
+        onConfirm={handlers.onConfirmAudiencia}
         disabled={!isLatest}
       />
     );
   }
-  if (payload.kind === "grupo_creado") {
+  if (payload.kind === "audiencia_creada") {
     return (
-      <GrupoCreadoCard
+      <AudienciaCreadaCard
         nombre={payload.nombre}
         totalContactos={payload.totalContactos}
-        onVerGrupo={() => handlers.onVerGrupo(payload.grupoId)}
+        onVerAudiencia={() => handlers.onVerAudiencia(payload.audienciaId)}
       />
     );
   }
@@ -318,11 +318,11 @@ export function renderChatCard(
       />
     );
   }
-  if (payload.kind === "elegir_grupo_campana") {
+  if (payload.kind === "elegir_audiencia_campana") {
     return (
-      <ElegirGrupoCampanaCard
-        grupos={payload.grupos}
-        onElegir={handlers.onElegirGrupoCampana}
+      <ElegirAudienciaCampanaCard
+        audiencias={payload.audiencias}
+        onElegir={handlers.onElegirAudienciaCampana}
         disabled={!isLatest}
       />
     );
@@ -356,7 +356,7 @@ export function renderChatCard(
     return (
       <ConfirmarCampanaCard
         nombre={payload.nombre}
-        grupoNombre={payload.grupoNombre}
+        audienciaNombre={payload.audienciaNombre}
         totalContactos={payload.totalContactos}
         templateNombre={payload.templateNombre}
         momento={payload.momento}
@@ -401,7 +401,7 @@ export function renderChatCard(
       <ResultadosBusquedaContactosCard
         consulta={payload.consulta}
         resultados={payload.resultados}
-        onCrearGrupo={(ids) => handlers.onCrearGrupoDesdeBusqueda(payload.consulta, ids)}
+        onCrearGrupo={(ids) => handlers.onCrearAudienciaDesdeBusqueda(payload.consulta, ids)}
         disabled={!isLatest}
       />
     );
@@ -589,7 +589,7 @@ export function ConfirmarTemplateCard({
 // -------------------------------------------------------------------------
 // Tarjeta: template_guardado
 // Confirmación final — distingue visualmente borrador (gris) de enviado a
-// Meta (verde, en revisión), en el mismo espíritu que grupo_creado.
+// Meta (verde, en revisión), en el mismo espíritu que audiencia_creada.
 // -------------------------------------------------------------------------
 interface TemplateGuardadoCardProps {
   nombre: string;
@@ -633,26 +633,26 @@ export function TemplateGuardadoCard({
 }
 
 // -------------------------------------------------------------------------
-// Tarjeta: elegir_grupo_campana
-// Chips de grupos existentes, con conteo de contactos. No hay grupo activo
-// visualmente hasta que se confirma el click (elección única, no toggle).
+// Tarjeta: elegir_audiencia_campana
+// Chips de audiencias existentes, con conteo de contactos. No hay audiencia
+// activa visualmente hasta que se confirma el click (elección única, no toggle).
 // -------------------------------------------------------------------------
-interface ElegirGrupoCampanaCardProps {
-  grupos: { id: string; nombre: string; totalContactos: number }[];
-  onElegir: (grupoId: string) => void;
+interface ElegirAudienciaCampanaCardProps {
+  audiencias: { id: string; nombre: string; totalContactos: number }[];
+  onElegir: (audienciaId: string) => void;
   disabled?: boolean;
 }
 
-export function ElegirGrupoCampanaCard({
-  grupos,
+export function ElegirAudienciaCampanaCard({
+  audiencias,
   onElegir,
   disabled,
-}: ElegirGrupoCampanaCardProps) {
+}: ElegirAudienciaCampanaCardProps) {
   const [elegido, setElegido] = useState<string | null>(null);
 
   return (
     <div className="bg-white border border-ys-border rounded-2xl px-4 py-3.5 flex flex-col gap-2">
-      {grupos.map((g) => {
+      {audiencias.map((g) => {
         const active = elegido === g.id;
         return (
           <button
@@ -866,7 +866,7 @@ export function ElegirFechaCampanaCard({
 // -------------------------------------------------------------------------
 interface ConfirmarCampanaCardProps {
   nombre: string;
-  grupoNombre: string;
+  audienciaNombre: string;
   totalContactos: number;
   templateNombre: string;
   momento: "ahora" | "programar";
@@ -878,7 +878,7 @@ interface ConfirmarCampanaCardProps {
 
 export function ConfirmarCampanaCard({
   nombre,
-  grupoNombre,
+  audienciaNombre,
   totalContactos,
   templateNombre,
   momento,
@@ -912,7 +912,7 @@ export function ConfirmarCampanaCard({
         </div>
         <div className="flex flex-col gap-0.5">
           <div className="text-[10.5px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">Destinatarios</div>
-          <div className="text-[12.5px] font-bold text-ys-text">{grupoNombre}</div>
+          <div className="text-[12.5px] font-bold text-ys-text">{audienciaNombre}</div>
           <div className="font-mono text-[11px] text-ys-muted">{totalContactos} contactos</div>
         </div>
         <div className="flex flex-col gap-0.5 col-span-2">
@@ -1117,7 +1117,7 @@ export function ImportacionCompletadaCard({
 // cantidad de menciones y el fragmento que hizo match (viene con **bold**
 // desde ts_headline de Postgres — lo parseamos a <mark> acá). Selección
 // múltiple con checkboxes (todos preseleccionados por default) + botón
-// para crear grupo con los elegidos, reusando el flujo de crear_grupo.
+// para crear audiencia con los elegidos, reusando el flujo de crear_audiencia.
 // -------------------------------------------------------------------------
 interface ResultadoBusquedaContacto {
   contactoId: string | null;
@@ -1155,7 +1155,7 @@ export function ResultadosBusquedaContactosCard({
 }: ResultadosBusquedaContactosCardProps) {
   // Solo los que tienen contactoId resuelto se pueden agrupar (los que no
   // matchean con yamas_send_contactos quedan visibles pero no seleccionables
-  // para el grupo, ya que saveListAction necesita el id real del contacto).
+  // para la audiencia, ya que saveListAction necesita el id real del contacto).
   const seleccionables = resultados.filter((r) => r.contactoId);
   const [selected, setSelected] = useState<Set<string>>(
     new Set(seleccionables.map((r) => r.contactoId as string)),
@@ -1224,8 +1224,8 @@ export function ResultadosBusquedaContactosCard({
             className="w-full text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {confirmado
-              ? "Creando grupo..."
-              : `Crear grupo con ${selected.size} contacto${selected.size === 1 ? "" : "s"}`}
+              ? "Creando audiencia..."
+              : `Crear audiencia con ${selected.size} contacto${selected.size === 1 ? "" : "s"}`}
           </button>
         </div>
       )}

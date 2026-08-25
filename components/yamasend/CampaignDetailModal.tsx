@@ -218,7 +218,7 @@ export default function CampaignDetailModal({
 
             <div className="bg-[#fbfcfb] border border-[#eef1ef] rounded-[14px] px-[18px] py-4 grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="flex flex-col gap-[3px]">
-                <div className="text-[11px] font-extrabold tracking-[0.07em] uppercase text-[#9aa19c]">Grupo</div>
+                <div className="text-[11px] font-extrabold tracking-[0.07em] uppercase text-[#9aa19c]">Audiencia</div>
                 <div className="text-[13px] font-bold text-ys-text truncate">{detail.listaNombre ?? "—"}</div>
               </div>
               <div className="flex flex-col gap-[3px]">

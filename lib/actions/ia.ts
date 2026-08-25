@@ -60,7 +60,7 @@ export interface IAResponse {
 // resuelto no pasan por acá (ver sendIAMessageAction más abajo).
 // -----------------------------------------------------------------------
 type Intencion =
-  | { tipo: "crear_grupo"; consulta: string | null }
+  | { tipo: "crear_audiencia"; consulta: string | null }
   | { tipo: "crear_template" }
   | { tipo: "crear_campana" }
   | { tipo: "importar_contactos" }
@@ -89,14 +89,14 @@ async function clasificarIntencion(
 
 Tu única tarea es decidir qué quiere hacer el usuario a partir de su último mensaje (y el historial reciente como contexto). Devolvé ÚNICAMENTE un JSON con esta forma exacta:
 
-{"tipo": "crear_grupo" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "otra", "consulta": string | null}
+{"tipo": "crear_audiencia" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "otra", "consulta": string | null}
 
-- "crear_grupo": el usuario quiere armar/crear una lista o grupo de contactos directamente (ej: "creame un grupo con los que preguntaron por X", "quiero armar un grupo nuevo").
+- "crear_audiencia": el usuario quiere armar/crear una lista o audiencia de contactos directamente (ej: "creame una audiencia con los que preguntaron por X", "quiero armar una audiencia nueva").
   - Si además especificó un criterio de selección en lenguaje natural, poné ese criterio tal cual en "consulta". Si no especificó ningún criterio, "consulta" debe ser null.
 - "crear_template": el usuario quiere crear/redactar un template o mensaje para mandar a aprobar a Meta/WhatsApp.
 - "crear_campana": el usuario quiere armar o enviar una campaña de mensajes.
 - "importar_contactos": el usuario quiere importar, sincronizar o traer sus contactos de WhatsApp (ej: "importá mis contactos", "sincronizá mis chats", "traé mis contactos nuevos").
-- "buscar_contactos": el usuario quiere VER o ENCONTRAR contactos según un tema que se haya hablado en las conversaciones, SIN pedir explícitamente crear un grupo (ej: "mostrame los que hablamos de Coca-Cola", "quiénes preguntaron por el departamento de 3 ambientes", "buscá contactos que mencionaron descuentos"). La clave para diferenciarlo de "crear_grupo": acá el usuario quiere VER/EXPLORAR resultados primero, no está pidiendo crear un grupo de una.
+- "buscar_contactos": el usuario quiere VER o ENCONTRAR contactos según un tema que se haya hablado en las conversaciones, SIN pedir explícitamente crear una audiencia (ej: "mostrame los que hablamos de Coca-Cola", "quiénes preguntaron por el departamento de 3 ambientes", "buscá contactos que mencionaron descuentos"). La clave para diferenciarlo de "crear_audiencia": acá el usuario quiere VER/EXPLORAR resultados primero, no está pidiendo crear una audiencia de una.
   - En este caso, "consulta" es obligatorio: el tema o palabra clave que hay que buscar (ej: "coca cola", "departamento de 3 ambientes").
 - "otra": cualquier otra cosa (preguntas sobre sus datos, métricas, charla general, etc).
 
@@ -115,8 +115,8 @@ No agregues texto fuera del JSON.`,
   const raw = completion.choices[0]?.message?.content ?? "{}";
   try {
     const parsed = JSON.parse(raw);
-    if (parsed.tipo === "crear_grupo") {
-      return { tipo: "crear_grupo", consulta: parsed.consulta || null };
+    if (parsed.tipo === "crear_audiencia") {
+      return { tipo: "crear_audiencia", consulta: parsed.consulta || null };
     }
     if (parsed.tipo === "crear_template") return { tipo: "crear_template" };
     if (parsed.tipo === "crear_campana") return { tipo: "crear_campana" };
@@ -228,9 +228,9 @@ export async function sendIAMessageAction(
     };
   }
 
-  // ---- Flujo activo: crear_grupo -------------------------------------
-  if (flowState.kind === "crear_grupo") {
-    return handleCrearGrupoStep(texto, flowState);
+  // ---- Flujo activo: crear_audiencia -------------------------------------
+  if (flowState.kind === "crear_audiencia") {
+    return handleCrearAudienciaStep(texto, flowState);
   }
 
   // ---- Flujo activo: crear_template -----------------------------------
@@ -263,8 +263,8 @@ export async function sendIAMessageAction(
     };
   }
 
-  if (intencion.tipo === "crear_grupo") {
-    return iniciarFlujoCrearGrupo(intencion.consulta);
+  if (intencion.tipo === "crear_audiencia") {
+    return iniciarFlujoCrearAudiencia(intencion.consulta);
   }
 
   if (intencion.tipo === "crear_template") {
@@ -287,56 +287,56 @@ export async function sendIAMessageAction(
   // esta iteración, así que respondemos con guía hacia lo que sí sabemos
   // hacer en vez de inventar una respuesta analítica sin datos reales detrás.
   return {
-    text: "Puedo ayudarte a importar contactos, crear un grupo, un template o una campaña, y buscar contactos por tema hablando conmigo. Por ejemplo, pedime: \"mostrame los que hablamos de casas de 3 ambientes\" o \"quiero mandar una campaña\". ¿Querés que empecemos?",
+    text: "Puedo ayudarte a importar contactos, crear una audiencia, un template o una campaña, y buscar contactos por tema hablando conmigo. Por ejemplo, pedime: \"mostrame los que hablamos de casas de 3 ambientes\" o \"quiero mandar una campaña\". ¿Querés que empecemos?",
     flowState: IA_FLOW_IDLE,
   };
 }
 
 // -----------------------------------------------------------------------
-// Flujo: crear_grupo
+// Flujo: crear_audiencia
 // -----------------------------------------------------------------------
 
-async function iniciarFlujoCrearGrupo(
+async function iniciarFlujoCrearAudiencia(
   consultaInicial: string | null,
 ): Promise<IAResponse> {
   const totalContactos = await contarContactos();
 
   if (totalContactos === 0) {
     return {
-      text: "Todavía no tenés contactos sincronizados, así que no puedo armar un grupo. Sincronizá tus contactos de WhatsApp desde la sección Contactos y volvé a intentarlo.",
+      text: "Todavía no tenés contactos sincronizados, así que no puedo armar una audiencia. Sincronizá tus contactos de WhatsApp desde la sección Contactos y volvé a intentarlo.",
       flowState: IA_FLOW_IDLE,
     };
   }
 
   return {
-    text: "Dale, armemos un grupo. ¿Cómo querés que se llame?",
+    text: "Dale, armemos una audiencia. ¿Cómo querés que se llame?",
     flowState: {
-      kind: "crear_grupo",
-      step: "grupo_esperando_nombre",
+      kind: "crear_audiencia",
+      step: "audiencia_esperando_nombre",
       draft: { consultaUsada: consultaInicial },
     },
   };
 }
 
-async function handleCrearGrupoStep(
+async function handleCrearAudienciaStep(
   texto: string,
   flowState: IAFlowState,
 ): Promise<IAResponse> {
   const { step, draft } = flowState;
 
   // Cancelación en cualquier punto del flujo. Deliberadamente estricta (match
-  // exacto, no "contiene") para no confundir un nombre de grupo legítimo
+  // exacto, no "contiene") para no confundir un nombre de audiencia legítimo
   // como "Cancelaciones de reserva" con una intención de cancelar el flujo.
   // Trade-off conocido de v1: variantes como "mejor cancelalo" no matchean;
   // se prioriza no cancelar por accidente sobre reconocer toda frase posible.
   if (/^(cancelar|cancela|olvidalo|dejalo)$/i.test(texto)) {
     return {
-      text: "Listo, cancelé la creación del grupo. ¿En qué más te ayudo?",
+      text: "Listo, cancelé la creación de la audiencia. ¿En qué más te ayudo?",
       flowState: IA_FLOW_IDLE,
     };
   }
 
-  if (step === "grupo_esperando_nombre") {
+  if (step === "audiencia_esperando_nombre") {
     const nombre = texto.slice(0, 120);
     const nuevoDraft = { ...draft, nombre };
 
@@ -354,8 +354,8 @@ async function handleCrearGrupoStep(
           consultaUsada: draft.consultaUsada,
         },
         flowState: {
-          kind: "crear_grupo",
-          step: "grupo_esperando_contactos",
+          kind: "crear_audiencia",
+          step: "audiencia_esperando_contactos",
           draft: nuevoDraft,
         },
       };
@@ -394,25 +394,25 @@ async function handleCrearGrupoStep(
           consultaUsada: draft.consultaUsada,
         },
         flowState: {
-          kind: "crear_grupo",
-          step: "grupo_esperando_contactos",
+          kind: "crear_audiencia",
+          step: "audiencia_esperando_contactos",
           draft: nuevoDraft,
         },
       };
     }
 
     return {
-      text: `Listo, "${nombre}". Ahora elegí los contactos que van a formar parte del grupo.`,
+      text: `Listo, "${nombre}". Ahora elegí los contactos que van a formar parte de la audiencia.`,
       payload: { kind: "seleccionar_contactos", preselectedIds: [] },
       flowState: {
-        kind: "crear_grupo",
-        step: "grupo_esperando_contactos",
+        kind: "crear_audiencia",
+        step: "audiencia_esperando_contactos",
         draft: nuevoDraft,
       },
     };
   }
 
-  if (step === "grupo_esperando_contactos") {
+  if (step === "audiencia_esperando_contactos") {
     // En este paso, el usuario interactúa con la tarjeta (checkboxes +
     // botón "Confirmar selección"), no con el textarea. Si de todos modos
     // escribe algo por texto, lo guiamos de vuelta a la tarjeta.
@@ -422,9 +422,9 @@ async function handleCrearGrupoStep(
     };
   }
 
-  if (step === "grupo_esperando_confirmacion") {
+  if (step === "audiencia_esperando_confirmacion") {
     return {
-      text: "Confirmá desde la tarjeta de arriba para crear el grupo, o escribí \"cancelar\" si preferís no crearlo.",
+      text: "Confirmá desde la tarjeta de arriba para crear la audiencia, o escribí \"cancelar\" si preferís no crearla.",
       flowState,
     };
   }
@@ -446,16 +446,16 @@ export async function confirmarSeleccionContactosAction(
   flowState: IAFlowState,
   contactosIds: string[],
 ): Promise<IAResponse> {
-  if (flowState.kind !== "crear_grupo" || !flowState.draft.nombre) {
+  if (flowState.kind !== "crear_audiencia" || !flowState.draft.nombre) {
     return {
-      text: "Se perdió el contexto del grupo que estabas creando. Empecemos de nuevo.",
+      text: "Se perdió el contexto de la audiencia que estabas creando. Empecemos de nuevo.",
       flowState: IA_FLOW_IDLE,
     };
   }
 
   if (contactosIds.length === 0) {
     return {
-      text: "Elegí al menos un contacto para poder crear el grupo.",
+      text: "Elegí al menos un contacto para poder crear la audiencia.",
       payload: { kind: "seleccionar_contactos", preselectedIds: [] },
       flowState,
     };
@@ -464,36 +464,36 @@ export async function confirmarSeleccionContactosAction(
   const nuevoDraft = { ...flowState.draft, contactosIds };
 
   return {
-    text: `Confirmame: creamos el grupo "${flowState.draft.nombre}" con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}.`,
+    text: `Confirmame: creamos la audiencia "${flowState.draft.nombre}" con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}.`,
     payload: {
-      kind: "confirmar_grupo",
+      kind: "confirmar_audiencia",
       nombre: flowState.draft.nombre,
       contactosIds,
     },
     flowState: {
-      kind: "crear_grupo",
-      step: "grupo_esperando_confirmacion",
+      kind: "crear_audiencia",
+      step: "audiencia_esperando_confirmacion",
       draft: nuevoDraft,
     },
   };
 }
 
 /**
- * Se llama cuando el usuario confirma la creación del grupo desde la
- * tarjeta final (botón "Crear grupo"). Ejecuta la Server Action real
+ * Se llama cuando el usuario confirma la creación de la audiencia desde la
+ * tarjeta final (botón "Crear audiencia"). Ejecuta la Server Action real
  * (saveListAction), la misma que usa el modal manual — cero lógica de
  * negocio duplicada.
  */
-export async function confirmarCreacionGrupoAction(
+export async function confirmarCreacionAudienciaAction(
   flowState: IAFlowState,
 ): Promise<IAResponse> {
   if (
-    flowState.kind !== "crear_grupo" ||
+    flowState.kind !== "crear_audiencia" ||
     !flowState.draft.nombre ||
     !flowState.draft.contactosIds?.length
   ) {
     return {
-      text: "Se perdió el contexto del grupo que estabas creando. Empecemos de nuevo.",
+      text: "Se perdió el contexto de la audiencia que estabas creando. Empecemos de nuevo.",
       flowState: IA_FLOW_IDLE,
     };
   }
@@ -503,16 +503,16 @@ export async function confirmarCreacionGrupoAction(
 
   if (result.error || !result.id) {
     return {
-      text: `No pude crear el grupo: ${result.error ?? "error desconocido"}. ¿Querés reintentar?`,
+      text: `No pude crear la audiencia: ${result.error ?? "error desconocido"}. ¿Querés reintentar?`,
       flowState,
     };
   }
 
   return {
-    text: `Listo, creé el grupo "${nombre}" con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}. ¿Qué más necesitás?`,
+    text: `Listo, creé la audiencia "${nombre}" con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}. ¿Qué más necesitás?`,
     payload: {
-      kind: "grupo_creado",
-      grupoId: result.id,
+      kind: "audiencia_creada",
+      audienciaId: result.id,
       nombre,
       totalContactos: contactosIds.length,
     },
@@ -567,7 +567,7 @@ async function handleCrearTemplateStep(
   const { step, draft } = flowState;
 
   // Cancelación en cualquier punto del flujo. Ver nota de diseño equivalente
-  // en handleCrearGrupoStep: match exacto, no "contiene", para no confundir
+  // en handleCrearAudienciaStep: match exacto, no "contiene", para no confundir
   // un nombre de template legítimo con la intención de cancelar.
   if (/^(cancelar|cancela|olvidalo|dejalo)$/i.test(texto)) {
     return {
@@ -826,7 +826,7 @@ export async function confirmarEnvioTemplateAction(
 
 // -----------------------------------------------------------------------
 // Flujo: crear_campana
-// Mismas reglas que CampaignWizardModal.tsx (el wizard manual): grupo →
+// Mismas reglas que CampaignWizardModal.tsx (el wizard manual): audiencia →
 // template → momento (ahora/programar) → confirmar. A diferencia del
 // wizard manual, acá SÍ filtramos los templates a solo "verificado" —
 // decisión explícita para no ofrecer por chat un template rechazado o en
@@ -845,7 +845,7 @@ async function iniciarFlujoCrearCampana(): Promise<IAResponse> {
   const lists = await getListsForTenant(tenantId);
   if (lists.length === 0) {
     return {
-      text: "Todavía no tenés ningún grupo de contactos creado, así que no puedo armar una campaña. Pedime que te cree un grupo primero, o hacelo desde la sección Grupos.",
+      text: "Todavía no tenés ninguna audiencia de contactos creada, así que no puedo armar una campaña. Pedime que te cree una audiencia primero, o hacelo desde la sección Audiencias.",
       flowState: IA_FLOW_IDLE,
     };
   }
@@ -876,7 +876,7 @@ async function handleCrearCampanaStep(
   const { step, draft } = flowState;
 
   // Cancelación en cualquier punto del flujo. Ver nota de diseño equivalente
-  // en handleCrearGrupoStep/handleCrearTemplateStep: match exacto, no
+  // en handleCrearAudienciaStep/handleCrearTemplateStep: match exacto, no
   // "contiene", para no confundir un nombre de campaña legítimo con la
   // intención de cancelar.
   if (/^(cancelar|cancela|olvidalo|dejalo)$/i.test(texto)) {
@@ -894,13 +894,13 @@ async function handleCrearCampanaStep(
       };
     }
     const nombre = texto.trim().slice(0, 120);
-    return mostrarSelectorGrupoCampana(nombre, draft);
+    return mostrarSelectorAudienciaCampana(nombre, draft);
   }
 
-  if (step === "campana_esperando_grupo") {
+  if (step === "campana_esperando_audiencia") {
     return {
-      text: "Elegí un grupo desde las opciones de arriba.",
-      payload: await payloadElegirGrupoCampana(),
+      text: "Elegí una audiencia desde las opciones de arriba.",
+      payload: await payloadElegirAudienciaCampana(),
       flowState,
     };
   }
@@ -943,12 +943,12 @@ async function handleCrearCampanaStep(
   };
 }
 
-async function payloadElegirGrupoCampana(): Promise<ChatPayload> {
+async function payloadElegirAudienciaCampana(): Promise<ChatPayload> {
   const tenantId = await resolverTenantId();
   const lists = tenantId ? await getListsForTenant(tenantId) : [];
   return {
-    kind: "elegir_grupo_campana",
-    grupos: lists.map((l) => ({
+    kind: "elegir_audiencia_campana",
+    audiencias: lists.map((l) => ({
       id: l.id,
       nombre: l.nombre,
       totalContactos: l.contactosIds.length,
@@ -970,28 +970,28 @@ async function payloadElegirTemplateCampana(): Promise<ChatPayload> {
   };
 }
 
-async function mostrarSelectorGrupoCampana(
+async function mostrarSelectorAudienciaCampana(
   nombre: string,
   draft: IAFlowState["draft"],
 ): Promise<IAResponse> {
   return {
-    text: `Buenísimo, "${nombre}". Ahora elegí a qué grupo se la vas a mandar.`,
-    payload: await payloadElegirGrupoCampana(),
+    text: `Buenísimo, "${nombre}". Ahora elegí a qué audiencia se la vas a mandar.`,
+    payload: await payloadElegirAudienciaCampana(),
     flowState: {
       kind: "crear_campana",
-      step: "campana_esperando_grupo",
+      step: "campana_esperando_audiencia",
       draft: { ...draft, nombre },
     },
   };
 }
 
 /**
- * Se llama cuando el usuario elige un grupo desde la tarjeta
- * `elegir_grupo_campana` (click, no texto libre).
+ * Se llama cuando el usuario elige una audiencia desde la tarjeta
+ * `elegir_audiencia_campana` (click, no texto libre).
  */
-export async function seleccionarGrupoCampanaAction(
+export async function seleccionarAudienciaCampanaAction(
   flowState: IAFlowState,
-  grupoId: string,
+  audienciaId: string,
 ): Promise<IAResponse> {
   if (flowState.kind !== "crear_campana" || !flowState.draft.nombre) {
     return {
@@ -1002,23 +1002,23 @@ export async function seleccionarGrupoCampanaAction(
 
   const tenantId = await resolverTenantId();
   const lists = tenantId ? await getListsForTenant(tenantId) : [];
-  const grupo = lists.find((l) => l.id === grupoId);
+  const audiencia = lists.find((l) => l.id === audienciaId);
 
-  if (!grupo) {
+  if (!audiencia) {
     return {
-      text: "No encontré ese grupo. Elegí uno de las opciones de arriba.",
-      payload: await payloadElegirGrupoCampana(),
+      text: "No encontré esa audiencia. Elegí una de las opciones de arriba.",
+      payload: await payloadElegirAudienciaCampana(),
       flowState,
     };
   }
 
   return {
-    text: `"${grupo.nombre}" (${grupo.contactosIds.length} contactos). Ahora elegí qué template querés enviar — solo se muestran los ya aprobados por Meta.`,
+    text: `"${audiencia.nombre}" (${audiencia.contactosIds.length} contactos). Ahora elegí qué template querés enviar — solo se muestran los ya aprobados por Meta.`,
     payload: await payloadElegirTemplateCampana(),
     flowState: {
       kind: "crear_campana",
       step: "campana_esperando_template",
-      draft: { ...flowState.draft, grupoId },
+      draft: { ...flowState.draft, audienciaId },
     },
   };
 }
@@ -1034,7 +1034,7 @@ export async function seleccionarTemplateCampanaAction(
   if (
     flowState.kind !== "crear_campana" ||
     !flowState.draft.nombre ||
-    !flowState.draft.grupoId
+    !flowState.draft.audienciaId
   ) {
     return {
       text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
@@ -1076,7 +1076,7 @@ export async function seleccionarMomentoCampanaAction(
   if (
     flowState.kind !== "crear_campana" ||
     !flowState.draft.nombre ||
-    !flowState.draft.grupoId ||
+    !flowState.draft.audienciaId ||
     !flowState.draft.templateId
   ) {
     return {
@@ -1111,7 +1111,7 @@ export async function seleccionarFechaCampanaAction(
   if (
     flowState.kind !== "crear_campana" ||
     !flowState.draft.nombre ||
-    !flowState.draft.grupoId ||
+    !flowState.draft.audienciaId ||
     !flowState.draft.templateId
   ) {
     return {
@@ -1136,17 +1136,17 @@ async function mostrarConfirmacionCampana(
     tenantId ? getTemplatesForTenant(tenantId) : Promise.resolve([]),
   ]);
 
-  const grupo = lists.find((l) => l.id === draft.grupoId);
+  const audiencia = lists.find((l) => l.id === draft.audienciaId);
   const template = templates.find((t) => t.id === draft.templateId);
 
-  if (!grupo || !template || !draft.nombre || !draft.momento) {
+  if (!audiencia || !template || !draft.nombre || !draft.momento) {
     return {
       text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
       flowState: IA_FLOW_IDLE,
     };
   }
 
-  const totalContactos = grupo.contactosIds.length;
+  const totalContactos = audiencia.contactosIds.length;
   const costoUsd = totalContactos * COST_PER_MSG;
 
   return {
@@ -1154,7 +1154,7 @@ async function mostrarConfirmacionCampana(
     payload: {
       kind: "confirmar_campana",
       nombre: draft.nombre,
-      grupoNombre: grupo.nombre,
+      audienciaNombre: audiencia.nombre,
       totalContactos,
       templateNombre: template.nombre,
       momento: draft.momento,
@@ -1181,7 +1181,7 @@ export async function confirmarCreacionCampanaAction(
   if (
     flowState.kind !== "crear_campana" ||
     !flowState.draft.nombre ||
-    !flowState.draft.grupoId ||
+    !flowState.draft.audienciaId ||
     !flowState.draft.templateId ||
     !flowState.draft.momento
   ) {
@@ -1191,26 +1191,26 @@ export async function confirmarCreacionCampanaAction(
     };
   }
 
-  const { nombre, grupoId, templateId, momento, fechaProgramada } = flowState.draft;
+  const { nombre, audienciaId, templateId, momento, fechaProgramada } = flowState.draft;
 
   const tenantId = await resolverTenantId();
   const lists = tenantId ? await getListsForTenant(tenantId) : [];
   const templates = tenantId ? await getTemplatesForTenant(tenantId) : [];
-  const grupo = lists.find((l) => l.id === grupoId);
+  const audiencia = lists.find((l) => l.id === audienciaId);
   const template = templates.find((t) => t.id === templateId);
 
-  if (!grupo || !template) {
+  if (!audiencia || !template) {
     return {
-      text: "No pude encontrar el grupo o el template seleccionados. Empecemos de nuevo.",
+      text: "No pude encontrar la audiencia o el template seleccionados. Empecemos de nuevo.",
       flowState: IA_FLOW_IDLE,
     };
   }
 
   const saveResult = await saveCampaignAction(
     nombre,
-    grupoId,
+    audienciaId,
     templateId,
-    grupo.contactosIds,
+    audiencia.contactosIds,
     momento === "programar" ? fechaProgramada ?? null : null,
   );
 
@@ -1237,11 +1237,11 @@ export async function confirmarCreacionCampanaAction(
 
   const sendResult = await sendCampaignAction(
     saveResult.id,
-    grupoId,
+    audienciaId,
     template.nombre,
     template.templateLang ?? "es_AR",
     false,
-    grupo.contactosIds.length,
+    audiencia.contactosIds.length,
   );
 
   if (sendResult.error) {
@@ -1252,7 +1252,7 @@ export async function confirmarCreacionCampanaAction(
   }
 
   return {
-    text: `Listo, "${nombre}" se está enviando a ${grupo.contactosIds.length} contacto${grupo.contactosIds.length === 1 ? "" : "s"}.`,
+    text: `Listo, "${nombre}" se está enviando a ${audiencia.contactosIds.length} contacto${audiencia.contactosIds.length === 1 ? "" : "s"}.`,
     payload: {
       kind: "campana_creada",
       campanaId: saveResult.id,
@@ -1406,7 +1406,7 @@ export async function confirmarImportarContactosAction(
   return {
     text:
       result.contactosAnalizados > 0
-        ? `Listo, analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés. Ya podés verlos en Contactos, crear un grupo, o pedirme que busque algo puntual entre ellos.`
+        ? `Listo, analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés. Ya podés verlos en Contactos, crear una audiencia, o pedirme que busque algo puntual entre ellos.`
         : `Terminé de revisar, pero no encontré contactos con mensajes en ese rango. ${result.mensaje ?? ""}`.trim(),
     payload: {
       kind: "importacion_completada",
@@ -1501,14 +1501,14 @@ async function buscarContactosPorTema(consulta: string): Promise<IAResponse> {
 }
 
 /**
- * Se llama cuando el usuario toca "Crear grupo con estos contactos" desde
- * la tarjeta de resultados de búsqueda. Reutiliza el flujo de crear_grupo
+ * Se llama cuando el usuario toca "Crear audiencia con estos contactos" desde
+ * la tarjeta de resultados de búsqueda. Reutiliza el flujo de crear_audiencia
  * ya existente, preseleccionando los contactos encontrados — mismo patrón
- * que la búsqueda por IA dentro de handleCrearGrupoStep, pero acá los IDs
+ * que la búsqueda por IA dentro de handleCrearAudienciaStep, pero acá los IDs
  * ya vienen resueltos de la búsqueda de texto, sin correr análisis de IA
  * de nuevo.
  */
-export async function iniciarGrupoDesdeResultadosBusquedaAction(
+export async function iniciarAudienciaDesdeResultadosBusquedaAction(
   consulta: string,
   contactosIds: string[],
 ): Promise<IAResponse> {
@@ -1520,10 +1520,10 @@ export async function iniciarGrupoDesdeResultadosBusquedaAction(
   }
 
   return {
-    text: `Dale, armemos un grupo con estos ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}. ¿Cómo querés que se llame?`,
+    text: `Dale, armemos una audiencia con estos ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}. ¿Cómo querés que se llame?`,
     flowState: {
-      kind: "crear_grupo",
-      step: "grupo_esperando_nombre",
+      kind: "crear_audiencia",
+      step: "audiencia_esperando_nombre",
       draft: { consultaUsada: consulta, contactosIds, contactosIdsResueltos: true },
     },
   };

@@ -58,16 +58,16 @@ function formatDelta(valor: number | null, sufijo: string = "%"): { texto: strin
 
 // Línea de detalle bajo el nombre de la campaña: si está programada (a
 // futuro) muestra la fecha objetivo, igual que hacía el mock; para el
-// resto de los estados muestra grupo + contactos, ya que el listado
+// resto de los estados muestra audiencia + contactos, ya que el listado
 // liviano de campañas no trae mensajes_ok/mensajes_error/respuestas (esos
 // números solo están en el detalle ampliado, pedido on-demand).
 function detalleCampana(c: Campaign): string {
   if (c.status === "programada" && c.fechaProgramada) {
     return `Programada para ${formatFechaCorta(c.fechaProgramada)}`;
   }
-  const grupo = c.listaNombre ?? "Sin grupo";
+  const audiencia = c.listaNombre ?? "Sin audiencia";
   const contactos = `${c.contactosCount} contacto${c.contactosCount === 1 ? "" : "s"}`;
-  return `${grupo} · ${contactos}`;
+  return `${audiencia} · ${contactos}`;
 }
 
 // Configuración visual por tipo de actividad: ícono + color de fondo/trazo,

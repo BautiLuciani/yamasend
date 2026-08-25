@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { Contact, ContactList } from "@/lib/types";
 
-interface GruposProps {
+interface AudienciasProps {
   lists: ContactList[];
   contacts: Contact[];
   onOpenGroup: (group: ContactList) => void;
@@ -17,7 +17,7 @@ function initialsOf(nombre: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: GruposProps) {
+export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup }: AudienciasProps) {
   const [query, setQuery] = useState("");
 
   const totalContactosOrganizados = useMemo(
@@ -40,7 +40,7 @@ export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: 
       <div className="flex items-end gap-5 flex-wrap">
         <div className="flex flex-col gap-1.5">
           <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
-            Grupos
+            Audiencias
           </div>
           <div className="text-sm md:text-[15px] text-ys-muted font-medium">
             Organizá tus contactos para crear campañas más efectivas.
@@ -49,7 +49,7 @@ export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: 
         {lists.length > 0 && (
           <div className="ml-auto flex items-center gap-[18px] flex-wrap text-[13px] text-ys-muted font-semibold">
             <span>
-              <span className="font-mono text-ys-text">{lists.length}</span> grupo{lists.length === 1 ? "" : "s"}
+              <span className="font-mono text-ys-text">{lists.length}</span> audiencia{lists.length === 1 ? "" : "s"}
             </span>
             <span className="w-px h-3.5 bg-[#e2e5e3]" />
             <span>
@@ -78,7 +78,7 @@ export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: 
             onClick={onCreateGroup}
             className="mt-1.5 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-[11px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
           >
-            Crear mi primer grupo
+            Crear mi primera audiencia
           </button>
         </div>
       ) : (
@@ -91,7 +91,7 @@ export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: 
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar grupo..."
+              placeholder="Buscar audiencia..."
               className="flex-1 min-w-0 border-none outline-none bg-transparent text-[13.5px] font-semibold text-ys-text"
             />
           </div>
@@ -105,7 +105,7 @@ export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: 
                 </svg>
               </div>
               <div className="text-[14.5px] font-bold text-ys-text">
-                No encontramos grupos con ese nombre.
+                No encontramos audiencias con ese nombre.
               </div>
               <button
                 onClick={() => setQuery("")}
@@ -125,7 +125,7 @@ export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: 
                     <path d="M8 3v10M3 8h10" stroke="#12B76A" strokeWidth="2.2" strokeLinecap="round" />
                   </svg>
                 </div>
-                <div className="text-sm font-extrabold text-ys-green-text">Crear grupo</div>
+                <div className="text-sm font-extrabold text-ys-green-text">Crear audiencia</div>
                 <div className="text-[12.5px] text-ys-muted font-medium text-center">
                   Elegí contactos y armá un segmento
                 </div>
@@ -176,7 +176,7 @@ export default function Grupos({ lists, contacts, onOpenGroup, onCreateGroup }: 
                           <span className="font-mono text-[11.5px] text-ys-dimmer">+{extra}</span>
                         )}
                       </div>
-                      <div className="text-[12.5px] font-bold text-ys-faint">Ver grupo →</div>
+                      <div className="text-[12.5px] font-bold text-ys-faint">Ver audiencia →</div>
                     </div>
                   </button>
                 );

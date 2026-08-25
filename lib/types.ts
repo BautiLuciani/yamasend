@@ -110,7 +110,7 @@ export type ChatMsgType = "user" | "bot" | "error";
 /**
  * Payload opcional que acompaña un mensaje del bot y le dice a IA.tsx qué
  * tarjeta interactiva renderizar debajo del texto (espejo de los `hasX` del
- * prototipo de Claude Design: hasGrupo, hasContactos, hasCampana, etc).
+ * prototipo de Claude Design: hasAudiencia, hasContactos, hasCampana, etc).
  * Cada variante trae solo los datos que esa tarjeta necesita para pintarse
  * y para poder ejecutar su acción de confirmación.
  */
@@ -124,13 +124,13 @@ export type ChatPayload =
       consultaUsada?: string | null;
     }
   | {
-      kind: "confirmar_grupo";
+      kind: "confirmar_audiencia";
       nombre: string;
       contactosIds: string[];
     }
   | {
-      kind: "grupo_creado";
-      grupoId: string;
+      kind: "audiencia_creada";
+      audienciaId: string;
       nombre: string;
       totalContactos: number;
     }
@@ -155,8 +155,8 @@ export type ChatPayload =
       nombre: string;
     }
   | {
-      kind: "elegir_grupo_campana";
-      grupos: { id: string; nombre: string; totalContactos: number }[];
+      kind: "elegir_audiencia_campana";
+      audiencias: { id: string; nombre: string; totalContactos: number }[];
     }
   | {
       kind: "elegir_template_campana";
@@ -171,7 +171,7 @@ export type ChatPayload =
   | {
       kind: "confirmar_campana";
       nombre: string;
-      grupoNombre: string;
+      audienciaNombre: string;
       totalContactos: number;
       templateNombre: string;
       momento: "ahora" | "programar";
@@ -221,16 +221,16 @@ export interface ChatMessage {
 
 /** Flujos guiados que el agente de IA puede llevar adelante paso a paso. */
 export type IAFlowKind =
-  | "crear_grupo"
+  | "crear_audiencia"
   | "crear_template"
   | "crear_campana"
   | "importar_contactos";
 
 export type IAFlowStep =
-  // crear_grupo
-  | "grupo_esperando_nombre"
-  | "grupo_esperando_contactos"
-  | "grupo_esperando_confirmacion"
+  // crear_audiencia
+  | "audiencia_esperando_nombre"
+  | "audiencia_esperando_contactos"
+  | "audiencia_esperando_confirmacion"
   // crear_template
   | "template_esperando_nombre"
   | "template_esperando_categoria"
@@ -238,7 +238,7 @@ export type IAFlowStep =
   | "template_esperando_confirmacion"
   // crear_campana
   | "campana_esperando_nombre"
-  | "campana_esperando_grupo"
+  | "campana_esperando_audiencia"
   | "campana_esperando_template"
   | "campana_esperando_momento"
   | "campana_esperando_fecha"
@@ -254,12 +254,12 @@ export interface IAFlowState {
     contactosIds?: string[];
     consultaUsada?: string | null;
     // Cuando true, contactosIds ya viene resuelto (ej: desde resultados de
-    // búsqueda de texto) y el flujo de crear_grupo NO debe volver a correr
+    // búsqueda de texto) y el flujo de crear_audiencia NO debe volver a correr
     // syncAndAnalyzeAction ni pisar la preselección con preseleccionarPorConsulta.
     contactosIdsResueltos?: boolean;
     categoria?: string;
     contenido?: string;
-    grupoId?: string;
+    audienciaId?: string;
     templateId?: string;
     momento?: "ahora" | "programar";
     fechaProgramada?: string | null;

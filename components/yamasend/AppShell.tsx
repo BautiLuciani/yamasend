@@ -22,8 +22,8 @@ import Sidebar from "./Sidebar";
 import MobileHeader from "./MobileHeader";
 import MobileDrawer from "./MobileDrawer";
 import Dashboard from "./Dashboard";
-import Grupos from "./Grupos";
-import GroupDetailModal from "./GroupDetailModal";
+import Audiencias from "./Audiencias";
+import AudienciaDetailModal from "./AudienciaDetailModal";
 import Templates from "./Templates";
 import TemplateCreateModal from "./TemplateCreateModal";
 import TemplateDetailModal from "./TemplateDetailModal";
@@ -41,7 +41,7 @@ import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
 import WahaRequiredModal from "./WahaRequiredModal";
 import ContactDetailModal from "./ContactDetailModal";
-import { CreateGroupModal, AddToGroupModal } from "./GroupModals";
+import { CreateAudienceModal, AddToAudienceModal } from "./AudienciaModals";
 import {
   saveListAction,
   saveCampaignAction,
@@ -67,19 +67,19 @@ import { getCampaignDetailAction } from "@/lib/actions/campaigns";
 import {
   sendIAMessageAction,
   confirmarSeleccionContactosAction,
-  confirmarCreacionGrupoAction,
+  confirmarCreacionAudienciaAction,
   seleccionarCategoriaTemplateAction,
   usarSugerenciaTemplateAction,
   pedirOtraSugerenciaTemplateAction,
   guardarBorradorTemplateAction,
   confirmarEnvioTemplateAction,
-  seleccionarGrupoCampanaAction,
+  seleccionarAudienciaCampanaAction,
   seleccionarTemplateCampanaAction,
   seleccionarMomentoCampanaAction,
   seleccionarFechaCampanaAction,
   confirmarCreacionCampanaAction,
   confirmarImportarContactosAction,
-  iniciarGrupoDesdeResultadosBusquedaAction,
+  iniciarAudienciaDesdeResultadosBusquedaAction,
 } from "@/lib/actions/ia";
 import {
   cargarConversacionIAAction,
@@ -501,7 +501,7 @@ export default function AppShell({
   const IA_MENSAJE_BIENVENIDA: ChatMessage = {
     id: "welcome",
     type: "bot",
-    text: "Hola 👋 Soy tu asistente AI. Podés pedirme que arme un grupo de contactos hablando conmigo.",
+    text: "Hola 👋 Soy tu asistente AI. Podés pedirme que arme una audiencia de contactos hablando conmigo.",
   };
 
   const [messages, setMessages] = useState<ChatMessage[]>([IA_MENSAJE_BIENVENIDA]);
@@ -893,24 +893,24 @@ export default function AppShell({
     }
   }
 
-  async function handleIAConfirmGrupo() {
+  async function handleIAConfirmAudiencia() {
     setIaSending(true);
     try {
-      const res = await confirmarCreacionGrupoAction(iaFlowState);
+      const res = await confirmarCreacionAudienciaAction(iaFlowState);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
-      // El grupo se creó server-side (saveListAction) — refrescamos la
+      // La audiencia se creó server-side (saveListAction) — refrescamos la
       // prop `lists` desde el Server Component padre para que la sección
-      // Grupos y el botón "Ver grupo →" de la tarjeta ya lo encuentren.
+      // Audiencias y el botón "Ver audiencia →" de la tarjeta ya lo encuentren.
       if (!res.error) router.refresh();
     } finally {
       setIaSending(false);
     }
   }
 
-  function handleIAVerGrupo(grupoId: string) {
+  function handleIAVerAudiencia(audienciaId: string) {
     setActiveSection("grupos");
-    setOpenGroupId(grupoId);
+    setOpenGroupId(audienciaId);
   }
 
   async function handleIAElegirCategoria(categoria: string) {
@@ -977,10 +977,10 @@ export default function AppShell({
     setActiveSection("templates");
   }
 
-  async function handleIAElegirGrupoCampana(grupoId: string) {
+  async function handleIAElegirAudienciaCampana(audienciaId: string) {
     setIaSending(true);
     try {
-      const res = await seleccionarGrupoCampanaAction(iaFlowState, grupoId);
+      const res = await seleccionarAudienciaCampanaAction(iaFlowState, audienciaId);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
     } finally {
@@ -1062,13 +1062,13 @@ export default function AppShell({
     }
   }
 
-  async function handleIACrearGrupoDesdeBusqueda(
+  async function handleIACrearAudienciaDesdeBusqueda(
     consulta: string,
     contactosIds: string[],
   ) {
     setIaSending(true);
     try {
-      const res = await iniciarGrupoDesdeResultadosBusquedaAction(
+      const res = await iniciarAudienciaDesdeResultadosBusquedaAction(
         consulta,
         contactosIds,
       );
@@ -1168,7 +1168,7 @@ export default function AppShell({
 
       {activeSection === "grupos" && (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
-          <Grupos
+          <Audiencias
             lists={lists}
             contacts={contacts}
             onOpenGroup={(group) => setOpenGroupId(group.id)}
@@ -1207,22 +1207,22 @@ export default function AppShell({
           contacts={contacts}
           onSend={handleChatSend}
           onConfirmSeleccion={handleIAConfirmSeleccion}
-          onConfirmGrupo={handleIAConfirmGrupo}
-          onVerGrupo={handleIAVerGrupo}
+          onConfirmAudiencia={handleIAConfirmAudiencia}
+          onVerAudiencia={handleIAVerAudiencia}
           onElegirCategoria={handleIAElegirCategoria}
           onUsarSugerencia={handleIAUsarSugerencia}
           onPedirOtraSugerencia={handleIAPedirOtraSugerencia}
           onGuardarBorrador={handleIAGuardarBorrador}
           onEnviarAMeta={handleIAEnviarAMeta}
           onVerTemplates={handleIAVerTemplates}
-          onElegirGrupoCampana={handleIAElegirGrupoCampana}
+          onElegirAudienciaCampana={handleIAElegirAudienciaCampana}
           onElegirTemplateCampana={handleIAElegirTemplateCampana}
           onElegirMomentoCampana={handleIAElegirMomentoCampana}
           onElegirFechaCampana={handleIAElegirFechaCampana}
           onConfirmarCampana={handleIAConfirmarCampana}
           onVerCampana={handleIAVerCampana}
           onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
-          onCrearGrupoDesdeBusqueda={handleIACrearGrupoDesdeBusqueda}
+          onCrearAudienciaDesdeBusqueda={handleIACrearAudienciaDesdeBusqueda}
           onNuevaConversacion={handleIANuevaConversacion}
           onSeleccionarConversacion={handleIASeleccionarConversacion}
           conversacionActivaId={iaConversacionId}
@@ -1314,13 +1314,13 @@ export default function AppShell({
               onClick={() => setAddToGroupOpen(true)}
               className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
             >
-              Agregar a grupo existente
+              Agregar a audiencia existente
             </button>
             <button
               onClick={() => setCreateGroupOpen(true)}
               className="text-[13px] font-extrabold text-[#0b1310] bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-[#3ddb8f] hover:-translate-y-px"
             >
-              Crear nuevo grupo
+              Crear nueva audiencia
             </button>
           </div>
         </div>
@@ -1382,13 +1382,13 @@ export default function AppShell({
               onClick={() => setAddToGroupOpen(true)}
               className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
             >
-              Agregar a grupo
+              Agregar a audiencia
             </button>
             <button
               onClick={() => setCreateGroupOpen(true)}
               className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
             >
-              Crear grupo
+              Crear audiencia
             </button>
           </div>
         </div>
@@ -1548,7 +1548,7 @@ export default function AppShell({
         key={detailCampaignId ?? "closed"}
       />
 
-      <CreateGroupModal
+      <CreateAudienceModal
         open={createGroupOpen}
         contacts={contacts}
         preselectedIds={Array.from(sel)}
@@ -1560,9 +1560,9 @@ export default function AppShell({
         onCreate={async (nombre, contactIds) => {
           const result = await saveListAction(nombre, contactIds);
           if (result.error) {
-            addMsg(`⚠️ No se pudo crear el grupo: ${result.error}`, "error");
+            addMsg(`⚠️ No se pudo crear la audiencia: ${result.error}`, "error");
           } else {
-            addMsg(`Grupo "${nombre}" creado con ${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} ✓`);
+            addMsg(`Audiencia "${nombre}" creada con ${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} ✓`);
             router.refresh();
             setCreateGroupOpen(false);
             handleClearSel();
@@ -1570,7 +1570,7 @@ export default function AppShell({
         }}
       />
 
-      <AddToGroupModal
+      <AddToAudienceModal
         open={addToGroupOpen}
         lists={lists}
         selectedCount={sel.size}
@@ -1578,11 +1578,11 @@ export default function AppShell({
         onAdd={async (listaId) => {
           const result = await addContactsToListAction(listaId, Array.from(sel));
           if (result.error) {
-            addMsg(`⚠️ No se pudo agregar al grupo: ${result.error}`, "error");
+            addMsg(`⚠️ No se pudo agregar a la audiencia: ${result.error}`, "error");
           } else {
-            const grupo = lists.find((l) => l.id === listaId);
+            const audiencia = lists.find((l) => l.id === listaId);
             addMsg(
-              `${sel.size} contacto${sel.size === 1 ? "" : "s"} agregado${sel.size === 1 ? "" : "s"} a "${grupo?.nombre ?? "grupo"}" ✓`,
+              `${sel.size} contacto${sel.size === 1 ? "" : "s"} agregado${sel.size === 1 ? "" : "s"} a "${audiencia?.nombre ?? "audiencia"}" ✓`,
             );
             router.refresh();
             setAddToGroupOpen(false);
@@ -1591,7 +1591,7 @@ export default function AppShell({
         }}
       />
 
-      <GroupDetailModal
+      <AudienciaDetailModal
         key={openGroupId ?? "none"}
         group={lists.find((l) => l.id === openGroupId) ?? null}
         contacts={contacts}
@@ -1600,16 +1600,16 @@ export default function AppShell({
         onRename={async (id, nombre) => {
           const result = await renameListAction(id, nombre);
           if (result.error) {
-            addMsg(`⚠️ No se pudo renombrar el grupo: ${result.error}`, "error");
+            addMsg(`⚠️ No se pudo renombrar la audiencia: ${result.error}`, "error");
           } else {
-            addMsg(`Grupo renombrado a "${nombre}" ✓`);
+            addMsg(`Audiencia renombrada a "${nombre}" ✓`);
             router.refresh();
           }
         }}
         onRemoveContacts={async (id, contactIds) => {
           const result = await removeContactsFromListAction(id, contactIds);
           if (result.error) {
-            addMsg(`⚠️ No se pudo quitar el contacto del grupo: ${result.error}`, "error");
+            addMsg(`⚠️ No se pudo quitar el contacto de la audiencia: ${result.error}`, "error");
           } else {
             router.refresh();
           }
@@ -1617,21 +1617,21 @@ export default function AppShell({
         onAddContacts={async (id, contactIds) => {
           const result = await addContactsToListAction(id, contactIds);
           if (result.error) {
-            addMsg(`⚠️ No se pudo agregar contactos al grupo: ${result.error}`, "error");
+            addMsg(`⚠️ No se pudo agregar contactos a la audiencia: ${result.error}`, "error");
           } else {
             addMsg(
-              `${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} agregado${contactIds.length === 1 ? "" : "s"} al grupo ✓`,
+              `${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} agregado${contactIds.length === 1 ? "" : "s"} a la audiencia ✓`,
             );
             router.refresh();
           }
         }}
         onDelete={async (id) => {
-          const grupo = lists.find((l) => l.id === id);
+          const audiencia = lists.find((l) => l.id === id);
           const result = await deleteListAction(id);
           if (result.error) {
-            addMsg(`⚠️ No se pudo eliminar el grupo: ${result.error}`, "error");
+            addMsg(`⚠️ No se pudo eliminar la audiencia: ${result.error}`, "error");
           } else {
-            addMsg(`Grupo "${grupo?.nombre ?? ""}" eliminado ✓`);
+            addMsg(`Audiencia "${audiencia?.nombre ?? ""}" eliminada ✓`);
             router.refresh();
             setOpenGroupId(null);
           }

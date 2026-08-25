@@ -53,7 +53,7 @@ export async function saveListAction(
   logActivity(
     cliente.tenant_id,
     "grupo_creado",
-    `Grupo "${nombre}" creado con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}`,
+    `Audiencia "${nombre}" creada con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}`,
     { lista_id: data.id, contactos_count: contactosIds.length },
   );
 
@@ -61,9 +61,9 @@ export async function saveListAction(
 }
 
 /**
- * Suma contactos a un grupo (yamas_send_listas) ya existente, sin duplicar
+ * Suma contactos a una audiencia (yamas_send_listas) ya existente, sin duplicar
  * los que ya estuvieran en contactos_ids. Usado desde la barra flotante de
- * Contactos → "Agregar a grupo existente".
+ * Contactos → "Agregar a audiencia existente".
  */
 export async function addContactsToListAction(
   listaId: string,
@@ -95,7 +95,7 @@ export async function addContactsToListAction(
     .maybeSingle();
 
   if (fetchError || !lista) {
-    return { id: null, error: "No se pudo encontrar el grupo." };
+    return { id: null, error: "No se pudo encontrar la audiencia." };
   }
 
   const actuales: string[] = lista.contactos_ids ?? [];
@@ -112,7 +112,7 @@ export async function addContactsToListAction(
 }
 
 /**
- * Renombra un grupo (yamas_send_listas) ya existente.
+ * Renombra una audiencia (yamas_send_listas) ya existente.
  */
 export async function renameListAction(
   listaId: string,
@@ -144,7 +144,7 @@ export async function renameListAction(
 
   if (error) return { error: error.message };
 
-  logActivity(cliente.tenant_id, "grupo_editado", `Grupo renombrado a "${nombre}"`, {
+  logActivity(cliente.tenant_id, "grupo_editado", `Audiencia renombrada a "${nombre}"`, {
     lista_id: listaId,
   });
 
@@ -152,7 +152,7 @@ export async function renameListAction(
 }
 
 /**
- * Quita contactos puntuales de un grupo (yamas_send_listas) ya existente.
+ * Quita contactos puntuales de una audiencia (yamas_send_listas) ya existente.
  */
 export async function removeContactsFromListAction(
   listaId: string,
@@ -184,7 +184,7 @@ export async function removeContactsFromListAction(
     .maybeSingle();
 
   if (fetchError || !lista) {
-    return { error: "No se pudo encontrar el grupo." };
+    return { error: "No se pudo encontrar la audiencia." };
   }
 
   const actuales: string[] = lista.contactos_ids ?? [];
@@ -201,7 +201,7 @@ export async function removeContactsFromListAction(
 }
 
 /**
- * Elimina un grupo (yamas_send_listas) por completo. El llamador debe pedir
+ * Elimina una audiencia (yamas_send_listas) por completo. El llamador debe pedir
  * confirmación explícita al usuario antes de invocar esta acción.
  */
 export async function deleteListAction(
@@ -243,7 +243,7 @@ export async function deleteListAction(
   logActivity(
     cliente.tenant_id,
     "grupo_eliminado",
-    `Grupo "${listaAborrar?.nombre ?? listaId}" eliminado`,
+    `Audiencia "${listaAborrar?.nombre ?? listaId}" eliminada`,
     { lista_id: listaId },
   );
 

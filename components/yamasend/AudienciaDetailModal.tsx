@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Campaign, Contact, ContactList } from "@/lib/types";
 import { ScoreBadge } from "./ContactsTable";
 
-interface GroupDetailModalProps {
+interface AudienciaDetailModalProps {
   group: ContactList | null;
   contacts: Contact[];
   campaigns: Campaign[];
@@ -48,7 +48,7 @@ function formatModificado(iso: string | null): string {
   return formatFecha(iso);
 }
 
-export default function GroupDetailModal({
+export default function AudienciaDetailModal({
   group,
   contacts,
   campaigns,
@@ -58,7 +58,7 @@ export default function GroupDetailModal({
   onRemoveContacts,
   onAddContacts,
   onCreateCampaign,
-}: GroupDetailModalProps) {
+}: AudienciaDetailModalProps) {
   const [editing, setEditing] = useState(false);
   const [nombreDraft, setNombreDraft] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -248,7 +248,7 @@ export default function GroupDetailModal({
                     }}
                     className="text-left px-[11px] py-2.5 rounded-lg text-[13px] font-semibold text-ys-orange cursor-pointer transition-colors hover:bg-ys-warn-bg"
                   >
-                    Eliminar grupo
+                    Eliminar audiencia
                   </button>
                 </div>
               )}
@@ -303,7 +303,7 @@ export default function GroupDetailModal({
               {filteredAvailable.length === 0 && (
                 <div className="text-center text-[13px] text-ys-muted font-medium py-5">
                   {availableContacts.length === 0
-                    ? "Todos tus contactos ya están en este grupo."
+                    ? "Todos tus contactos ya están en esta audiencia."
                     : "No encontramos contactos con ese nombre."}
                 </div>
               )}
@@ -352,7 +352,7 @@ export default function GroupDetailModal({
                 disabled={addSelected.size === 0 || addSaving}
                 className="text-[12.5px] font-bold text-white bg-ys-green rounded-lg px-3.5 py-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {addSaving ? "Agregando..." : "Agregar al grupo"}
+                {addSaving ? "Agregando..." : "Agregar a la audiencia"}
               </button>
             </div>
           </div>
@@ -363,7 +363,7 @@ export default function GroupDetailModal({
           <div className="flex flex-col border border-ys-border-soft rounded-xl overflow-hidden">
             {groupContacts.length === 0 && (
               <div className="text-center text-[13px] text-ys-muted font-medium py-8">
-                Este grupo no tiene contactos.
+                Esta audiencia no tiene contactos.
               </div>
             )}
             {groupContacts.map((c) => (
@@ -383,7 +383,7 @@ export default function GroupDetailModal({
                 <button
                   onClick={() => handleRemoveContact(c.id)}
                   disabled={removingId === c.id}
-                  title="Quitar del grupo"
+                  title="Quitar de la audiencia"
                   className="flex-none text-ys-dimmer hover:text-ys-red-text transition-colors cursor-pointer disabled:opacity-40"
                 >
                   <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -399,7 +399,7 @@ export default function GroupDetailModal({
           <div className="text-sm font-extrabold text-ys-text">Campañas</div>
           {groupCampaigns.length === 0 ? (
             <div className="text-center text-[13px] text-ys-muted font-medium py-6 border-t border-ys-border-softer">
-              No hay campañas con este grupo.
+              No hay campañas con esta audiencia.
             </div>
           ) : (
             <div className="flex flex-col">
@@ -426,7 +426,7 @@ export default function GroupDetailModal({
         {confirmDelete ? (
           <div className="rounded-xl bg-ys-red-bg border border-ys-red-border px-4 py-3.5 flex flex-col gap-3">
             <div className="text-[13px] text-ys-red-text font-semibold leading-[1.5]">
-              ¿Eliminar el grupo &ldquo;{group.nombre}&rdquo;? Esta acción no se puede deshacer.
+              ¿Eliminar la audiencia &ldquo;{group.nombre}&rdquo;? Esta acción no se puede deshacer.
             </div>
             <div className="flex justify-end gap-2">
               <button
@@ -450,7 +450,7 @@ export default function GroupDetailModal({
               onClick={() => onCreateCampaign(group)}
               className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
             >
-              Crear campaña con este grupo
+              Crear campaña con esta audiencia
             </button>
           </div>
         )}

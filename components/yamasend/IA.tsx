@@ -11,22 +11,22 @@ interface IAProps {
   contacts: Contact[];
   onSend: (text: string) => void;
   onConfirmSeleccion: (ids: string[]) => void;
-  onConfirmGrupo: () => void;
-  onVerGrupo: (grupoId: string) => void;
+  onConfirmAudiencia: () => void;
+  onVerAudiencia: (audienciaId: string) => void;
   onElegirCategoria: (categoria: string) => void;
   onUsarSugerencia: () => void;
   onPedirOtraSugerencia: () => void;
   onGuardarBorrador: () => void;
   onEnviarAMeta: () => void;
   onVerTemplates: () => void;
-  onElegirGrupoCampana: (grupoId: string) => void;
+  onElegirAudienciaCampana: (audienciaId: string) => void;
   onElegirTemplateCampana: (templateId: string) => void;
   onElegirMomentoCampana: (momento: "ahora" | "programar") => void;
   onElegirFechaCampana: (fechaIso: string) => void;
   onConfirmarCampana: () => void;
   onVerCampana: (campanaId: string) => void;
   onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
-  onCrearGrupoDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
+  onCrearAudienciaDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
   onNuevaConversacion: () => void;
   onSeleccionarConversacion: (conversacionId: string) => void;
   conversacionActivaId: string | null;
@@ -46,15 +46,15 @@ const SUGERENCIAS = [
 const BIENVENIDAS = [
   {
     titulo: "¿Qué querés saber sobre tu negocio?",
-    texto: "Puedo analizar tus contactos, grupos, templates y campañas para ayudarte a tomar mejores decisiones.",
+    texto: "Puedo analizar tus contactos, audiencias, templates y campañas para ayudarte a tomar mejores decisiones.",
   },
   {
     titulo: "¿En qué te ayudo hoy?",
-    texto: "Puedo armar un grupo, un template o una campaña entera por vos, solo pedímelo en lenguaje natural.",
+    texto: "Puedo armar una audiencia, un template o una campaña entera por vos, solo pedímelo en lenguaje natural.",
   },
   {
     titulo: "Hagamos algo juntos",
-    texto: "Puedo importar tus contactos, buscar quién habló de un tema puntual, y crear grupos, templates y campañas hablando conmigo.",
+    texto: "Puedo importar tus contactos, buscar quién habló de un tema puntual, y crear audiencias, templates y campañas hablando conmigo.",
   },
 ];
 
@@ -64,22 +64,22 @@ export default function IA({
   contacts,
   onSend,
   onConfirmSeleccion,
-  onConfirmGrupo,
-  onVerGrupo,
+  onConfirmAudiencia,
+  onVerAudiencia,
   onElegirCategoria,
   onUsarSugerencia,
   onPedirOtraSugerencia,
   onGuardarBorrador,
   onEnviarAMeta,
   onVerTemplates,
-  onElegirGrupoCampana,
+  onElegirAudienciaCampana,
   onElegirTemplateCampana,
   onElegirMomentoCampana,
   onElegirFechaCampana,
   onConfirmarCampana,
   onVerCampana,
   onConfirmarImportarContactos,
-  onCrearGrupoDesdeBusqueda,
+  onCrearAudienciaDesdeBusqueda,
   onNuevaConversacion,
   onSeleccionarConversacion,
   conversacionActivaId,
@@ -274,22 +274,22 @@ export default function IA({
                     contacts,
                     {
                       onConfirmSeleccion,
-                      onConfirmGrupo,
-                      onVerGrupo,
+                      onConfirmAudiencia,
+                      onVerAudiencia,
                       onElegirCategoria,
                       onUsarSugerencia,
                       onPedirOtraSugerencia,
                       onGuardarBorrador,
                       onEnviarAMeta,
                       onVerTemplates,
-                      onElegirGrupoCampana,
+                      onElegirAudienciaCampana,
                       onElegirTemplateCampana,
                       onElegirMomentoCampana,
                       onElegirFechaCampana,
                       onConfirmarCampana,
                       onVerCampana,
                       onConfirmarImportarContactos,
-                      onCrearGrupoDesdeBusqueda,
+                      onCrearAudienciaDesdeBusqueda,
                     },
                     m.id === lastBotMessageId,
                   )}

@@ -11,7 +11,7 @@ function initialsOf(nombre: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-interface CreateGroupModalProps {
+interface CreateAudienceModalProps {
   open: boolean;
   contacts: Contact[];
   preselectedIds?: string[];
@@ -20,14 +20,14 @@ interface CreateGroupModalProps {
   onGoToContacts?: () => void;
 }
 
-export function CreateGroupModal({
+export function CreateAudienceModal({
   open,
   contacts,
   preselectedIds,
   onClose,
   onCreate,
   onGoToContacts,
-}: CreateGroupModalProps) {
+}: CreateAudienceModalProps) {
   const [nombre, setNombre] = useState("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -67,7 +67,7 @@ export function CreateGroupModal({
   async function handleCreate() {
     const trimmed = nombre.trim();
     if (!trimmed) {
-      setErr("Ponele un nombre al grupo.");
+      setErr("Ponele un nombre a la audiencia.");
       return;
     }
     setSaving(true);
@@ -100,7 +100,7 @@ export function CreateGroupModal({
       >
         <div className="flex-none flex flex-col gap-1.5">
           <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
-            Crear nuevo grupo
+            Crear nueva audiencia
           </div>
           <div className="text-[13.5px] text-ys-muted font-medium">
             Ponele un nombre y elegí los contactos que lo integran.
@@ -114,7 +114,7 @@ export function CreateGroupModal({
         )}
 
         <div className="flex-none flex flex-col gap-[7px]">
-          <div className="text-[13px] font-extrabold text-ys-text">Nombre del grupo</div>
+          <div className="text-[13px] font-extrabold text-ys-text">Nombre de la audiencia</div>
           <input
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
@@ -202,7 +202,7 @@ export function CreateGroupModal({
             disabled={!puedeCrear || saving}
             className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
           >
-            {saving ? "Creando..." : "Crear grupo"}
+            {saving ? "Creando..." : "Crear audiencia"}
           </button>
         </div>
       </div>
@@ -210,7 +210,7 @@ export function CreateGroupModal({
   );
 }
 
-interface AddToGroupModalProps {
+interface AddToAudienceModalProps {
   open: boolean;
   lists: ContactList[];
   selectedCount: number;
@@ -218,13 +218,13 @@ interface AddToGroupModalProps {
   onAdd: (listaId: string) => Promise<void>;
 }
 
-export function AddToGroupModal({
+export function AddToAudienceModal({
   open,
   lists,
   selectedCount,
   onClose,
   onAdd,
-}: AddToGroupModalProps) {
+}: AddToAudienceModalProps) {
   const [query, setQuery] = useState("");
   const [chosenId, setChosenId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -264,7 +264,7 @@ export function AddToGroupModal({
       >
         <div className="flex flex-col gap-1.5">
           <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
-            Agregar a grupo
+            Agregar a audiencia
           </div>
           <div className="text-[13px] font-bold text-ys-green-text bg-ys-green-bg rounded-full px-3 py-1 self-start">
             {selectedCount} contacto{selectedCount === 1 ? "" : "s"} seleccionado{selectedCount === 1 ? "" : "s"}
@@ -279,7 +279,7 @@ export function AddToGroupModal({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar grupo..."
+            placeholder="Buscar audiencia..."
             className="flex-1 min-w-0 border-none outline-none bg-transparent text-[13.5px] font-semibold text-ys-text"
           />
         </div>
@@ -288,8 +288,8 @@ export function AddToGroupModal({
           {filtered.length === 0 && (
             <div className="text-center text-[13px] text-ys-muted font-medium py-6">
               {lists.length === 0
-                ? "Todavía no creaste ningún grupo."
-                : "No encontramos grupos con ese nombre."}
+                ? "Todavía no creaste ninguna audiencia."
+                : "No encontramos audiencias con ese nombre."}
             </div>
           )}
           {filtered.map((l) => {

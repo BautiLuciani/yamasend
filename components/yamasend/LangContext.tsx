@@ -12,7 +12,7 @@ const i18n = {
     // ── Sidebar / navegación ──
     nav_dashboard: "Dashboard",
     nav_contacts: "Contactos",
-    nav_groups: "Grupos",
+    nav_groups: "Audiencias",
     nav_templates: "Templates",
     nav_campaigns: "Campañas",
     nav_ai: "IA",
@@ -108,17 +108,17 @@ const i18n = {
     // ── Contactos ──
     contacts_title: "Contactos",
     contacts_search: "Buscar contacto…",
-    contacts_add_to_group: "Agregar a grupo",
-    contacts_create_group: "Crear grupo",
+    contacts_add_to_group: "Agregar a audiencia",
+    contacts_create_group: "Crear audiencia",
     contacts_selected: "seleccionado",
     contacts_selected_plural: "seleccionados",
 
-    // ── Grupos ──
-    groups_title: "Grupos",
-    groups_new: "Nuevo grupo",
+    // ── Audiencias ──
+    groups_title: "Audiencias",
+    groups_new: "Nueva audiencia",
     groups_contacts_count: "contactos",
     groups_campaigns_count: "campañas",
-    groups_empty_title: "Todavía no creaste ningún grupo",
+    groups_empty_title: "Todavía no creaste ninguna audiencia",
     groups_empty_desc: "Agrupá contactos para armar campañas más fácil.",
 
     // ── Templates ──
@@ -148,7 +148,7 @@ const i18n = {
   en: {
     nav_dashboard: "Dashboard",
     nav_contacts: "Contacts",
-    nav_groups: "Groups",
+    nav_groups: "Audiences",
     nav_templates: "Templates",
     nav_campaigns: "Campaigns",
     nav_ai: "AI",
@@ -239,16 +239,16 @@ const i18n = {
 
     contacts_title: "Contacts",
     contacts_search: "Search contact…",
-    contacts_add_to_group: "Add to group",
-    contacts_create_group: "Create group",
+    contacts_add_to_group: "Add to audience",
+    contacts_create_group: "Create audience",
     contacts_selected: "selected",
     contacts_selected_plural: "selected",
 
-    groups_title: "Groups",
-    groups_new: "New group",
+    groups_title: "Audiences",
+    groups_new: "New audience",
     groups_contacts_count: "contacts",
     groups_campaigns_count: "campaigns",
-    groups_empty_title: "You haven't created any groups yet",
+    groups_empty_title: "You haven't created any audiences yet",
     groups_empty_desc: "Group contacts together to build campaigns faster.",
 
     templates_title: "Templates",
