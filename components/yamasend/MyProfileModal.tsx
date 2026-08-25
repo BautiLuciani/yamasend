@@ -90,6 +90,36 @@ function TextInput({
   );
 }
 
+function TextArea({
+  value,
+  onChange,
+  placeholder,
+  rows = 3,
+}: {
+  value: string;
+  onChange?: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <div
+      className="flex items-center gap-2.5 border rounded-[10px] px-[13px] py-[11px] transition-colors"
+      style={{ borderColor: focused ? "#12B76A" : "#e8ebe9" }}
+    >
+      <textarea
+        value={value}
+        onChange={(e) => onChange?.(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        placeholder={placeholder}
+        rows={rows}
+        className="flex-1 min-w-0 border-none outline-none bg-transparent text-sm font-semibold text-ys-text resize-none"
+      />
+    </div>
+  );
+}
+
 function PasswordInput({
   value,
   onChange,
@@ -154,6 +184,12 @@ export default function MyProfileModal({
   // Agencia
   const [nombreEmpresa, setNombreEmpresa] = useState(user.nombreEmpresa);
   const [rubro, setRubro] = useState(user.rubro);
+  const [descripcionNegocio, setDescripcionNegocio] = useState(user.descripcionNegocio);
+  const [publicoObjetivo, setPublicoObjetivo] = useState(user.publicoObjetivo);
+  const [tonoComunicacion, setTonoComunicacion] = useState(user.tonoComunicacion);
+  const [zonaCobertura, setZonaCobertura] = useState(user.zonaCobertura);
+  const [diferenciales, setDiferenciales] = useState(user.diferenciales);
+  const [reglasEvitar, setReglasEvitar] = useState(user.reglasEvitar);
   const [savingAgency, setSavingAgency] = useState(false);
   const [agencyMsg, setAgencyMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
@@ -174,6 +210,12 @@ export default function MyProfileModal({
     setTel(user.ventasTel);
     setNombreEmpresa(user.nombreEmpresa);
     setRubro(user.rubro);
+    setDescripcionNegocio(user.descripcionNegocio);
+    setPublicoObjetivo(user.publicoObjetivo);
+    setTonoComunicacion(user.tonoComunicacion);
+    setZonaCobertura(user.zonaCobertura);
+    setDiferenciales(user.diferenciales);
+    setReglasEvitar(user.reglasEvitar);
   }
 
   // Al cerrar, volver siempre a la primera sección y limpiar mensajes/contraseñas
@@ -212,13 +254,28 @@ export default function MyProfileModal({
     const res = await updateProfileAction({
       nombreEmpresa,
       rubro,
+      descripcionNegocio,
+      publicoObjetivo,
+      tonoComunicacion,
+      zonaCobertura,
+      diferenciales,
+      reglasEvitar,
     });
     setSavingAgency(false);
     if (res.error) {
       setAgencyMsg({ type: "err", text: res.error });
     } else {
       setAgencyMsg({ type: "ok", text: t("myprofile_saved") });
-      onUserUpdate({ nombreEmpresa: nombreEmpresa.trim(), rubro: rubro.trim() });
+      onUserUpdate({
+        nombreEmpresa: nombreEmpresa.trim(),
+        rubro: rubro.trim(),
+        descripcionNegocio: descripcionNegocio.trim(),
+        publicoObjetivo: publicoObjetivo.trim(),
+        tonoComunicacion: tonoComunicacion.trim(),
+        zonaCobertura: zonaCobertura.trim(),
+        diferenciales: diferenciales.trim(),
+        reglasEvitar: reglasEvitar.trim(),
+      });
     }
   }
 
@@ -457,7 +514,7 @@ export default function MyProfileModal({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 max-w-[420px]">
+              <div className="flex flex-col gap-4 max-w-[560px]">
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_agency_name")}</FieldLabel>
                   <TextInput value={nombreEmpresa} onChange={setNombreEmpresa} />
@@ -466,6 +523,65 @@ export default function MyProfileModal({
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_agency_field")}</FieldLabel>
                   <TextInput value={rubro} onChange={setRubro} />
+                </div>
+
+                <div className="flex flex-col gap-[7px]">
+                  <FieldLabel>{t("myprofile_field_descripcion_negocio")}</FieldLabel>
+                  <TextArea
+                    value={descripcionNegocio}
+                    onChange={setDescripcionNegocio}
+                    placeholder={t("myprofile_field_descripcion_negocio_placeholder")}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-[7px]">
+                  <FieldLabel>{t("myprofile_field_publico_objetivo")}</FieldLabel>
+                  <TextArea
+                    value={publicoObjetivo}
+                    onChange={setPublicoObjetivo}
+                    placeholder={t("myprofile_field_publico_objetivo_placeholder")}
+                    rows={2}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-[7px]">
+                  <FieldLabel>{t("myprofile_field_tono_comunicacion")}</FieldLabel>
+                  <TextArea
+                    value={tonoComunicacion}
+                    onChange={setTonoComunicacion}
+                    placeholder={t("myprofile_field_tono_comunicacion_placeholder")}
+                    rows={2}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-[7px]">
+                  <FieldLabel>{t("myprofile_field_zona_cobertura")}</FieldLabel>
+                  <TextInput
+                    value={zonaCobertura}
+                    onChange={setZonaCobertura}
+                    placeholder={t("myprofile_field_zona_cobertura_placeholder")}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-[7px]">
+                  <FieldLabel>{t("myprofile_field_diferenciales")}</FieldLabel>
+                  <TextArea
+                    value={diferenciales}
+                    onChange={setDiferenciales}
+                    placeholder={t("myprofile_field_diferenciales_placeholder")}
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-[7px]">
+                  <FieldLabel>{t("myprofile_field_reglas_evitar")}</FieldLabel>
+                  <TextArea
+                    value={reglasEvitar}
+                    onChange={setReglasEvitar}
+                    placeholder={t("myprofile_field_reglas_evitar_placeholder")}
+                    rows={2}
+                  />
                 </div>
 
                 {agencyMsg && (

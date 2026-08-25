@@ -17,6 +17,12 @@ export const mockUser: AppUser = {
   credito: 0,
   nombreEmpresa: "",
   rubro: "",
+  descripcionNegocio: "",
+  publicoObjetivo: "",
+  tonoComunicacion: "",
+  zonaCobertura: "",
+  diferenciales: "",
+  reglasEvitar: "",
 };
 
 export const mockContacts: Contact[] = [

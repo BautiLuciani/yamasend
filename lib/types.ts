@@ -103,6 +103,12 @@ export interface AppUser {
   credito?: number;
   nombreEmpresa: string;
   rubro: string;
+  descripcionNegocio: string;
+  publicoObjetivo: string;
+  tonoComunicacion: string;
+  zonaCobertura: string;
+  diferenciales: string;
+  reglasEvitar: string;
 }
 
 export type ChatMsgType = "user" | "bot" | "error";

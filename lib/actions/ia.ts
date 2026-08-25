@@ -70,6 +70,7 @@ type Intencion =
 async function clasificarIntencion(
   mensaje: string,
   historial: IAHistoryTurn[],
+  contexto: ContextoNegocio | null,
 ): Promise<Intencion> {
   const openai = getOpenAI();
 
@@ -77,6 +78,18 @@ async function clasificarIntencion(
     .slice(-6)
     .map((h) => `${h.role === "user" ? "Usuario" : "Asistente"}: ${h.text}`)
     .join("\n");
+
+  const lineasContextoNegocio = contexto
+    ? [
+        contexto.rubro && `Rubro: ${contexto.rubro}`,
+        contexto.descripcionNegocio && `Descripción del negocio: ${contexto.descripcionNegocio}`,
+        contexto.publicoObjetivo && `Público objetivo: ${contexto.publicoObjetivo}`,
+      ].filter(Boolean)
+    : [];
+
+  const bloqueContextoNegocio = lineasContextoNegocio.length
+    ? `\n\nContexto del negocio de este tenant (usalo únicamente para interpretar mejor vocabulario propio del rubro al momento de entender el mensaje, nunca para inventar una intención que el mensaje no pide):\n${lineasContextoNegocio.join("\n")}`
+    : "";
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -101,7 +114,7 @@ Tu única tarea es decidir qué quiere hacer el usuario a partir de su último m
 - "otra": cualquier otra cosa (preguntas sobre sus datos, métricas, charla general, etc).
 
 Para "crear_template", "crear_campana", "importar_contactos" y "otra", "consulta" siempre va null.
-No agregues texto fuera del JSON.`,
+No agregues texto fuera del JSON.${bloqueContextoNegocio}`,
       },
       {
         role: "user",
@@ -149,6 +162,42 @@ async function resolverTenantId(): Promise<string | null> {
     .maybeSingle();
 
   return cliente?.tenant_id ?? null;
+}
+
+// -----------------------------------------------------------------------
+// Contexto de negocio (sección "Datos de la empresa" de Mi perfil) del
+// usuario logueado. Se usa para que el clasificador de intención interprete
+// mejor el vocabulario propio del rubro del tenant (ej: términos de
+// inmobiliaria) en vez de razonar en abstracto. Devuelve null si no hay
+// sesión o no hay fila — el llamador debe seguir funcionando igual en ese
+// caso (degradación genérica, no error).
+// -----------------------------------------------------------------------
+interface ContextoNegocio {
+  rubro: string;
+  descripcionNegocio: string;
+  publicoObjetivo: string;
+}
+
+async function resolverContextoNegocio(): Promise<ContextoNegocio | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("rubro, descripcion_negocio, publico_objetivo")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente) return null;
+
+  return {
+    rubro: cliente.rubro ?? "",
+    descripcionNegocio: cliente.descripcion_negocio ?? "",
+    publicoObjetivo: cliente.publico_objetivo ?? "",
+  };
 }
 
 async function contarContactos(): Promise<number> {
@@ -251,7 +300,8 @@ export async function sendIAMessageAction(
   // ---- Sin flujo activo: clasificar intención --------------------------
   let intencion: Intencion;
   try {
-    intencion = await clasificarIntencion(texto, history);
+    const contextoNegocio = await resolverContextoNegocio();
+    intencion = await clasificarIntencion(texto, history, contextoNegocio);
   } catch (e) {
     // Log server-side con el detalle real (nunca se muestra tal cual al
     // usuario, pero queda en los runtime logs de Vercel para diagnosticar).

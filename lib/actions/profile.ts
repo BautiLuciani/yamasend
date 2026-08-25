@@ -16,6 +16,12 @@ export async function updateProfileAction(data: {
   ventasTel?: string;
   nombreEmpresa?: string;
   rubro?: string;
+  descripcionNegocio?: string;
+  publicoObjetivo?: string;
+  tonoComunicacion?: string;
+  zonaCobertura?: string;
+  diferenciales?: string;
+  reglasEvitar?: string;
 }): Promise<ProfileActionResult> {
   const supabase = await createClient();
 
@@ -41,6 +47,24 @@ export async function updateProfileAction(data: {
   }
   if (data.rubro !== undefined) {
     updatePayload.rubro = data.rubro.trim();
+  }
+  if (data.descripcionNegocio !== undefined) {
+    updatePayload.descripcion_negocio = data.descripcionNegocio.trim();
+  }
+  if (data.publicoObjetivo !== undefined) {
+    updatePayload.publico_objetivo = data.publicoObjetivo.trim();
+  }
+  if (data.tonoComunicacion !== undefined) {
+    updatePayload.tono_comunicacion = data.tonoComunicacion.trim();
+  }
+  if (data.zonaCobertura !== undefined) {
+    updatePayload.zona_cobertura = data.zonaCobertura.trim();
+  }
+  if (data.diferenciales !== undefined) {
+    updatePayload.diferenciales = data.diferenciales.trim();
+  }
+  if (data.reglasEvitar !== undefined) {
+    updatePayload.reglas_evitar = data.reglasEvitar.trim();
   }
 
   if (Object.keys(updatePayload).length === 0) {

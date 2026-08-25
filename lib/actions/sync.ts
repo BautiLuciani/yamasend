@@ -137,8 +137,12 @@ export interface GenerarTemplateIAResult {
 
 /**
  * Genera un mensaje de template sugerido a partir de una descripción libre
- * de lo que el usuario quiere comunicar. No requiere sesión con tenant_id
- * porque no persiste nada — solo genera texto.
+ * de lo que el usuario quiere comunicar. No persiste nada — solo genera
+ * texto — pero sí resuelve el tenant_id del usuario logueado (cuando hay
+ * sesión) para que el workflow de n8n pueda traer el contexto de negocio
+ * (yamas_inmo_clientes) y personalizar el tono/rubro del mensaje generado.
+ * Si no hay sesión (caso raro, no debería pasar en el panel logueado), se
+ * sigue generando el template de forma genérica como antes.
  */
 export async function generarTemplateConIAAction(
   descripcion: string,
@@ -148,11 +152,30 @@ export async function generarTemplateConIAAction(
     return { sugerencia: null, error: "Contá qué querés comunicar para poder generar el mensaje." };
   }
 
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let tenantId: string | null = null;
+  if (user) {
+    const { data: cliente } = await supabase
+      .from("yamas_inmo_clientes")
+      .select("tenant_id")
+      .eq("auth_user_id", user.id)
+      .maybeSingle();
+    tenantId = cliente?.tenant_id ?? null;
+  }
+
   try {
     const res = await fetch(TEMPLATE_IA_WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ descripcion: descripcion.trim(), categoria }),
+      body: JSON.stringify({
+        descripcion: descripcion.trim(),
+        categoria,
+        tenant_id: tenantId,
+      }),
     });
 
     if (!res.ok) {

@@ -74,9 +74,28 @@ const i18n = {
     myprofile_password_too_short: "La nueva contraseña debe tener al menos 8 caracteres.",
 
     myprofile_agency_title: "Datos de la empresa",
-    myprofile_agency_desc: "Información de tu empresa disponible en YamaSend.",
+    myprofile_agency_desc:
+      "Esta información alimenta a la IA de YamaSend (templates, análisis de contactos y chat) para que responda y redacte como tu negocio, no de forma genérica.",
     myprofile_field_agency_name: "Nombre de la empresa",
     myprofile_field_agency_field: "Rubro",
+    myprofile_field_descripcion_negocio: "Descripción del negocio",
+    myprofile_field_descripcion_negocio_placeholder:
+      "Ej: Inmobiliaria especializada en alquileres y ventas de departamentos en zona norte del GBA, con más de 10 años en el rubro.",
+    myprofile_field_publico_objetivo: "Público objetivo",
+    myprofile_field_publico_objetivo_placeholder:
+      "Ej: Parejas jóvenes y familias buscando su primera vivienda, principalmente entre 28 y 45 años.",
+    myprofile_field_tono_comunicacion: "Tono de comunicación",
+    myprofile_field_tono_comunicacion_placeholder:
+      "Ej: Cercano y cálido, pero profesional. Evitar sonar corporativo o distante.",
+    myprofile_field_zona_cobertura: "Zona de cobertura",
+    myprofile_field_zona_cobertura_placeholder:
+      "Ej: San Isidro, Vicente López y Olivos.",
+    myprofile_field_diferenciales: "Diferenciales / propuesta de valor",
+    myprofile_field_diferenciales_placeholder:
+      "Ej: Acompañamiento personalizado durante todo el proceso, asesoría legal incluida sin costo extra.",
+    myprofile_field_reglas_evitar: "Cosas a evitar",
+    myprofile_field_reglas_evitar_placeholder:
+      "Ej: No prometer plazos de financiación. No mencionar precios exactos sin confirmar con el equipo.",
 
     myprofile_billing_title: "Plan y facturación",
     myprofile_billing_desc: "Administrá tu plan y método de pago.",
@@ -207,9 +226,28 @@ const i18n = {
     myprofile_password_too_short: "New password must be at least 8 characters.",
 
     myprofile_agency_title: "Company details",
-    myprofile_agency_desc: "Your company's information within YamaSend.",
+    myprofile_agency_desc:
+      "This information feeds YamaSend's AI (templates, contact analysis, and chat) so it writes and responds like your business, not generically.",
     myprofile_field_agency_name: "Company name",
     myprofile_field_agency_field: "Industry",
+    myprofile_field_descripcion_negocio: "Business description",
+    myprofile_field_descripcion_negocio_placeholder:
+      "E.g.: Real estate agency specialized in rentals and sales in the north of Buenos Aires, with over 10 years in the industry.",
+    myprofile_field_publico_objetivo: "Target audience",
+    myprofile_field_publico_objetivo_placeholder:
+      "E.g.: Young couples and families looking for their first home, mostly between 28 and 45 years old.",
+    myprofile_field_tono_comunicacion: "Communication tone",
+    myprofile_field_tono_comunicacion_placeholder:
+      "E.g.: Warm and approachable, but professional. Avoid sounding corporate or distant.",
+    myprofile_field_zona_cobertura: "Coverage area",
+    myprofile_field_zona_cobertura_placeholder:
+      "E.g.: San Isidro, Vicente López and Olivos.",
+    myprofile_field_diferenciales: "Differentiators / value proposition",
+    myprofile_field_diferenciales_placeholder:
+      "E.g.: Personalized guidance through the whole process, legal advice included at no extra cost.",
+    myprofile_field_reglas_evitar: "Things to avoid",
+    myprofile_field_reglas_evitar_placeholder:
+      "E.g.: Don't promise financing terms. Don't mention exact prices without confirming with the team.",
 
     myprofile_billing_title: "Plan & billing",
     myprofile_billing_desc: "Manage your plan and payment method.",
