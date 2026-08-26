@@ -381,6 +381,161 @@ function intentaAudienciaDesdeUltimaImportacion(
 // historial corto (para el clasificador) y el estado de flujo actual.
 // Devuelve el próximo mensaje del bot + el nuevo estado de flujo.
 // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Intérprete de desvíos dentro de un flujo guiado.
+//
+// Los handlers de cada flujo son máquinas de estados rígidas: esperan un
+// input puntual por paso y todo lo demás rebota con "confirmá desde la
+// tarjeta o escribí cancelar". Eso hacía que pedidos razonables a mitad de
+// camino ("mejor llamala Contactos Calientes", "che, cuántos calientes
+// tengo?") se chocaran contra una pared.
+//
+// Esta función corre ANTES del handler y clasifica el mensaje en:
+// - continuar: es el input que el paso esperaba -> sigue el handler normal
+// - modificar: corrige un dato ya cargado -> se aplica al draft
+// - pregunta: algo al margen del flujo -> lo responde el agente SIN perder
+//   el flujo (flowState se conserva intacto)
+// - cancelar: abandona el flujo
+//
+// Se usa gpt-4o-mini: es una decisión de 4 opciones con el contexto del
+// paso actual, no necesita el modelo grande.
+// -----------------------------------------------------------------------
+type DesvioFlujo =
+  | { tipo: "continuar" }
+  | { tipo: "modificar"; campo: "nombre"; valor: string }
+  | { tipo: "pregunta" }
+  | { tipo: "cancelar" };
+
+function describirPasoActual(flowState: IAFlowState): string {
+  const { kind, step, draft } = flowState;
+  const partes: string[] = [`Flujo activo: ${kind}.`, `Paso actual: ${step}.`];
+  if (draft.nombre) partes.push(`Nombre cargado: "${draft.nombre}".`);
+  if (draft.contactosIds?.length) partes.push(`Contactos seleccionados: ${draft.contactosIds.length}.`);
+  if (draft.categoria) partes.push(`Categoría: ${draft.categoria}.`);
+  return partes.join(" ");
+}
+
+/** Qué espera cada paso, en lenguaje natural, para que el modelo sepa qué es "continuar". */
+const QUE_ESPERA_EL_PASO: Record<string, string> = {
+  audiencia_esperando_nombre: "el nombre para la audiencia",
+  audiencia_esperando_contactos: "que el usuario elija contactos desde una tarjeta (no por texto)",
+  audiencia_esperando_confirmacion: "que el usuario confirme desde una tarjeta (no por texto)",
+  template_esperando_nombre: "el nombre para el template",
+  template_esperando_categoria: "que elija una categoría desde una tarjeta",
+  template_esperando_descripcion: "una descripción de lo que quiere comunicar en el mensaje",
+  template_esperando_confirmacion: "que confirme desde una tarjeta",
+  campana_esperando_nombre: "el nombre para la campaña",
+  campana_esperando_audiencia: "que elija una audiencia desde una tarjeta",
+  campana_esperando_template: "que elija un template desde una tarjeta",
+  campana_esperando_momento: "que elija enviar ahora o programar, desde una tarjeta",
+  campana_esperando_fecha: "una fecha/hora para programar el envío",
+  campana_esperando_confirmacion: "que confirme desde una tarjeta",
+  importar_esperando_confirmacion: "que confirme la importación desde una tarjeta",
+};
+
+async function interpretarDesvioEnFlujo(
+  mensaje: string,
+  flowState: IAFlowState,
+): Promise<DesvioFlujo> {
+  const openai = getOpenAI();
+  const espera = flowState.step ? QUE_ESPERA_EL_PASO[flowState.step] ?? "un dato del flujo" : "un dato del flujo";
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: `Estás ayudando a un asistente que está en medio de un flujo guiado con el usuario.
+
+${describirPasoActual(flowState)}
+En este paso el asistente espera: ${espera}.
+
+Clasificá el último mensaje del usuario y devolvé SOLO un JSON con esta forma:
+{"tipo": "continuar" | "modificar" | "pregunta" | "cancelar", "campo": "nombre" | null, "valor": string | null}
+
+- "continuar": el mensaje ES lo que el paso esperaba (ej: si espera un nombre, el usuario escribió un nombre).
+- "modificar": el usuario quiere CORREGIR un dato que ya se cargó antes (ej: "mejor llamala X", "cambiale el nombre a X", "no, ponele X"). En ese caso campo="nombre" y valor = el nombre nuevo, limpio, sin comillas ni frases alrededor.
+- "pregunta": el usuario pregunta o comenta algo al margen del flujo (ej: "cuántos contactos calientes tengo?", "qué es un template?", "esperá, cuánto me sale esto?").
+- "cancelar": el usuario quiere abandonar el flujo (ej: "cancelá", "dejalo", "olvidate", "mejor no").
+
+Regla importante: si el paso espera un nombre y el usuario simplemente escribe un texto corto, eso es "continuar", NO "modificar". Solo es "modificar" si está corrigiendo algo ya cargado, con lenguaje de corrección.
+No agregues texto fuera del JSON.`,
+      },
+      { role: "user", content: mensaje },
+    ],
+  });
+
+  try {
+    const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+    if (parsed.tipo === "cancelar") return { tipo: "cancelar" };
+    if (parsed.tipo === "pregunta") return { tipo: "pregunta" };
+    if (parsed.tipo === "modificar" && parsed.campo === "nombre" && parsed.valor) {
+      return { tipo: "modificar", campo: "nombre", valor: String(parsed.valor).slice(0, 120) };
+    }
+    return { tipo: "continuar" };
+  } catch {
+    return { tipo: "continuar" };
+  }
+}
+
+/**
+ * Aplica una corrección de nombre al draft y re-renderiza la tarjeta del
+ * paso actual, para que el usuario vea el cambio reflejado sin perder el
+ * progreso ni tener que rehacer el flujo.
+ */
+function aplicarCambioDeNombre(
+  nombre: string,
+  flowState: IAFlowState,
+): IAResponse {
+  const draft = { ...flowState.draft, nombre };
+  const nuevoFlowState: IAFlowState = { ...flowState, draft };
+
+  // En los pasos de confirmación re-emitimos la tarjeta con el dato nuevo,
+  // así el botón de confirmar ya crea la cosa con el nombre corregido.
+  if (flowState.kind === "crear_audiencia" && flowState.step === "audiencia_esperando_confirmacion") {
+    const ids = draft.contactosIds ?? [];
+    return {
+      text: `Listo, la llamo "${nombre}". Confirmame: creamos la audiencia con ${ids.length} contacto${ids.length === 1 ? "" : "s"}.`,
+      payload: { kind: "confirmar_audiencia", nombre, contactosIds: ids },
+      flowState: nuevoFlowState,
+    };
+  }
+
+  if (flowState.kind === "crear_audiencia" && flowState.step === "audiencia_esperando_contactos") {
+    return {
+      text: `Dale, la llamo "${nombre}". Seguí eligiendo los contactos desde la tarjeta.`,
+      payload: {
+        kind: "seleccionar_contactos",
+        preselectedIds: draft.contactosIds ?? [],
+        consultaUsada: draft.consultaUsada,
+      },
+      flowState: nuevoFlowState,
+    };
+  }
+
+  if (flowState.kind === "crear_template" && flowState.step === "template_esperando_confirmacion") {
+    return {
+      text: `Listo, lo llamo "${nombre}".`,
+      payload: {
+        kind: "confirmar_template",
+        nombre,
+        contenido: draft.contenido ?? "",
+        categoria: draft.categoria ?? "",
+      },
+      flowState: nuevoFlowState,
+    };
+  }
+
+  // Resto de los pasos: confirmamos el cambio y dejamos que el flujo siga
+  // desde donde estaba, sin re-renderizar tarjeta (no hay uno que mostrar).
+  return {
+    text: `Listo, anoté el nombre "${nombre}". Seguimos donde estábamos.`,
+    flowState: nuevoFlowState,
+  };
+}
+
 export async function sendIAMessageAction(
   userMessage: string,
   history: IAHistoryTurn[],
@@ -392,6 +547,58 @@ export async function sendIAMessageAction(
       text: "Contame qué necesitás.",
       flowState,
     };
+  }
+
+  // ---- Flujo activo: interpretar antes de pasar al handler rígido ------
+  //
+  // Los handlers esperan un input puntual por paso. Sin este chequeo,
+  // cualquier otra cosa que escriba el usuario (una corrección, una
+  // pregunta al margen) rebota con un mensaje del tipo "confirmá desde la
+  // tarjeta o escribí cancelar", que es justo lo que hacía sentir rígido
+  // al asistente.
+  if (flowState.kind) {
+    let desvio: DesvioFlujo;
+    try {
+      desvio = await interpretarDesvioEnFlujo(texto, flowState);
+    } catch (e) {
+      // Si el intérprete falla, seguimos con el comportamiento de siempre.
+      console.error("[IA] Error en interpretarDesvioEnFlujo:", e);
+      desvio = { tipo: "continuar" };
+    }
+
+    if (desvio.tipo === "cancelar") {
+      return {
+        text: "Listo, lo dejamos acá. ¿En qué más te ayudo?",
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    if (desvio.tipo === "modificar") {
+      return aplicarCambioDeNombre(desvio.valor, flowState);
+    }
+
+    if (desvio.tipo === "pregunta") {
+      // Respondemos con el agente pero CONSERVAMOS el flowState, así el
+      // flujo queda esperando donde estaba y el usuario puede retomarlo.
+      const contextoNegocioFlujo = await resolverContextoNegocio();
+      const tenantIdFlujo = await resolverTenantId();
+      try {
+        const respuesta = await responderConAgente(
+          texto,
+          history,
+          contextoNegocioFlujo,
+          tenantIdFlujo,
+        );
+        return { ...respuesta, flowState };
+      } catch (e) {
+        console.error("[IA] Error respondiendo pregunta dentro de flujo:", e);
+        return {
+          text: "No pude buscar eso ahora. Seguimos donde estábamos cuando quieras.",
+          flowState,
+        };
+      }
+    }
+    // "continuar": cae a los handlers de abajo, comportamiento de siempre.
   }
 
   // ---- Flujo activo: crear_audiencia -------------------------------------
