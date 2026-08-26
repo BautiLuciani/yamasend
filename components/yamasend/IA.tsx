@@ -361,7 +361,7 @@ export default function IA({
                   viewBox="0 0 16 16"
                   fill="none"
                   className="flex-none transition-transform duration-200"
-                  style={{ transform: sugerenciasAbiertas ? "rotate(180deg)" : "rotate(0deg)" }}
+                  style={{ transform: sugerenciasAbiertas ? "rotate(0deg)" : "rotate(180deg)" }}
                 >
                   <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
