@@ -354,7 +354,7 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
       </div>
 
       {/* 4 cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <KpiCard
           icon={
             <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
@@ -410,7 +410,7 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
               </svg>
             </div>
             <div className="flex flex-col gap-0.5 min-w-0">
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-baseline gap-1.5 flex-wrap">
                 <div className="font-mono text-xl md:text-2xl font-medium tracking-[-0.03em] text-ys-text">3.200</div>
                 <div className="font-mono text-xs md:text-[13px] text-ys-dimmer">/ 50.000</div>
               </div>
@@ -449,44 +449,48 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
             </div>
           </div>
           {statsLoading ? (
-            <div className="flex items-end gap-3 md:gap-4 h-[172px]">
-              {Array.from({ length: 7 }).map((_, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-2.5">
-                  <div className="w-full h-[140px] rounded-[3px] bg-ys-el2 animate-pulse" />
-                  <div className="text-[11.5px] text-ys-dimmer font-medium">&nbsp;</div>
-                </div>
-              ))}
+            <div className="overflow-x-auto -mx-5 md:mx-0 px-5 md:px-0">
+              <div className="flex items-end gap-3 md:gap-4 h-[172px] min-w-max md:min-w-0">
+                {Array.from({ length: 7 }).map((_, i) => (
+                  <div key={i} className="w-10 md:w-auto md:flex-1 flex flex-col items-center gap-2.5">
+                    <div className="w-full h-[140px] rounded-[3px] bg-ys-el2 animate-pulse" />
+                    <div className="text-[11.5px] text-ys-dimmer font-medium">&nbsp;</div>
+                  </div>
+                ))}
+              </div>
             </div>
           ) : !stats || stats.barras.every((b) => b.entregados === 0 && b.fallidos === 0) ? (
             <div className="h-[140px] flex items-center justify-center text-[13px] text-ys-dim font-medium">
               Todavía no hay envíos en este período.
             </div>
           ) : (
-            <div className="flex items-end gap-3 md:gap-4 h-[172px]">
-              {(() => {
-                const maxTotal = Math.max(1, ...stats.barras.map((b) => b.entregados + b.fallidos));
-                return stats.barras.map((b, i) => {
-                  const total = b.entregados + b.fallidos;
-                  // Altura mínima visual (2px) para que una barra con datos
-                  // no desaparezca del todo cuando el total es muy chico
-                  // respecto al máximo del set.
-                  const altoEntregados = b.entregados > 0 ? Math.max(2, (b.entregados / maxTotal) * 140) : 0;
-                  const altoFallidos = b.fallidos > 0 ? Math.max(2, (b.fallidos / maxTotal) * 140) : 0;
-                  return (
-                    <div key={`${b.label}-${i}`} className="flex-1 flex flex-col items-center gap-2.5">
-                      <div
-                        className="w-full flex flex-col justify-end gap-0.5 h-[140px]"
-                        style={{ animation: "ys-grow .6s cubic-bezier(.4,0,.2,1) both", transformOrigin: "bottom" }}
-                        title={`${b.label}: ${b.entregados} entregados, ${b.fallidos} fallidos${total === 0 ? " (sin envíos)" : ""}`}
-                      >
-                        <div className="rounded-t-[3px] bg-ys-border-softest" style={{ height: `${altoFallidos}px` }} />
-                        <div className="rounded-b-[3px] bg-ys-green" style={{ height: `${altoEntregados}px` }} />
+            <div className="overflow-x-auto -mx-5 md:mx-0 px-5 md:px-0">
+              <div className="flex items-end gap-3 md:gap-4 h-[172px] min-w-max md:min-w-0">
+                {(() => {
+                  const maxTotal = Math.max(1, ...stats.barras.map((b) => b.entregados + b.fallidos));
+                  return stats.barras.map((b, i) => {
+                    const total = b.entregados + b.fallidos;
+                    // Altura mínima visual (2px) para que una barra con datos
+                    // no desaparezca del todo cuando el total es muy chico
+                    // respecto al máximo del set.
+                    const altoEntregados = b.entregados > 0 ? Math.max(2, (b.entregados / maxTotal) * 140) : 0;
+                    const altoFallidos = b.fallidos > 0 ? Math.max(2, (b.fallidos / maxTotal) * 140) : 0;
+                    return (
+                      <div key={`${b.label}-${i}`} className="w-10 flex-none md:w-auto md:flex-1 flex flex-col items-center gap-2.5">
+                        <div
+                          className="w-full flex flex-col justify-end gap-0.5 h-[140px]"
+                          style={{ animation: "ys-grow .6s cubic-bezier(.4,0,.2,1) both", transformOrigin: "bottom" }}
+                          title={`${b.label}: ${b.entregados} entregados, ${b.fallidos} fallidos${total === 0 ? " (sin envíos)" : ""}`}
+                        >
+                          <div className="rounded-t-[3px] bg-ys-border-softest" style={{ height: `${altoFallidos}px` }} />
+                          <div className="rounded-b-[3px] bg-ys-green" style={{ height: `${altoEntregados}px` }} />
+                        </div>
+                        <div className="text-[11.5px] text-ys-dimmer font-medium">{b.label}</div>
                       </div>
-                      <div className="text-[11.5px] text-ys-dimmer font-medium">{b.label}</div>
-                    </div>
-                  );
-                });
-              })()}
+                    );
+                  });
+                })()}
+              </div>
             </div>
           )}
         </div>
