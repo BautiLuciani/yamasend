@@ -201,6 +201,16 @@ export type ChatPayload =
       contactosAnalizados: number;
       leadsIdentificados: number;
       contactosProcesados: number;
+      // Detalle seleccionable de los contactos importados en esta corrida,
+      // para la tarjeta de checkboxes que aparece debajo del resumen. Solo
+      // incluye los que se pudieron resolver a un id real de yamas_send_leads
+      // (necesario para poder usarlos en saveListAction más adelante).
+      contactosImportados: {
+        contactoId: string;
+        nombre: string;
+        telefono: string;
+        temperatura: "caliente" | "tibio" | "frio";
+      }[];
     }
   | {
       kind: "resultados_busqueda_contactos";
@@ -271,6 +281,17 @@ export interface IAFlowState {
     fechaProgramada?: string | null;
     diasAnalisis?: number;
     limiteContactos?: number;
+    // Último resultado de importación de contactos disponible en esta
+    // conversación, para que el usuario pueda pedir por texto libre "armá
+    // una audiencia con los calientes que acabás de importar" sin tener que
+    // reescribir la lista. Se pisa cada vez que termina una importación y
+    // persiste aunque el flujo vuelva a IA_FLOW_IDLE.
+    ultimaImportacion?: {
+      contactoId: string;
+      nombre: string;
+      telefono: string;
+      temperatura: "caliente" | "tibio" | "frio";
+    }[];
   };
 }
 
@@ -347,6 +368,15 @@ export interface SyncResult {
   erroresGuardado: number;
   mensaje?: string;
   error?: string;
+  // Detalle de los contactos efectivamente analizados en esta corrida (no
+  // incluye los saltados por falta de mensajes recientes), ordenados por
+  // score de interés descendente. Viene directo del workflow de n8n.
+  leads?: {
+    telefono: string;
+    nombre: string | null;
+    temperatura: "caliente" | "tibio" | "frio";
+    scoreInteres: number;
+  }[];
 }
 
 // Valores reales de yamas_send_activity_log.tipo en Supabase (constraint CHECK).

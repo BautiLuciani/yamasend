@@ -80,6 +80,7 @@ import {
   confirmarCreacionCampanaAction,
   confirmarImportarContactosAction,
   iniciarAudienciaDesdeResultadosBusquedaAction,
+  iniciarAudienciaDesdeImportacionAction,
 } from "@/lib/actions/ia";
 import {
   cargarConversacionIAAction,
@@ -1079,6 +1080,19 @@ export default function AppShell({
     }
   }
 
+  async function handleIACrearAudienciaDesdeImportacion(
+    contactosIds: string[],
+  ) {
+    setIaSending(true);
+    try {
+      const res = await iniciarAudienciaDesdeImportacionAction(contactosIds);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
   function handleLogout() {
     setProfileOpen(false);
     setDrawerOpen(false);
@@ -1223,6 +1237,7 @@ export default function AppShell({
           onVerCampana={handleIAVerCampana}
           onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
           onCrearAudienciaDesdeBusqueda={handleIACrearAudienciaDesdeBusqueda}
+          onCrearAudienciaDesdeImportacion={handleIACrearAudienciaDesdeImportacion}
           onNuevaConversacion={handleIANuevaConversacion}
           onSeleccionarConversacion={handleIASeleccionarConversacion}
           conversacionActivaId={iaConversacionId}

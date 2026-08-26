@@ -27,6 +27,7 @@ interface IAProps {
   onVerCampana: (campanaId: string) => void;
   onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
   onCrearAudienciaDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
+  onCrearAudienciaDesdeImportacion: (contactosIds: string[]) => void;
   onNuevaConversacion: () => void;
   onSeleccionarConversacion: (conversacionId: string) => void;
   conversacionActivaId: string | null;
@@ -80,6 +81,7 @@ export default function IA({
   onVerCampana,
   onConfirmarImportarContactos,
   onCrearAudienciaDesdeBusqueda,
+  onCrearAudienciaDesdeImportacion,
   onNuevaConversacion,
   onSeleccionarConversacion,
   conversacionActivaId,
@@ -313,6 +315,7 @@ export default function IA({
                       onVerCampana,
                       onConfirmarImportarContactos,
                       onCrearAudienciaDesdeBusqueda,
+                      onCrearAudienciaDesdeImportacion,
                     },
                     m.id === lastBotMessageId,
                   )}

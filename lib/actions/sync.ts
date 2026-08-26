@@ -101,6 +101,20 @@ export async function syncAndAnalyzeAction(
       }
     }
 
+    const leads = Array.isArray(data.leads)
+      ? data.leads
+          .filter((l: unknown): l is Record<string, unknown> => !!l && typeof l === "object")
+          .map((l: Record<string, unknown>) => ({
+            telefono: String(l.telefono ?? ""),
+            nombre: typeof l.nombre === "string" ? l.nombre : null,
+            temperatura: (["caliente", "tibio", "frio"].includes(l.temperatura as string)
+              ? l.temperatura
+              : "frio") as "caliente" | "tibio" | "frio",
+            scoreInteres: Number(l.score_interes ?? 0),
+          }))
+          .filter((l: { telefono: string }) => l.telefono)
+      : undefined;
+
     return {
       success: data.success ?? true,
       contactosProcesados,
@@ -109,6 +123,7 @@ export async function syncAndAnalyzeAction(
       leadsIdentificados,
       erroresGuardado: data.errores_guardado ?? 0,
       mensaje: data.mensaje,
+      leads,
     };
   } catch {
     return {

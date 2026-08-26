@@ -246,6 +246,7 @@ export function renderChatCard(
     onVerCampana: (campanaId: string) => void;
     onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
     onCrearAudienciaDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
+    onCrearAudienciaDesdeImportacion: (contactosIds: string[]) => void;
   },
   isLatest: boolean,
 ) {
@@ -389,11 +390,20 @@ export function renderChatCard(
   }
   if (payload.kind === "importacion_completada") {
     return (
-      <ImportacionCompletadaCard
-        contactosAnalizados={payload.contactosAnalizados}
-        leadsIdentificados={payload.leadsIdentificados}
-        contactosProcesados={payload.contactosProcesados}
-      />
+      <div className="flex flex-col gap-3">
+        <ImportacionCompletadaCard
+          contactosAnalizados={payload.contactosAnalizados}
+          leadsIdentificados={payload.leadsIdentificados}
+          contactosProcesados={payload.contactosProcesados}
+        />
+        {payload.contactosImportados.length > 0 && (
+          <ContactosImportadosCard
+            contactos={payload.contactosImportados}
+            onCrearAudiencia={handlers.onCrearAudienciaDesdeImportacion}
+            disabled={!isLatest}
+          />
+        )}
+      </div>
     );
   }
   if (payload.kind === "resultados_busqueda_contactos") {
@@ -1106,6 +1116,134 @@ export function ImportacionCompletadaCard({
       <div className="flex flex-col gap-0.5 rounded-xl bg-ys-green px-3 py-2.5">
         <div className="font-mono text-base font-medium text-white">{leadsIdentificados}</div>
         <div className="text-[10px] uppercase tracking-[0.03em] font-semibold text-white/80">Con interés</div>
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: contactos importados (acompaña a ImportacionCompletadaCard)
+// Lista seleccionable de los contactos analizados en la última importación,
+// con nombre + teléfono + temperatura. Todos preseleccionados por default
+// (mismo criterio que ResultadosBusquedaContactosCard), con un checkbox
+// "Seleccionar todos" en el header además del toggle individual por fila.
+// -------------------------------------------------------------------------
+interface ContactoImportado {
+  contactoId: string;
+  nombre: string;
+  telefono: string;
+  temperatura: "caliente" | "tibio" | "frio";
+}
+
+interface ContactosImportadosCardProps {
+  contactos: ContactoImportado[];
+  onCrearAudiencia: (contactosIds: string[]) => void;
+  disabled?: boolean;
+}
+
+export function ContactosImportadosCard({
+  contactos,
+  onCrearAudiencia,
+  disabled,
+}: ContactosImportadosCardProps) {
+  const [selected, setSelected] = useState<Set<string>>(
+    new Set(contactos.map((c) => c.contactoId)),
+  );
+  const [confirmado, setConfirmado] = useState(false);
+
+  const todosSeleccionados = selected.size === contactos.length && contactos.length > 0;
+
+  function toggle(id: string) {
+    if (confirmado || disabled) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleTodos() {
+    if (confirmado || disabled) return;
+    setSelected(todosSeleccionados ? new Set() : new Set(contactos.map((c) => c.contactoId)));
+  }
+
+  if (contactos.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl overflow-hidden flex flex-col">
+      <div className="flex items-center gap-2.5 px-4 py-3 border-b border-ys-border-softest">
+        <button
+          onClick={toggleTodos}
+          disabled={confirmado || disabled}
+          className="flex items-center gap-2 text-left disabled:cursor-default"
+        >
+          <div className="w-[18px] h-[18px] flex-none rounded-[6px] border-[1.5px] border-ys-border bg-white flex items-center justify-center">
+            {todosSeleccionados && (
+              <div className="w-[18px] h-[18px] -m-[1.5px] rounded-[6px] bg-ys-green flex items-center justify-center">
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                  <path d="m3 8.4 3.4 3L13 4.6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </div>
+            )}
+          </div>
+          <span className="text-[12.5px] font-bold text-ys-text">Seleccionar todos</span>
+        </button>
+        <div className="flex-1" />
+        <div className="flex-none text-xs font-bold text-ys-green-text bg-ys-green-bg rounded-full px-2.5 py-1">
+          {selected.size} seleccionado{selected.size === 1 ? "" : "s"}
+        </div>
+      </div>
+
+      <div className="max-h-[320px] overflow-y-auto flex flex-col">
+        {contactos.map((c) => {
+          const active = selected.has(c.contactoId);
+          return (
+            <button
+              key={c.contactoId}
+              onClick={() => toggle(c.contactoId)}
+              disabled={confirmado || disabled}
+              className="flex items-center gap-3 px-4 py-2.5 border-b border-ys-border-softest last:border-b-0 text-left transition-colors hover:bg-[#f7fbf9] disabled:hover:bg-transparent disabled:cursor-default"
+            >
+              <div className="w-[18px] h-[18px] flex-none rounded-[6px] border-[1.5px] border-ys-border bg-white flex items-center justify-center">
+                {active && (
+                  <div className="w-[18px] h-[18px] -m-[1.5px] rounded-[6px] bg-ys-green flex items-center justify-center">
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                      <path d="m3 8.4 3.4 3L13 4.6" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+              <div className="w-[30px] h-[30px] flex-none rounded-full bg-ys-el2 text-[#5d6560] text-[11px] font-extrabold flex items-center justify-center">
+                {initialsOf(c.nombre)}
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                <div className="text-[13.5px] font-bold text-ys-text truncate">
+                  {c.nombre || "Sin nombre"}
+                </div>
+                <div className="font-mono text-[11.5px] text-ys-dim truncate">
+                  {c.telefono || "—"}
+                </div>
+              </div>
+              <ScoreBadge score={c.temperatura} />
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="px-4 py-3 border-t border-ys-border-softest">
+        <button
+          onClick={() => {
+            setConfirmado(true);
+            onCrearAudiencia(Array.from(selected));
+          }}
+          disabled={confirmado || disabled || selected.size === 0}
+          className="w-full text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {confirmado
+            ? "Creando audiencia..."
+            : `Crear audiencia con ${selected.size} contacto${selected.size === 1 ? "" : "s"}`}
+        </button>
       </div>
     </div>
   );

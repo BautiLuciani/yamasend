@@ -259,6 +259,107 @@ async function preseleccionarPorConsulta(
     .map((r) => r.id);
 }
 
+/**
+ * Resuelve el id real de yamas_send_leads para cada teléfono recién
+ * analizado por syncAndAnalyzeAction (que solo devuelve teléfonos, ya que
+ * el upsert ocurre server-side en el workflow de n8n). Mismo id que ya usa
+ * el resto del flujo de audiencias (preseleccionarPorConsulta, etc.).
+ */
+async function resolverLeadsPorTelefono(
+  tenantId: string,
+  leads: { telefono: string; nombre: string | null; temperatura: "caliente" | "tibio" | "frio" }[],
+): Promise<{ contactoId: string; nombre: string; telefono: string; temperatura: "caliente" | "tibio" | "frio" }[]> {
+  if (leads.length === 0) return [];
+
+  const supabase = await createClient();
+  const { data: rows } = await supabase
+    .from("yamas_send_leads")
+    .select("id, telefono, nombre")
+    .eq("tenant_id", tenantId)
+    .in(
+      "telefono",
+      leads.map((l) => l.telefono),
+    );
+
+  if (!rows) return [];
+
+  const porTelefono = new Map(rows.map((r) => [r.telefono, r]));
+
+  return leads
+    .map((l) => {
+      const row = porTelefono.get(l.telefono);
+      if (!row) return null;
+      return {
+        contactoId: row.id,
+        nombre: l.nombre || row.nombre || "Sin nombre",
+        telefono: l.telefono,
+        temperatura: l.temperatura,
+      };
+    })
+    .filter((l): l is NonNullable<typeof l> => l !== null);
+}
+
+// -----------------------------------------------------------------------
+// Detección determinística (sin LLM) de pedidos tipo "armá una audiencia
+// con los calientes que acabás de importar". Se chequea ANTES del
+// clasificador de intención por dos motivos: es gratis/instantáneo, y
+// depende de un dato (draft.ultimaImportacion) que el clasificador no
+// conoce y no tendría cómo usar aunque detectara la intención correcta.
+// Requiere:
+//   1) alguna palabra que refiera a la importación reciente ("importé",
+//      "importaste", "acabo de importar", "sincronicé", etc.)
+//   2) opcionalmente, un filtro de temperatura ("calientes", "tibios",
+//      "fríos"/"frios") — si no hay filtro, se toman todos los importados.
+// Si (1) no matchea, no se activa esta rama y el mensaje sigue el camino
+// normal (clasificarIntencion), aunque haya una importación reciente en el
+// draft — evita falsos positivos con mensajes que no la mencionan.
+// -----------------------------------------------------------------------
+const REGEX_REFERENCIA_IMPORTACION =
+  /import(e|é|aste|ados?)|sincron(ice|icé|izaste|izados?)|acab[oa]s?\s+de\s+(importar|sincronizar)/i;
+
+function detectarFiltroTemperatura(
+  texto: string,
+): "caliente" | "tibio" | "frio" | null {
+  if (/calient/i.test(texto)) return "caliente";
+  if (/tibi/i.test(texto)) return "tibio";
+  if (/fr[ií]/i.test(texto)) return "frio";
+  return null;
+}
+
+function intentaAudienciaDesdeUltimaImportacion(
+  texto: string,
+  flowState: IAFlowState,
+): IAResponse | null {
+  const ultimaImportacion = flowState.draft.ultimaImportacion;
+  if (!ultimaImportacion || ultimaImportacion.length === 0) return null;
+  if (!REGEX_REFERENCIA_IMPORTACION.test(texto)) return null;
+
+  const filtroTemp = detectarFiltroTemperatura(texto);
+  const seleccionados = filtroTemp
+    ? ultimaImportacion.filter((c) => c.temperatura === filtroTemp)
+    : ultimaImportacion;
+
+  if (seleccionados.length === 0) {
+    const etiqueta = filtroTemp === "caliente" ? "calientes" : filtroTemp === "tibio" ? "tibios" : "fríos";
+    return {
+      text: `De los contactos que importé recién no encontré ninguno ${etiqueta}. ¿Querés que arme la audiencia con todos igual?`,
+      flowState,
+    };
+  }
+
+  return {
+    text: `Dale, armemos una audiencia con ${filtroTemp ? `los ${seleccionados.length} contactos ${filtroTemp === "caliente" ? "calientes" : filtroTemp === "tibio" ? "tibios" : "fríos"}` : `los ${seleccionados.length} contactos`} que acabo de importar. ¿Cómo querés que se llame?`,
+    flowState: {
+      kind: "crear_audiencia",
+      step: "audiencia_esperando_nombre",
+      draft: {
+        contactosIds: seleccionados.map((c) => c.contactoId),
+        contactosIdsResueltos: true,
+      },
+    },
+  };
+}
+
 // -----------------------------------------------------------------------
 // Punto de entrada único del chat de IA. Recibe el mensaje del usuario, el
 // historial corto (para el clasificador) y el estado de flujo actual.
@@ -295,6 +396,13 @@ export async function sendIAMessageAction(
   // ---- Flujo activo: importar_contactos --------------------------------
   if (flowState.kind === "importar_contactos") {
     return handleImportarContactosStep(texto, flowState);
+  }
+
+  // ---- Sin flujo activo, pero con una importación reciente disponible ---
+  // (ver comentario de intentaAudienciaDesdeUltimaImportacion más arriba)
+  if (!flowState.kind) {
+    const respuestaImportacion = intentaAudienciaDesdeUltimaImportacion(texto, flowState);
+    if (respuestaImportacion) return respuestaImportacion;
   }
 
   // ---- Sin flujo activo: clasificar intención --------------------------
@@ -1453,18 +1561,63 @@ export async function confirmarImportarContactosAction(
     };
   }
 
+  // Resolvemos el id real de yamas_send_leads para cada teléfono analizado,
+  // para poder mostrarlos en una tarjeta seleccionable y, si el usuario pide
+  // "armá una audiencia con estos", reusar directo el flujo de crear_audiencia
+  // sin tener que volver a preguntarle nada.
+  const tenantId = await resolverTenantId();
+  const contactosImportados =
+    tenantId && result.leads && result.leads.length > 0
+      ? await resolverLeadsPorTelefono(tenantId, result.leads)
+      : [];
+
   return {
     text:
       result.contactosAnalizados > 0
-        ? `Listo, analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés. Ya podés verlos en Contactos, crear una audiencia, o pedirme que busque algo puntual entre ellos.`
+        ? `Listo, analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés. Elegí de la lista de abajo, o pedime algo como "armá una audiencia con los calientes que acabás de importar".`
         : `Terminé de revisar, pero no encontré contactos con mensajes en ese rango. ${result.mensaje ?? ""}`.trim(),
     payload: {
       kind: "importacion_completada",
       contactosAnalizados: result.contactosAnalizados,
       leadsIdentificados: result.leadsIdentificados,
       contactosProcesados: result.contactosProcesados,
+      contactosImportados,
     },
-    flowState: IA_FLOW_IDLE,
+    // IA_FLOW_IDLE pero conservando el detalle de esta importación en el
+    // draft, para que un mensaje de texto libre posterior ("armá audiencia
+    // con los calientes que importaste") pueda encontrarlo — ver
+    // detectarPedidoAudienciaDesdeImportacion en clasificarIntencion.
+    flowState: {
+      kind: null,
+      step: null,
+      draft: { ultimaImportacion: contactosImportados },
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario toca "Crear audiencia con seleccionados" desde
+ * la tarjeta de contactos importados. Mismo patrón que
+ * iniciarAudienciaDesdeResultadosBusquedaAction: los ids ya vienen resueltos,
+ * así que saltamos directo a pedir el nombre sin volver a analizar nada.
+ */
+export async function iniciarAudienciaDesdeImportacionAction(
+  contactosIds: string[],
+): Promise<IAResponse> {
+  if (contactosIds.length === 0) {
+    return {
+      text: "No hay contactos seleccionados para agrupar.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text: `Dale, armemos una audiencia con estos ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}. ¿Cómo querés que se llame?`,
+    flowState: {
+      kind: "crear_audiencia",
+      step: "audiencia_esperando_nombre",
+      draft: { contactosIds, contactosIdsResueltos: true },
+    },
   };
 }
 
