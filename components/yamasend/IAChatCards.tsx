@@ -419,7 +419,81 @@ export function renderChatCard(
   if (payload.kind === "respuesta_analitica") {
     return <RespuestaAnaliticaCard titulo={payload.titulo} filas={payload.filas} />;
   }
+  if (payload.kind === "tabla_datos") {
+    return (
+      <TablaDatosCard
+        titulo={payload.titulo}
+        columnas={payload.columnas}
+        filas={payload.filas}
+        totalDisponible={payload.totalDisponible}
+      />
+    );
+  }
   return null;
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: tabla_datos
+// Tabla genérica que adjunta el agente de IA cuando consultó datos reales.
+// Las columnas y filas vienen armadas desde la herramienta que el agente
+// eligió llamar, así que la tabla siempre corresponde a lo que se preguntó
+// — a diferencia del enfoque anterior, donde cada tipo de pregunta tenía
+// una plantilla fija y terminaba mostrando datos que no venían al caso.
+// -------------------------------------------------------------------------
+interface TablaDatosCardProps {
+  titulo: string;
+  columnas: string[];
+  filas: string[][];
+  totalDisponible?: number;
+}
+
+function TablaDatosCard({ titulo, columnas, filas, totalDisponible }: TablaDatosCardProps) {
+  const ocultas = totalDisponible != null ? totalDisponible - filas.length : 0;
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl overflow-hidden">
+      <div className="px-4 py-2.5 bg-ys-green-bg text-xs font-bold text-ys-green-text border-b border-ys-border-softest">
+        {titulo}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-ys-border-softest">
+              {columnas.map((col, i) => (
+                <th
+                  key={i}
+                  className="px-4 py-2 text-left text-[10px] uppercase tracking-[0.03em] font-semibold text-ys-dim whitespace-nowrap"
+                >
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-ys-border-softest">
+            {filas.map((fila, i) => (
+              <tr key={i}>
+                {fila.map((celda, j) => (
+                  <td
+                    key={j}
+                    className={`px-4 py-2.5 whitespace-nowrap ${
+                      j === 0 ? "text-ys-text font-medium" : "text-ys-dim font-mono text-xs"
+                    }`}
+                  >
+                    {celda}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {ocultas > 0 && (
+        <div className="px-4 py-2 text-xs text-ys-dim border-t border-ys-border-softest">
+          y {ocultas} más
+        </div>
+      )}
+    </div>
+  );
 }
 
 // -------------------------------------------------------------------------

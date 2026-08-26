@@ -59,15 +59,25 @@ export interface IAResponse {
 // estructurada) porque la mayoría de los mensajes durante un flujo ya
 // resuelto no pasan por acá (ver sendIAMessageAction más abajo).
 // -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
+// Clasificador de intención. Su ÚNICO trabajo ahora es detectar si el
+// usuario está pidiendo una ACCIÓN que dispara un flujo guiado con UI de
+// confirmación (crear audiencia/template/campaña, importar contactos).
+//
+// Todo lo demás — preguntas sobre sus datos, búsquedas, saludos, charla —
+// va al agente de datos, que tiene herramientas reales y decide por su
+// cuenta qué consultar. Antes el clasificador también intentaba distinguir
+// entre "pregunta analítica", "búsqueda de contactos" y "charla", y ahí se
+// producían los errores de ruteo: "pasame los contactos fríos" caía en
+// búsqueda de texto y buscaba la frase literal dentro de los mensajes.
+// Menos casilleros = menos formas de errarle.
+// -----------------------------------------------------------------------
 type Intencion =
   | { tipo: "crear_audiencia"; consulta: string | null }
   | { tipo: "crear_template" }
   | { tipo: "crear_campana" }
   | { tipo: "importar_contactos" }
-  | { tipo: "buscar_contactos"; consulta: string }
-  | { tipo: "consulta_analitica"; pregunta: string }
-  | { tipo: "charla"; mensaje: string }
-  | { tipo: "otra" };
+  | { tipo: "conversar" };
 
 async function clasificarIntencion(
   mensaje: string,
@@ -100,26 +110,22 @@ async function clasificarIntencion(
     messages: [
       {
         role: "system",
-        content: `Sos el clasificador de intención del chat de IA de YamaSend, una plataforma de mensajería masiva por WhatsApp para inmobiliarias y negocios similares.
+        content: `Sos el detector de acciones del chat de IA de YamaSend, una plataforma de mensajería masiva por WhatsApp.
 
-Tu única tarea es decidir qué quiere hacer el usuario a partir de su último mensaje (y el historial reciente como contexto). Devolvé ÚNICAMENTE un JSON con esta forma exacta:
+Tu única tarea es decidir si el último mensaje del usuario pide EJECUTAR una de estas 4 acciones concretas, o si es cualquier otra cosa. Devolvé ÚNICAMENTE un JSON con esta forma exacta:
 
-{"tipo": "crear_audiencia" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "consulta_analitica" | "charla" | "otra", "consulta": string | null}
+{"tipo": "crear_audiencia" | "crear_template" | "crear_campana" | "importar_contactos" | "conversar", "consulta": string | null}
 
-- "crear_audiencia": el usuario quiere armar/crear una lista o audiencia de contactos directamente (ej: "creame una audiencia con los que preguntaron por X", "quiero armar una audiencia nueva").
-  - Si además especificó un criterio de selección en lenguaje natural, poné ese criterio tal cual en "consulta". Si no especificó ningún criterio, "consulta" debe ser null.
-- "crear_template": el usuario quiere crear/redactar un template o mensaje para mandar a aprobar a Meta/WhatsApp.
-- "crear_campana": el usuario quiere armar o enviar una campaña de mensajes.
-- "importar_contactos": el usuario quiere importar, sincronizar o traer sus contactos de WhatsApp (ej: "importá mis contactos", "sincronizá mis chats", "traé mis contactos nuevos").
-- "buscar_contactos": el usuario quiere VER o ENCONTRAR contactos según un tema que se haya hablado en las conversaciones, SIN pedir explícitamente crear una audiencia (ej: "mostrame los que hablamos de Coca-Cola", "quiénes preguntaron por el departamento de 3 ambientes", "buscá contactos que mencionaron descuentos"). La clave para diferenciarlo de "crear_audiencia": acá el usuario quiere VER/EXPLORAR resultados primero, no está pidiendo crear una audiencia de una.
-  - En este caso, "consulta" es obligatorio: el tema o palabra clave que hay que buscar (ej: "coca cola", "departamento de 3 ambientes").
-- "consulta_analitica": el usuario está preguntando por MÉTRICAS, DESEMPEÑO, CONTEOS o HECHOS CONCRETOS sobre sus recursos en la plataforma: campañas, mensajes, gasto, AUDIENCIAS, TEMPLATES o CONTACTOS/LEADS. Incluye preguntas cronológicas (primera/última campaña o audiencia), rankings de desempeño, conteos por tema o por estado, gasto en un período, o mejor horario de envío (ej: "cuál fue la primera campaña que envié", "cuál fue mi primera audiencia", "cuántas audiencias tengo", "cuántos templates aprobados tengo", "cuántos contactos calientes tengo", "cuál fue la campaña que mejor rindió este mes", "cuánto gasté la semana pasada", "cuál es el mejor horario para mandar campañas"). Si la pregunta es sobre SUS DATOS REALES en la plataforma, sea cual sea el recurso (campaña, audiencia, template, contacto), preferí este tipo antes que "otra" — es mejor intentar buscar el dato real que asumir que no se puede.
-  - En este caso, "consulta" es obligatorio: la pregunta del usuario tal cual la escribió (se usa después para extraer parámetros como fechas o temas).
-- "charla": saludos, agradecimientos, despedidas, charla casual, preguntas sobre qué puede hacer el asistente, o cualquier mensaje conversacional que NO pide un dato concreto de la cuenta ni una acción del sistema (ej: "hola", "cómo andás", "gracias", "qué podés hacer", "buen día").
-  - En este caso, "consulta" es obligatorio: el mensaje del usuario tal cual lo escribió.
-- "otra": cualquier otra cosa que no encaje en ninguna de las anteriores.
+- "crear_audiencia": pide CREAR/ARMAR una audiencia o lista de contactos (ej: "creame una audiencia con los que preguntaron por X", "armá una lista nueva").
+  - Si especificó un criterio de selección, poné ese criterio en "consulta". Si no, null.
+- "crear_template": pide CREAR/REDACTAR un template o mensaje para mandar a aprobar a Meta.
+- "crear_campana": pide ARMAR o ENVIAR una campaña.
+- "importar_contactos": pide IMPORTAR o SINCRONIZAR sus contactos de WhatsApp.
+- "conversar": TODO lo demás. Incluye saludos, charla, y MUY IMPORTANTE: cualquier PREGUNTA sobre sus datos (cuántas audiencias tengo, cuál campaña rindió mejor, pasame los contactos fríos, quiénes hablaron de X, cuánto gasté, cuál es el mejor horario...). Preguntar POR datos no es lo mismo que pedir CREAR algo.
 
-Para "crear_template", "crear_campana", "importar_contactos" y "otra", "consulta" siempre va null.
+Regla clave: solo devolvé una de las 4 acciones si el usuario pide claramente EJECUTAR esa acción. Ante la duda, "conversar".
+
+Para "crear_template", "crear_campana", "importar_contactos" y "conversar", "consulta" siempre va null.
 No agregues texto fuera del JSON.${bloqueContextoNegocio}`,
       },
       {
@@ -140,98 +146,10 @@ No agregues texto fuera del JSON.${bloqueContextoNegocio}`,
     if (parsed.tipo === "crear_template") return { tipo: "crear_template" };
     if (parsed.tipo === "crear_campana") return { tipo: "crear_campana" };
     if (parsed.tipo === "importar_contactos") return { tipo: "importar_contactos" };
-    if (parsed.tipo === "buscar_contactos" && parsed.consulta) {
-      return { tipo: "buscar_contactos", consulta: String(parsed.consulta) };
-    }
-    if (parsed.tipo === "consulta_analitica" && parsed.consulta) {
-      return { tipo: "consulta_analitica", pregunta: String(parsed.consulta) };
-    }
-    if (parsed.tipo === "charla" && parsed.consulta) {
-      return { tipo: "charla", mensaje: String(parsed.consulta) };
-    }
-    return { tipo: "otra" };
+    return { tipo: "conversar" };
   } catch {
-    return { tipo: "otra" };
+    return { tipo: "conversar" };
   }
-}
-
-// -----------------------------------------------------------------------
-// Flujo: charla
-// Cubre saludos, charla casual, agradecimientos y cualquier mensaje que no
-// pide una acción ni un dato concreto. A diferencia del resto del chat
-// (máquina de estados determinística + RPCs), acá SÍ dejamos que el LLM
-// redacte libremente el texto de respuesta — es la única rama donde eso es
-// seguro, porque no hay ningún dato de negocio real que pueda inventarse:
-// el prompt tiene una regla explícita para nunca afirmar un número, nombre
-// de campaña, o hecho de la cuenta que no venga de una función anterior.
-// Si el mensaje en realidad pedía un dato, ya no llega acá: lo intercepta
-// "consulta_analitica" o "buscar_contactos" antes en el clasificador.
-//
-// gpt-4o-mini igual (mismo modelo barato que el resto del chat) — acá el
-// costo es por redacción de tono, no por razonamiento complejo, así que no
-// hace falta un modelo más caro.
-// -----------------------------------------------------------------------
-async function responderCharla(
-  mensaje: string,
-  history: IAHistoryTurn[],
-  contexto: ContextoNegocio | null,
-): Promise<IAResponse> {
-  const openai = getOpenAI();
-
-  const contextoHistorial = history
-    .slice(-8)
-    .map((h) => `${h.role === "user" ? "Usuario" : "Asistente"}: ${h.text}`)
-    .join("\n");
-
-  const lineasPersonalidad = contexto
-    ? [
-        contexto.nombreUsuario && `El usuario se llama ${contexto.nombreUsuario} — llamalo por su nombre de pila cuando quede natural, no en cada mensaje.`,
-        contexto.nombreEmpresa && `Trabaja en/con la empresa "${contexto.nombreEmpresa}".`,
-        contexto.rubro && `Rubro del negocio: ${contexto.rubro}.`,
-        contexto.tonoComunicacion && `Tono de comunicación que prefiere la marca: ${contexto.tonoComunicacion}.`,
-        contexto.diferenciales && `Diferenciales que destacan de su negocio: ${contexto.diferenciales}.`,
-      ].filter(Boolean)
-    : [];
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.6,
-    max_tokens: 200,
-    messages: [
-      {
-        role: "system",
-        content: `Sos el asistente conversacional de YamaSend, una plataforma de mensajería masiva por WhatsApp. Estás charlando con el dueño o encargado de una cuenta de YamaSend, DENTRO del panel de la app.
-
-Cómo hablar:
-- Hablá como una persona real, natural y cercana, en español rioplatense (voseo: "vos", "tenés", "querés"). Nada de tono de manual ni de call center.
-- Sé breve: 1-3 oraciones salvo que la situación pida más.
-- No repitas el nombre del usuario en cada mensaje ni fuerces referencias a su negocio si no vienen a cuento — usalas solo cuando aporten calidez genuina.
-${lineasPersonalidad.length ? "\nDatos reales de esta cuenta que podés usar para sonar más cercano (nunca inventes datos que no estén acá):\n" + lineasPersonalidad.join("\n") : ""}
-
-Qué podés hacer (mencionalo SOLO si el usuario pregunta qué hacés o parece perdido, nunca como respuesta genérica a un saludo):
-- Importar/sincronizar sus contactos de WhatsApp
-- Crear audiencias, templates y campañas hablando en lenguaje natural
-- Buscar contactos por tema en su historial de conversaciones
-- Responder preguntas con datos reales de la cuenta: cuántas audiencias/templates/contactos tiene, cuál fue su primera o última campaña o audiencia, cuál campaña rindió mejor, cuánto gastó, o cuál es su mejor horario para enviar
-
-Reglas estrictas:
-- NUNCA inventes ni afirmes un número, nombre de campaña, estadística o cualquier hecho concreto de la cuenta del usuario — no tenés acceso a esos datos acá. Si el usuario te pregunta algo así, decile amablemente que se lo buscás si te lo vuelve a pedir como pregunta (por ejemplo: "esa te la puedo averiguar, preguntame directamente por ese dato y te tiro los números reales").
-- No prometas acciones que no podés cumplir vos mismo en este chat.`,
-      },
-      {
-        role: "user",
-        content: contextoHistorial
-          ? `Historial reciente:\n${contextoHistorial}\n\nÚltimo mensaje del usuario: ${mensaje}`
-          : mensaje,
-      },
-    ],
-  });
-
-  const texto =
-    completion.choices[0]?.message?.content?.trim() ||
-    "¡Hola! ¿En qué te ayudo hoy?";
-
-  return { text: texto, flowState: IA_FLOW_IDLE };
 }
 
 // -----------------------------------------------------------------------
@@ -506,20 +424,18 @@ export async function sendIAMessageAction(
     if (respuestaImportacion) return respuestaImportacion;
   }
 
-  // ---- Sin flujo activo: clasificar intención --------------------------
-  const contextoNegocioParaCharla = await resolverContextoNegocio();
+  // ---- Sin flujo activo: detectar si pide una acción -------------------
+  const contextoNegocio = await resolverContextoNegocio();
   let intencion: Intencion;
   try {
-    intencion = await clasificarIntencion(texto, history, contextoNegocioParaCharla);
+    intencion = await clasificarIntencion(texto, history, contextoNegocio);
   } catch (e) {
     // Log server-side con el detalle real (nunca se muestra tal cual al
     // usuario, pero queda en los runtime logs de Vercel para diagnosticar).
     console.error("[IA] Error en clasificarIntencion:", e);
-    return {
-      text: "Tuve un problema para entender tu pedido. ¿Podés reformularlo?",
-      flowState: IA_FLOW_IDLE,
-      error: e instanceof Error ? e.message : "Error desconocido",
-    };
+    // Degradamos al agente en vez de cortar: si el detector de acciones
+    // falla, lo más probable es que fuera una pregunta, no una acción.
+    intencion = { tipo: "conversar" };
   }
 
   if (intencion.tipo === "crear_audiencia") {
@@ -538,23 +454,22 @@ export async function sendIAMessageAction(
     return await iniciarFlujoImportarContactos();
   }
 
-  if (intencion.tipo === "buscar_contactos") {
-    return buscarContactosPorTema(intencion.consulta);
+  // "conversar": todo lo demás lo maneja el agente de datos — preguntas
+  // sobre audiencias/contactos/templates/campañas/métricas, búsquedas en
+  // conversaciones, saludos y charla general. El agente decide por su
+  // cuenta qué herramientas llamar y redacta la respuesta mirando los
+  // datos reales que le vuelven.
+  const tenantId = await resolverTenantId();
+  try {
+    return await responderConAgente(texto, history, contextoNegocio, tenantId);
+  } catch (e) {
+    console.error("[IA] Error en responderConAgente:", e);
+    return {
+      text: "Se me complicó procesar eso. ¿Probamos de nuevo en un momento?",
+      flowState: IA_FLOW_IDLE,
+      error: e instanceof Error ? e.message : "Error desconocido",
+    };
   }
-
-  if (intencion.tipo === "consulta_analitica") {
-    return responderConsultaAnalitica(intencion.pregunta);
-  }
-
-  if (intencion.tipo === "charla") {
-    return responderCharla(intencion.mensaje, history, contextoNegocioParaCharla);
-  }
-
-  // "otra": red de seguridad para lo que ni siquiera "charla" pudo cubrir
-  // (el clasificador no está seguro de qué es). Mismo tratamiento que
-  // "charla" — nunca mostramos un manual de instrucciones frío acá tampoco,
-  // pero sin el contexto conversacional adicional que sí usa "charla".
-  return responderCharla(texto, history, contextoNegocioParaCharla);
 }
 
 // -----------------------------------------------------------------------
@@ -1729,17 +1644,24 @@ export async function iniciarAudienciaDesdeImportacionAction(
 }
 
 // -----------------------------------------------------------------------
-// Flujo: buscar_contactos
-// Búsqueda de texto completo (Postgres tsvector) sobre el histórico de
-// mensajes ya persistido por el workflow de sync — NO vuelve a llamar a
-// la IA ni a WAHA en vivo, por eso responde en milisegundos incluso con
-// miles de mensajes acumulados. Si no hay resultados, ofrece de una el
-// flujo de importar/sincronizar contactos (que es lo que llena esta
-// tabla), en vez de solo avisar que no encontró nada.
+// Flujo: buscar_contactos — INACTIVO desde la migración al agente de datos.
+//
+// El agente cubre ahora la búsqueda por tema con su herramienta
+// buscar_en_conversaciones (misma RPC buscar_mensajes_historico por debajo),
+// así que esta función ya no se llama desde el dispatcher. Se conserva
+// porque devuelve el payload "resultados_busqueda_contactos", que trae el
+// botón "Crear audiencia con estos contactos" — una UX que el agente
+// todavía no replica. Si más adelante se quiere volver a ofrecer ese botón
+// tras una búsqueda, esto ya está listo para reconectar.
+//
+// Mientras tanto, el equivalente funcional sigue disponible por otro
+// camino: pedir "creá una audiencia con los que hablaron de X" dispara el
+// flujo crear_audiencia, que preselecciona contactos por esa consulta.
 // -----------------------------------------------------------------------
 
 const MAX_RESULTADOS_BUSQUEDA = 15;
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function buscarContactosPorTema(consulta: string): Promise<IAResponse> {
   const tenantId = await resolverTenantId();
   if (!tenantId) {
@@ -1839,48 +1761,153 @@ export async function iniciarAudienciaDesdeResultadosBusquedaAction(
   };
 }
 
-// -----------------------------------------------------------------------
-// Flujo: consulta_analitica
+// =======================================================================
+// AGENTE DE DATOS
 //
-// Responde preguntas de negocio ("cuál campaña rindió mejor", "cuánto
-// gasté", "a cuántos les mandé X", "mejor horario para enviar") llamando a
-// una de 4 funciones SQL fijas (analytics_resumen_periodo,
-// analytics_mejor_campana, analytics_mensajes_por_tema,
-// analytics_mejor_horario_envio) — NUNCA generando SQL libre.
+// Reemplaza el enfoque anterior ("clasificar la pregunta en un casillero
+// fijo -> elegir UNA función -> devolver un texto pre-escrito"), que fallaba
+// de forma sistemática: cualquier pregunta para la que no existiera una
+// función exacta terminaba ejecutando la más parecida y devolviendo datos
+// que no tenían nada que ver con lo preguntado.
 //
-// El LLM solo elige CUÁL de las 4 llamar y con qué parámetros (function
-// calling estructurado de OpenAI), igual que clasificarIntencion elige un
-// tipo de intención. Nunca ve ni produce una sola línea de SQL. Esto es
-// deliberado: es el patrón recomendado para NL-to-data en producción
-// (separar decisión de ejecución, cero superficie de inyección) en vez de
-// dejar que el modelo escriba queries contra la base real.
+// Acá el modelo recibe un conjunto de herramientas de datos COMPONIBLES
+// (listar audiencias, contactos, templates, campañas, buscar en
+// conversaciones, métricas agregadas), las llama las veces que haga falta,
+// mira los datos reales que vuelven, y ESCRIBE LA RESPUESTA ÉL MISMO.
 //
-// Si el modelo no puede mapear la pregunta a ninguna de las 4 funciones
-// (parámetros ambiguos, pregunta fuera de alcance), respondemos con lo más
-// cercano que sabemos hacer en vez de inventar un número.
-// -----------------------------------------------------------------------
+// Lo que se mantiene igual que antes, deliberadamente:
+// - El modelo NUNCA genera SQL. Solo elige qué función llamar y con qué
+//   parámetros; toda la SQL vive en funciones fijas de Postgres.
+// - Todas las funciones filtran por tenant_id resuelto server-side desde
+//   la sesión, nunca desde el texto del usuario.
+// - Los flujos de ACCIÓN (crear audiencia/template/campaña, importar) NO
+//   pasan por acá: siguen usando la máquina de estados determinística, que
+//   funciona bien y tiene UI de confirmación paso a paso.
+// =======================================================================
 
-type LlamadaAnalitica =
-  | { funcion: "resumen_periodo"; desde: string; hasta: string }
-  | { funcion: "mejor_campana"; desde: string; hasta: string; metrica: string }
-  | { funcion: "primera_ultima_campana"; orden: "primera" | "ultima" }
-  | { funcion: "primera_ultima_audiencia"; orden: "primera" | "ultima" }
-  | { funcion: "conteo_recursos" }
-  | { funcion: "mensajes_por_tema"; tema: string; dias: number }
-  | { funcion: "mejor_horario_envio" };
+const MAX_ITERACIONES_AGENTE = 5;
+const MAX_FILAS_TABLA = 12;
 
-const HERRAMIENTAS_ANALITICA: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "resumen_periodo",
+      name: "listar_audiencias",
       description:
-        "Resumen agregado de mensajería en un rango de fechas: campañas enviadas, mensajes enviados/entregados/leídos/respondidos, tasas y gasto total. Usar para preguntas generales de desempeño en un período (\"cómo me fue este mes\", \"cuánto gasté la semana pasada\").",
+        "Lista las audiencias (listas de contactos) de la cuenta, con su cantidad de contactos y fecha de creación. Usar para cualquier pregunta sobre audiencias: cuántas hay, cuál tiene más/menos contactos, cuál fue la primera o la última, listarlas todas.",
       parameters: {
         type: "object",
         properties: {
-          desde: { type: "string", description: "Fecha de inicio del período en formato ISO 8601 (YYYY-MM-DD)." },
-          hasta: { type: "string", description: "Fecha de fin del período en formato ISO 8601 (YYYY-MM-DD), exclusiva." },
+          orden_por: {
+            type: "string",
+            enum: ["fecha", "contactos", "nombre"],
+            description: "Criterio de orden. 'contactos' para saber cuál tiene más/menos.",
+          },
+          direccion: {
+            type: "string",
+            enum: ["asc", "desc"],
+            description: "'asc' para la más antigua/la de menos contactos primero, 'desc' para la más reciente/la de más contactos.",
+          },
+          limite: { type: "integer", description: "Máximo de filas a traer (1-100). Usá un número alto si te preguntan por el total." },
+        },
+        required: ["orden_por", "direccion", "limite"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "listar_contactos",
+      description:
+        "Lista los contactos/leads de la cuenta, opcionalmente filtrados por temperatura (caliente/tibio/frio). Usar para 'pasame los contactos fríos', 'cuáles son mis leads calientes', 'cuántos contactos tengo', 'quién está hace más tiempo sin responder'. NO usar para buscar por tema de conversación (para eso está buscar_en_conversaciones).",
+      parameters: {
+        type: "object",
+        properties: {
+          temperatura: {
+            type: "string",
+            enum: ["caliente", "tibio", "frio"],
+            description: "Filtro opcional por temperatura del lead. Omitir para traer todos.",
+          },
+          orden_por: {
+            type: "string",
+            enum: ["score", "reciente", "nombre"],
+            description: "'score' por nivel de interés, 'reciente' por último mensaje.",
+          },
+          limite: { type: "integer", description: "Máximo de filas (1-200)." },
+        },
+        required: ["orden_por", "limite"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "listar_templates",
+      description:
+        "Lista los templates de mensajes de la cuenta con su estado de aprobación de Meta. Estados posibles: 'borrador' (no enviado a Meta), 'enviado' (en revisión), 'verificado' (aprobado), 'rechazado', 'error'. Usar para 'cuántos templates aprobados tengo', 'qué templates me rechazaron y por qué', 'listame mis templates'.",
+      parameters: {
+        type: "object",
+        properties: {
+          status: {
+            type: "string",
+            enum: ["borrador", "enviado", "verificado", "rechazado", "error"],
+            description: "Filtro opcional por estado. Omitir para traer todos.",
+          },
+          limite: { type: "integer", description: "Máximo de filas (1-100)." },
+        },
+        required: ["limite"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "listar_campanas",
+      description:
+        "Lista campañas con sus métricas reales (enviados, entregados, leídos, respondidos, costo, tasa de respuesta). Usar para 'cuál campaña rindió mejor', 'cuál fue la primera/última campaña', 'cuántas campañas tengo', 'listame las campañas de este mes'. Las fechas son opcionales: omitilas para buscar en todo el historial.",
+      parameters: {
+        type: "object",
+        properties: {
+          desde: { type: "string", description: "Fecha inicio ISO 8601 (YYYY-MM-DD). Omitir para no filtrar." },
+          hasta: { type: "string", description: "Fecha fin ISO 8601 (YYYY-MM-DD), exclusiva. Omitir para no filtrar." },
+          orden_por: {
+            type: "string",
+            enum: ["fecha", "tasa_respuesta", "contactos", "costo"],
+            description: "Criterio de orden. 'tasa_respuesta' para saber cuál rindió mejor.",
+          },
+          direccion: { type: "string", enum: ["asc", "desc"], description: "'asc' para la primera/más antigua." },
+          limite: { type: "integer", description: "Máximo de filas (1-100)." },
+        },
+        required: ["orden_por", "direccion", "limite"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "buscar_en_conversaciones",
+      description:
+        "Busca un TEMA o PALABRA CLAVE dentro del historial real de conversaciones de WhatsApp con los contactos, y devuelve qué contactos hablaron de eso. Usar SOLO para temas de conversación ('quiénes preguntaron por departamentos', 'quién habló de Coca-Cola'). NO usar para filtrar por atributos del contacto como temperatura — para eso está listar_contactos.",
+      parameters: {
+        type: "object",
+        properties: {
+          consulta: { type: "string", description: "El tema o palabra clave a buscar en los mensajes." },
+        },
+        required: ["consulta"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "metricas_periodo",
+      description:
+        "Métricas agregadas de mensajería en un rango de fechas: mensajes enviados/entregados/leídos/respondidos, tasas y gasto total en dólares. Usar para 'cuánto gasté', 'cómo me fue este mes', 'cuál es mi tasa de respuesta'.",
+      parameters: {
+        type: "object",
+        properties: {
+          desde: { type: "string", description: "Fecha inicio ISO 8601 (YYYY-MM-DD)." },
+          hasta: { type: "string", description: "Fecha fin ISO 8601 (YYYY-MM-DD), exclusiva." },
         },
         required: ["desde", "hasta"],
       },
@@ -1889,618 +1916,321 @@ const HERRAMIENTAS_ANALITICA: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "mejor_campana",
-      description:
-        "Ranking de campañas enviadas en un rango de fechas, ordenado por una métrica. Usar para \"cuál campaña rindió mejor\", \"qué campaña tuvo más respuestas\", \"cuál fue más barata por respuesta\".",
-      parameters: {
-        type: "object",
-        properties: {
-          desde: { type: "string", description: "Fecha de inicio en formato ISO 8601 (YYYY-MM-DD)." },
-          hasta: { type: "string", description: "Fecha de fin en formato ISO 8601 (YYYY-MM-DD), exclusiva." },
-          metrica: {
-            type: "string",
-            enum: ["tasa_respuesta", "tasa_lectura", "tasa_entrega", "costo_por_respuesta"],
-            description: "Métrica para ordenar el ranking. Default tasa_respuesta si el usuario no especifica.",
-          },
-        },
-        required: ["desde", "hasta", "metrica"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "primera_ultima_campana",
-      description:
-        "Devuelve la primera o la última campaña enviada, ORDENADA CRONOLÓGICAMENTE (por fecha de envío), sin importar su desempeño. Usar SIEMPRE que la pregunta sea sobre orden temporal y no sobre qué campaña rindió mejor (ej: \"cuál fue la primera campaña que envié\", \"cuál fue mi última campaña\", \"cuál fue la más reciente\"). No confundir con mejor_campana: esa ordena por métricas de desempeño, esta por fecha.",
-      parameters: {
-        type: "object",
-        properties: {
-          orden: {
-            type: "string",
-            enum: ["primera", "ultima"],
-            description: "'primera' para la más antigua, 'ultima' para la más reciente.",
-          },
-        },
-        required: ["orden"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "primera_ultima_audiencia",
-      description:
-        "Devuelve la primera o la última AUDIENCIA/LISTA creada, ordenada cronológicamente por fecha de creación. Usar para \"cuál fue la primera audiencia que creé\", \"cuál fue mi última audiencia/lista\". No confundir con campañas: una audiencia es un grupo de contactos, no un envío.",
-      parameters: {
-        type: "object",
-        properties: {
-          orden: {
-            type: "string",
-            enum: ["primera", "ultima"],
-            description: "'primera' para la más antigua, 'ultima' para la más reciente.",
-          },
-        },
-        required: ["orden"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "conteo_recursos",
-      description:
-        "Devuelve conteos actuales de TODOS los recursos de la cuenta de una sola vez: cantidad de audiencias, contactos (activos, calientes, tibios, fríos), templates (total, aprobados, en revisión, rechazados, borrador) y campañas (total, enviadas, programadas). Usar para CUALQUIER pregunta de tipo \"cuántas/cuántos tengo\" sobre audiencias, templates, contactos o campañas (ej: \"cuántas audiencias tengo\", \"cuántos templates aprobados tengo\", \"cuántos contactos calientes tengo\", \"cuántas campañas programadas tengo\"). No requiere parámetros — siempre devuelve todo, elegís después qué mostrar de la respuesta.",
-      parameters: { type: "object", properties: {} },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "mensajes_por_tema",
-      description:
-        "Cuenta a cuántos contactos se les envió un mensaje sobre un tema puntual en los últimos N días. Usar para \"a cuántos les mandé algo sobre X\", \"cuántos contactos recibieron la promo de Y\".",
-      parameters: {
-        type: "object",
-        properties: {
-          tema: { type: "string", description: "El tema o palabra clave a buscar, tal cual lo mencionó el usuario." },
-          dias: { type: "integer", description: "Cuántos días hacia atrás buscar. Default 7 si no se especifica." },
-        },
-        required: ["tema", "dias"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
       name: "mejor_horario_envio",
       description:
-        "Analiza el histórico completo de envíos y sugiere la franja horaria con mejor tasa de lectura/respuesta. Usar para \"cuál es el mejor horario para enviar\", \"cuándo es mejor mandar mis campañas\". No requiere parámetros.",
+        "Analiza el historial de envíos y devuelve la franja horaria con mejor tasa de lectura y respuesta. Usar para 'cuál es el mejor horario para enviar', 'cuándo conviene mandar la campaña'. Puede devolver que no hay datos suficientes todavía.",
       parameters: { type: "object", properties: {} },
     },
   },
 ];
 
-async function elegirLlamadaAnalitica(
-  pregunta: string,
-): Promise<LlamadaAnalitica | null> {
+/** Resultado de ejecutar una herramienta: datos crudos para el modelo + tabla opcional para la UI. */
+interface ResultadoHerramienta {
+  datos: unknown;
+  tabla?: { titulo: string; columnas: string[]; filas: string[][]; totalDisponible?: number };
+}
+
+function fechaCorta(v: string | null | undefined): string {
+  if (!v) return "—";
+  return new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function pct(v: number | null | undefined): string {
+  if (v == null) return "—";
+  return `${(Number(v) * 100).toFixed(1)}%`;
+}
+
+/**
+ * Ejecuta una herramienta del agente contra Supabase. Todas las funciones
+ * son RPCs fijas con tenant_id resuelto server-side — el modelo solo elige
+ * cuál llamar y con qué parámetros, nunca escribe SQL.
+ */
+async function ejecutarHerramientaAgente(
+  nombre: string,
+  args: Record<string, unknown>,
+  tenantId: string,
+): Promise<ResultadoHerramienta> {
+  const supabase = await createClient();
+
+  if (nombre === "listar_audiencias") {
+    const { data, error } = await supabase.rpc("listar_audiencias", {
+      p_tenant_id: tenantId,
+      p_orden_por: typeof args.orden_por === "string" ? args.orden_por : "fecha",
+      p_direccion: typeof args.direccion === "string" ? args.direccion : "desc",
+      p_limite: typeof args.limite === "number" ? args.limite : 20,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as { nombre: string; contactos_count: number; status: string; created_at: string }[];
+    return {
+      datos: filas,
+      tabla: filas.length
+        ? {
+            titulo: "Tus audiencias",
+            columnas: ["Audiencia", "Contactos", "Creada"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.nombre,
+              String(f.contactos_count ?? 0),
+              fechaCorta(f.created_at),
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "listar_contactos") {
+    const { data, error } = await supabase.rpc("listar_contactos", {
+      p_tenant_id: tenantId,
+      p_temperatura: typeof args.temperatura === "string" ? args.temperatura : null,
+      p_orden_por: typeof args.orden_por === "string" ? args.orden_por : "score",
+      p_limite: typeof args.limite === "number" ? args.limite : 50,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as {
+      nombre: string; telefono: string; temperatura: string; score_interes: number;
+      producto_servicio: string | null; dias_inactivo: number | null;
+    }[];
+    return {
+      datos: filas,
+      tabla: filas.length
+        ? {
+            titulo:
+              typeof args.temperatura === "string"
+                ? `Contactos ${args.temperatura === "frio" ? "fríos" : args.temperatura === "caliente" ? "calientes" : "tibios"}`
+                : "Tus contactos",
+            columnas: ["Nombre", "Teléfono", "Temp.", "Score"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.nombre,
+              f.telefono,
+              f.temperatura ?? "—",
+              String(f.score_interes ?? 0),
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "listar_templates") {
+    const { data, error } = await supabase.rpc("listar_templates", {
+      p_tenant_id: tenantId,
+      p_status: typeof args.status === "string" ? args.status : null,
+      p_limite: typeof args.limite === "number" ? args.limite : 30,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as {
+      nombre: string; status: string; template_type: string | null;
+      meta_rechazo_motivo: string | null; created_at: string;
+    }[];
+    return {
+      datos: filas,
+      tabla: filas.length
+        ? {
+            titulo: "Tus templates",
+            columnas: ["Template", "Estado", "Creado"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [f.nombre, f.status ?? "—", fechaCorta(f.created_at)]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "listar_campanas") {
+    const { data, error } = await supabase.rpc("listar_campanas", {
+      p_tenant_id: tenantId,
+      p_desde: typeof args.desde === "string" ? args.desde : null,
+      p_hasta: typeof args.hasta === "string" ? args.hasta : null,
+      p_orden_por: typeof args.orden_por === "string" ? args.orden_por : "fecha",
+      p_direccion: typeof args.direccion === "string" ? args.direccion : "desc",
+      p_limite: typeof args.limite === "number" ? args.limite : 20,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as {
+      nombre: string; status: string; enviado_at: string; contactos_count: number;
+      mensajes_ok: number; respondidos: number; tasa_respuesta: number; costo_usd: number | null;
+    }[];
+    return {
+      datos: filas,
+      tabla: filas.length
+        ? {
+            titulo: "Tus campañas",
+            columnas: ["Campaña", "Enviada", "Mensajes", "Respuestas"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.nombre,
+              fechaCorta(f.enviado_at),
+              String(f.mensajes_ok ?? 0),
+              `${f.respondidos ?? 0} (${pct(f.tasa_respuesta)})`,
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "buscar_en_conversaciones") {
+    const consulta = typeof args.consulta === "string" ? args.consulta : "";
+    if (!consulta.trim()) return { datos: { error: "consulta vacía" } };
+    const { data, error } = await supabase.rpc("buscar_mensajes_historico", {
+      p_tenant_id: tenantId,
+      p_consulta: consulta,
+      p_limite: 15,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as { nombre: string; telefono: string; menciones: number; fragmento: string }[];
+    return {
+      datos: filas,
+      tabla: filas.length
+        ? {
+            titulo: `Contactos que hablaron de "${consulta}"`,
+            columnas: ["Nombre", "Teléfono", "Menciones"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [f.nombre, f.telefono, String(f.menciones)]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "metricas_periodo") {
+    const { data, error } = await supabase
+      .rpc("analytics_resumen_periodo", {
+        p_tenant_id: tenantId,
+        p_desde: typeof args.desde === "string" ? args.desde : new Date(Date.now() - 30 * 864e5).toISOString(),
+        p_hasta: typeof args.hasta === "string" ? args.hasta : new Date().toISOString(),
+      })
+      .maybeSingle();
+    if (error) return { datos: { error: error.message } };
+    return { datos: data ?? {} };
+  }
+
+  if (nombre === "mejor_horario_envio") {
+    const { data, error } = await supabase
+      .rpc("analytics_mejor_horario_envio", { p_tenant_id: tenantId, p_minimo_muestras: 20 })
+      .maybeSingle();
+    if (error) return { datos: { error: error.message } };
+    return { datos: data ?? {} };
+  }
+
+  return { datos: { error: `Herramienta desconocida: ${nombre}` } };
+}
+
+/**
+ * Punto de entrada del agente. Corre un loop de tool-calling: el modelo
+ * pide datos, los recibe, y decide si necesita más o si ya puede responder.
+ * Cubre TODO lo que no es un flujo de acción — desde "hola" hasta "cuál
+ * audiencia tiene más contactos" — sin necesidad de clasificar la pregunta
+ * de antemano en un casillero.
+ */
+async function responderConAgente(
+  mensaje: string,
+  history: IAHistoryTurn[],
+  contexto: ContextoNegocio | null,
+  tenantId: string | null,
+): Promise<IAResponse> {
   const openai = getOpenAI();
   const hoy = new Date().toISOString().slice(0, 10);
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    tools: HERRAMIENTAS_ANALITICA,
-    tool_choice: "auto",
-    messages: [
-      {
-        role: "system",
-        content: `Sos el módulo analítico del chat de IA de YamaSend. Tu única tarea es elegir cuál de las funciones disponibles responde mejor la pregunta del usuario y con qué parámetros, resolviendo fechas relativas ("este mes", "la semana pasada", "últimos 15 días") a fechas concretas ISO 8601. Hoy es ${hoy}. Si la pregunta menciona un período sin especificar, asumí el mes calendario en curso.
+  const lineasContexto = contexto
+    ? [
+        contexto.nombreUsuario && `El usuario se llama ${contexto.nombreUsuario}.`,
+        contexto.nombreEmpresa && `Su empresa es "${contexto.nombreEmpresa}".`,
+        contexto.rubro && `Rubro: ${contexto.rubro}.`,
+        contexto.descripcionNegocio && `Descripción del negocio: ${contexto.descripcionNegocio}.`,
+        contexto.publicoObjetivo && `Público objetivo: ${contexto.publicoObjetivo}.`,
+        contexto.tonoComunicacion && `Tono que prefiere la marca: ${contexto.tonoComunicacion}.`,
+        contexto.diferenciales && `Diferenciales del negocio: ${contexto.diferenciales}.`,
+      ].filter(Boolean)
+    : [];
 
-Importante: "primera"/"última" campaña (orden cronológico de ENVÍOS) usa primera_ultima_campana; "primera"/"última" AUDIENCIA (orden cronológico de grupos de contactos creados) usa primera_ultima_audiencia — son recursos distintos, no los confundas. Para cualquier pregunta de "cuántos/cuántas tengo" (audiencias, templates, contactos, campañas) usá conteo_recursos, que trae todos los conteos de una sola vez.
+  const systemPrompt = `Sos el asistente de YamaSend, una plataforma de mensajería masiva por WhatsApp. Estás charlando con el dueño o encargado de la cuenta, dentro del panel de la app. Hoy es ${hoy}.
 
-Si NINGUNA de las funciones disponibles responde realmente lo que se pregunta, NO llames a ninguna — es preferible admitir que no tenés esa función a forzar la que más se parece. Nunca inventes datos: tu trabajo es solo elegir la función y los parámetros, no responder la pregunta vos mismo.`,
-      },
-      { role: "user", content: pregunta },
-    ],
-  });
+CÓMO HABLAR
+- Como una persona real: natural, cercano, español rioplatense (voseo: "vos", "tenés", "querés"). Nada de tono robótico ni de manual.
+- Breve por defecto: 1-3 oraciones. Si mostrás datos, no repitas en el texto toda la tabla — resumí lo importante y dejá que la tabla hable.
+- Usá el nombre del usuario solo cuando quede natural, no en cada mensaje.
+${lineasContexto.length ? "\nDATOS REALES DE ESTA CUENTA\n" + lineasContexto.join("\n") : ""}
 
-  const toolCall = completion.choices[0]?.message?.tool_calls?.[0];
-  if (!toolCall || toolCall.type !== "function") return null;
+CÓMO RESPONDER PREGUNTAS SOBRE SUS DATOS
+- Tenés herramientas para consultar los datos REALES de la cuenta. Usalas siempre que la pregunta sea sobre audiencias, contactos, templates, campañas, métricas o conversaciones.
+- Elegí la herramienta y los parámetros que respondan EXACTAMENTE lo que se preguntó. Si preguntan "cuál audiencia tiene más contactos", ordená por contactos descendente. Si preguntan "la primera", ordená ascendente por fecha.
+- Podés llamar varias herramientas si hace falta para responder bien.
+- Después de recibir los datos, RESPONDÉ LA PREGUNTA CONCRETA que te hicieron. No vuelques todos los datos que trajiste si solo preguntaron un número.
+- Si la herramienta devuelve una lista vacía, decilo con naturalidad — no inventes.
 
-  let args: Record<string, unknown>;
-  try {
-    args = JSON.parse(toolCall.function.arguments);
-  } catch {
-    return null;
-  }
+REGLAS ESTRICTAS
+- NUNCA inventes números, nombres, fechas ni ningún dato de la cuenta. Todo dato concreto que digas tiene que venir de una herramienta que llamaste en este mismo turno.
+- Si no tenés una herramienta que responda algo, decí con franqueza que ese dato todavía no lo podés consultar, en vez de responder con algo parecido pero distinto.
 
-  switch (toolCall.function.name) {
-    case "resumen_periodo":
-      if (typeof args.desde === "string" && typeof args.hasta === "string") {
-        return { funcion: "resumen_periodo", desde: args.desde, hasta: args.hasta };
-      }
-      return null;
-    case "mejor_campana":
-      if (typeof args.desde === "string" && typeof args.hasta === "string") {
-        return {
-          funcion: "mejor_campana",
-          desde: args.desde,
-          hasta: args.hasta,
-          metrica: typeof args.metrica === "string" ? args.metrica : "tasa_respuesta",
-        };
-      }
-      return null;
-    case "primera_ultima_campana":
-      return {
-        funcion: "primera_ultima_campana",
-        orden: args.orden === "ultima" ? "ultima" : "primera",
-      };
-    case "primera_ultima_audiencia":
-      return {
-        funcion: "primera_ultima_audiencia",
-        orden: args.orden === "ultima" ? "ultima" : "primera",
-      };
-    case "conteo_recursos":
-      return { funcion: "conteo_recursos" };
-    case "mensajes_por_tema":
-      if (typeof args.tema === "string" && args.tema.trim()) {
-        return {
-          funcion: "mensajes_por_tema",
-          tema: args.tema,
-          dias: typeof args.dias === "number" && args.dias > 0 ? Math.min(args.dias, 365) : 7,
-        };
-      }
-      return null;
-    case "mejor_horario_envio":
-      return { funcion: "mejor_horario_envio" };
-    default:
-      return null;
-  }
-}
+QUÉ MÁS PUEDE HACER LA PLATAFORMA (mencionalo solo si viene al caso)
+El usuario puede pedirte por chat que le importes contactos de WhatsApp, que crees una audiencia, un template o una campaña — esos pedidos los maneja otro flujo con confirmación paso a paso, así que si te lo pide, decile simplemente que se lo armás y va a aparecer el asistente guiado. No intentes hacerlo vos con herramientas.`;
 
-const FORMATO_PORCENTAJE = new Intl.NumberFormat("es-AR", {
-  style: "percent",
-  minimumFractionDigits: 1,
-  maximumFractionDigits: 1,
-});
-const FORMATO_USD = new Intl.NumberFormat("es-AR", {
-  style: "currency",
-  currency: "USD",
-  minimumFractionDigits: 2,
-});
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    ...history.slice(-8).map((h) => ({
+      role: h.role === "user" ? ("user" as const) : ("assistant" as const),
+      content: h.text,
+    })),
+    { role: "user", content: mensaje },
+  ];
 
-async function responderConsultaAnalitica(pregunta: string): Promise<IAResponse> {
-  const tenantId = await resolverTenantId();
-  if (!tenantId) {
-    return {
-      text: "No pude identificar tu cuenta. Probá recargar la página e intentar de nuevo.",
-      flowState: IA_FLOW_IDLE,
-    };
-  }
+  let ultimaTabla: ResultadoHerramienta["tabla"];
 
-  let llamada: LlamadaAnalitica | null;
-  try {
-    llamada = await elegirLlamadaAnalitica(pregunta);
-  } catch (e) {
-    console.error("[IA] Error en elegirLlamadaAnalitica:", e);
-    return {
-      text: "Tuve un problema para interpretar tu consulta. ¿Podés reformularla?",
-      flowState: IA_FLOW_IDLE,
-      error: e instanceof Error ? e.message : "Error desconocido",
-    };
-  }
-
-  if (!llamada) {
-    return {
-      text: "Esa todavía no la sé responder con datos reales. Puedo contarte cosas como cuántas audiencias, templates o contactos tenés, cuál fue tu primera o última campaña o audiencia, cuál campaña rindió mejor, cuánto gastaste en un período, a cuántos contactos les mandaste algo sobre un tema, o cuál es tu mejor horario para enviar — probá reformulando por ese lado.",
-      flowState: IA_FLOW_IDLE,
-    };
-  }
-
-  const supabase = await createClient();
-
-  if (llamada.funcion === "resumen_periodo") {
-    const { data: rawData, error } = await supabase
-      .rpc("analytics_resumen_periodo", {
-        p_tenant_id: tenantId,
-        p_desde: llamada.desde,
-        p_hasta: llamada.hasta,
-      })
-      .maybeSingle();
-
-    if (error) {
-      console.error("[IA] Error en analytics_resumen_periodo:", error);
-      return {
-        text: "Tuve un problema para calcular ese resumen. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-        error: error.message,
-      };
-    }
-
-    // Cast manual: la función es nueva y no está reflejada en los tipos
-    // generados de Supabase (mismo patrón que buscar_mensajes_historico
-    // más arriba en este archivo).
-    const data = rawData as {
-      campanas_enviadas: number;
-      mensajes_enviados: number;
-      mensajes_entregados: number;
-      mensajes_leidos: number;
-      mensajes_respondidos: number;
-      mensajes_error: number;
-      costo_total_usd: number;
-      tasa_entrega: number;
-      tasa_lectura: number;
-      tasa_respuesta: number;
-    } | null;
-
-    if (!data || data.mensajes_enviados === 0) {
-      return {
-        text: `No encontré mensajes enviados entre el ${llamada.desde} y el ${llamada.hasta}. Probá con otro período, o mandá tu primera campaña para empezar a ver datos acá.`,
-        flowState: IA_FLOW_IDLE,
-      };
-    }
-
-    return {
-      text: `Así te fue entre el ${llamada.desde} y el ${llamada.hasta}:`,
-      payload: {
-        kind: "respuesta_analitica",
-        titulo: "Resumen del período",
-        filas: [
-          { etiqueta: "Campañas enviadas", valor: String(data.campanas_enviadas) },
-          { etiqueta: "Mensajes enviados", valor: String(data.mensajes_enviados) },
-          { etiqueta: "Tasa de entrega", valor: FORMATO_PORCENTAJE.format(Number(data.tasa_entrega)) },
-          { etiqueta: "Tasa de lectura", valor: FORMATO_PORCENTAJE.format(Number(data.tasa_lectura)) },
-          { etiqueta: "Tasa de respuesta", valor: FORMATO_PORCENTAJE.format(Number(data.tasa_respuesta)) },
-          { etiqueta: "Gasto total", valor: FORMATO_USD.format(Number(data.costo_total_usd)) },
-        ],
-      },
-      flowState: IA_FLOW_IDLE,
-    };
-  }
-
-  if (llamada.funcion === "mejor_campana") {
-    const { data, error } = await supabase.rpc("analytics_mejor_campana", {
-      p_tenant_id: tenantId,
-      p_desde: llamada.desde,
-      p_hasta: llamada.hasta,
-      p_metrica: llamada.metrica,
-      p_limite: 3,
+  for (let i = 0; i < MAX_ITERACIONES_AGENTE; i++) {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      temperature: 0.3,
+      max_tokens: 500,
+      // Sin tenant_id no podemos consultar nada: dejamos que responda solo
+      // conversacionalmente en vez de fallar con un error técnico.
+      tools: tenantId ? HERRAMIENTAS_AGENTE : undefined,
+      messages,
     });
 
-    if (error) {
-      console.error("[IA] Error en analytics_mejor_campana:", error);
-      return {
-        text: "Tuve un problema para armar ese ranking. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-        error: error.message,
-      };
-    }
+    const msg = completion.choices[0]?.message;
+    if (!msg) break;
 
-    const filas = (data ?? []) as {
-      nombre: string;
-      tasa_respuesta: number;
-      tasa_lectura: number;
-      tasa_entrega: number;
-      costo_por_respuesta: number | null;
-      mensajes_ok: number;
-    }[];
+    const toolCalls = msg.tool_calls ?? [];
 
-    if (filas.length === 0) {
+    if (toolCalls.length === 0) {
+      const texto = msg.content?.trim();
+      if (!texto) break;
       return {
-        text: `No encontré campañas enviadas entre el ${llamada.desde} y el ${llamada.hasta}. Probá con otro período.`,
+        text: texto,
+        payload: ultimaTabla ? { kind: "tabla_datos", ...ultimaTabla } : undefined,
         flowState: IA_FLOW_IDLE,
       };
     }
 
-    const mejor = filas[0];
-    const etiquetaMetrica =
-      llamada.metrica === "costo_por_respuesta"
-        ? "Costo por respuesta"
-        : llamada.metrica === "tasa_lectura"
-          ? "Tasa de lectura"
-          : llamada.metrica === "tasa_entrega"
-            ? "Tasa de entrega"
-            : "Tasa de respuesta";
-    const valorMetrica =
-      llamada.metrica === "costo_por_respuesta"
-        ? mejor.costo_por_respuesta != null
-          ? FORMATO_USD.format(mejor.costo_por_respuesta)
-          : "Sin respuestas aún"
-        : FORMATO_PORCENTAJE.format(
-            Number(
-              llamada.metrica === "tasa_lectura"
-                ? mejor.tasa_lectura
-                : llamada.metrica === "tasa_entrega"
-                  ? mejor.tasa_entrega
-                  : mejor.tasa_respuesta,
-            ),
-          );
+    messages.push(msg);
 
-    return {
-      text: `La campaña que mejor rindió (${etiquetaMetrica.toLowerCase()}) entre el ${llamada.desde} y el ${llamada.hasta} fue "${mejor.nombre}".`,
-      payload: {
-        kind: "respuesta_analitica",
-        titulo: `Mejor campaña — ${etiquetaMetrica}`,
-        filas: [
-          { etiqueta: "Campaña", valor: mejor.nombre },
-          { etiqueta: etiquetaMetrica, valor: valorMetrica },
-          { etiqueta: "Mensajes enviados", valor: String(mejor.mensajes_ok) },
-          ...(filas.length > 1
-            ? [{ etiqueta: "Otras campañas del período", valor: filas.slice(1).map((f) => f.nombre).join(", ") }]
-            : []),
-        ],
-      },
-      flowState: IA_FLOW_IDLE,
-    };
-  }
+    for (const tc of toolCalls) {
+      if (tc.type !== "function") continue;
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(tc.function.arguments || "{}");
+      } catch {
+        args = {};
+      }
 
-  if (llamada.funcion === "primera_ultima_campana") {
-    const { data: rawData, error } = await supabase
-      .rpc("analytics_primera_ultima_campana", {
-        p_tenant_id: tenantId,
-        p_orden: llamada.orden,
-      })
-      .maybeSingle();
+      let resultado: ResultadoHerramienta;
+      try {
+        resultado = await ejecutarHerramientaAgente(tc.function.name, args, tenantId as string);
+      } catch (e) {
+        console.error(`[IA] Error ejecutando herramienta ${tc.function.name}:`, e);
+        resultado = { datos: { error: "No se pudo consultar ese dato." } };
+      }
 
-    if (error) {
-      console.error("[IA] Error en analytics_primera_ultima_campana:", error);
-      return {
-        text: "Tuve un problema para buscar esa campaña. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-        error: error.message,
-      };
+      if (resultado.tabla) ultimaTabla = resultado.tabla;
+
+      messages.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: JSON.stringify(resultado.datos).slice(0, 6000),
+      });
     }
-
-    const data = rawData as {
-      campana_id: string;
-      nombre: string;
-      enviado_at: string;
-      status: string;
-      contactos_count: number;
-      mensajes_ok: number;
-      mensajes_error: number;
-      costo_usd: number | null;
-    } | null;
-
-    if (!data) {
-      return {
-        text: "Todavía no encontré ninguna campaña enviada en tu cuenta.",
-        flowState: IA_FLOW_IDLE,
-      };
-    }
-
-    const etiquetaOrden = llamada.orden === "ultima" ? "última" : "primera";
-    const fecha = new Date(data.enviado_at).toLocaleDateString("es-AR", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-    });
-
-    return {
-      text: `Tu ${etiquetaOrden} campaña enviada fue "${data.nombre}", el ${fecha}.`,
-      payload: {
-        kind: "respuesta_analitica",
-        titulo: `Tu ${etiquetaOrden} campaña`,
-        filas: [
-          { etiqueta: "Campaña", valor: data.nombre },
-          { etiqueta: "Fecha de envío", valor: fecha },
-          { etiqueta: "Contactos", valor: String(data.contactos_count) },
-          { etiqueta: "Mensajes enviados", valor: String(data.mensajes_ok) },
-        ],
-      },
-      flowState: IA_FLOW_IDLE,
-    };
-  }
-
-  if (llamada.funcion === "primera_ultima_audiencia") {
-    const { data: rawData, error } = await supabase
-      .rpc("analytics_primera_ultima_audiencia", {
-        p_tenant_id: tenantId,
-        p_orden: llamada.orden,
-      })
-      .maybeSingle();
-
-    if (error) {
-      console.error("[IA] Error en analytics_primera_ultima_audiencia:", error);
-      return {
-        text: "Tuve un problema para buscar esa audiencia. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-        error: error.message,
-      };
-    }
-
-    const data = rawData as {
-      audiencia_id: string;
-      nombre: string;
-      created_at: string;
-      contactos_count: number;
-      status: string;
-    } | null;
-
-    if (!data) {
-      return {
-        text: "Todavía no encontré ninguna audiencia creada en tu cuenta.",
-        flowState: IA_FLOW_IDLE,
-      };
-    }
-
-    const etiquetaOrden = llamada.orden === "ultima" ? "última" : "primera";
-    const fecha = new Date(data.created_at).toLocaleDateString("es-AR", {
-      day: "2-digit",
-      month: "long",
-      year: "numeric",
-    });
-
-    return {
-      text: `Tu ${etiquetaOrden} audiencia fue "${data.nombre}", creada el ${fecha}.`,
-      payload: {
-        kind: "respuesta_analitica",
-        titulo: `Tu ${etiquetaOrden} audiencia`,
-        filas: [
-          { etiqueta: "Audiencia", valor: data.nombre },
-          { etiqueta: "Fecha de creación", valor: fecha },
-          { etiqueta: "Contactos", valor: String(data.contactos_count) },
-        ],
-      },
-      flowState: IA_FLOW_IDLE,
-    };
-  }
-
-  if (llamada.funcion === "conteo_recursos") {
-    const { data: rawData, error } = await supabase
-      .rpc("analytics_conteo_recursos", { p_tenant_id: tenantId })
-      .maybeSingle();
-
-    if (error) {
-      console.error("[IA] Error en analytics_conteo_recursos:", error);
-      return {
-        text: "Tuve un problema para calcular esos conteos. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-        error: error.message,
-      };
-    }
-
-    const data = rawData as {
-      audiencias_total: number;
-      contactos_activos: number;
-      contactos_calientes: number;
-      contactos_tibios: number;
-      contactos_frios: number;
-      templates_total: number;
-      templates_aprobados: number;
-      templates_en_revision: number;
-      templates_rechazados: number;
-      templates_borrador: number;
-      campanas_total: number;
-      campanas_enviadas: number;
-      campanas_programadas: number;
-    } | null;
-
-    if (!data) {
-      return {
-        text: "No pude calcular los conteos de tu cuenta ahora. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-      };
-    }
-
-    // Devolvemos SIEMPRE el resumen completo (una sola RPC cubre todos los
-    // recursos), sin intentar adivinar con un LLM cuál de los ~13 números
-    // era el que preguntaron — es más rápido y evita el riesgo de recortar
-    // mal justo el dato que importaba. El texto principal destaca
-    // audiencias (el recurso más consultado hasta ahora), y la tarjeta
-    // completa deja el resto a mano para cualquier otra pregunta de conteo.
-    return {
-      text: `Tenés ${data.audiencias_total} audiencia${data.audiencias_total === 1 ? "" : "s"} creada${data.audiencias_total === 1 ? "" : "s"}. Te dejo el resto de los números de tu cuenta:`,
-      payload: {
-        kind: "respuesta_analitica",
-        titulo: "Estado de tu cuenta",
-        filas: [
-          { etiqueta: "Audiencias", valor: String(data.audiencias_total) },
-          { etiqueta: "Contactos activos", valor: String(data.contactos_activos) },
-          { etiqueta: "— Calientes", valor: String(data.contactos_calientes) },
-          { etiqueta: "— Tibios", valor: String(data.contactos_tibios) },
-          { etiqueta: "— Fríos", valor: String(data.contactos_frios) },
-          { etiqueta: "Templates totales", valor: String(data.templates_total) },
-          { etiqueta: "— Aprobados", valor: String(data.templates_aprobados) },
-          { etiqueta: "— En revisión", valor: String(data.templates_en_revision) },
-          { etiqueta: "— Rechazados", valor: String(data.templates_rechazados) },
-          { etiqueta: "Campañas totales", valor: String(data.campanas_total) },
-          { etiqueta: "— Enviadas", valor: String(data.campanas_enviadas) },
-          { etiqueta: "— Programadas", valor: String(data.campanas_programadas) },
-        ],
-      },
-      flowState: IA_FLOW_IDLE,
-    };
-  }
-
-  if (llamada.funcion === "mensajes_por_tema") {
-    const { data: rawData, error } = await supabase
-      .rpc("analytics_mensajes_por_tema", {
-        p_tenant_id: tenantId,
-        p_tema: llamada.tema,
-        p_dias: llamada.dias,
-      })
-      .maybeSingle();
-
-    if (error) {
-      console.error("[IA] Error en analytics_mensajes_por_tema:", error);
-      return {
-        text: "Tuve un problema buscando ese dato. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-        error: error.message,
-      };
-    }
-
-    const data = rawData as {
-      contactos_alcanzados: number;
-      menciones_totales: number;
-      contactos: unknown;
-    } | null;
-
-    const contactosAlcanzados = data?.contactos_alcanzados ?? 0;
-
-    if (contactosAlcanzados === 0) {
-      return {
-        text: `No encontré mensajes enviados sobre "${llamada.tema}" en los últimos ${llamada.dias} días.`,
-        flowState: IA_FLOW_IDLE,
-      };
-    }
-
-    return {
-      text: `En los últimos ${llamada.dias} días le mandaste algo sobre "${llamada.tema}" a ${contactosAlcanzados} contacto${contactosAlcanzados === 1 ? "" : "s"}.`,
-      payload: {
-        kind: "respuesta_analitica",
-        titulo: `Mensajes sobre "${llamada.tema}"`,
-        filas: [
-          { etiqueta: "Contactos alcanzados", valor: String(contactosAlcanzados) },
-          { etiqueta: "Menciones totales", valor: String(data?.menciones_totales ?? 0) },
-          { etiqueta: "Período", valor: `Últimos ${llamada.dias} días` },
-        ],
-      },
-      flowState: IA_FLOW_IDLE,
-    };
-  }
-
-  // mejor_horario_envio
-  const { data: rawData, error } = await supabase
-    .rpc("analytics_mejor_horario_envio", { p_tenant_id: tenantId, p_minimo_muestras: 20 })
-    .maybeSingle();
-
-  if (error) {
-    console.error("[IA] Error en analytics_mejor_horario_envio:", error);
-    return {
-      text: "Tuve un problema para calcular el mejor horario. Probá de nuevo en un momento.",
-      flowState: IA_FLOW_IDLE,
-      error: error.message,
-    };
-  }
-
-  const data = rawData as {
-    minimo_alcanzado: boolean;
-    total_mensajes_analizados: number;
-    mejor_hora_inicio: number | null;
-    mejor_hora_fin: number | null;
-    detalle_por_hora: unknown;
-  } | null;
-
-  if (!data?.minimo_alcanzado) {
-    return {
-      text: `Todavía no tengo suficiente historial de envíos para sugerirte un horario con confianza (llevás ${data?.total_mensajes_analizados ?? 0} mensajes enviados). Segui enviando campañas y en un tiempo voy a poder decirte cuál es tu mejor franja horaria.`,
-      flowState: IA_FLOW_IDLE,
-    };
   }
 
   return {
-    text: `Según tu historial de envíos, tu mejor franja horaria es entre las ${data.mejor_hora_inicio}:00 y las ${data.mejor_hora_fin}:00 — es cuando mejor tasa de lectura y respuesta tenés.`,
-    payload: {
-      kind: "respuesta_analitica",
-      titulo: "Mejor horario para enviar",
-      filas: [
-        { etiqueta: "Franja recomendada", valor: `${data.mejor_hora_inicio}:00 – ${data.mejor_hora_fin}:00` },
-        { etiqueta: "Mensajes analizados", valor: String(data.total_mensajes_analizados) },
-      ],
-    },
+    text: "Se me complicó procesar eso. ¿Me lo repetís de otra forma?",
     flowState: IA_FLOW_IDLE,
   };
 }

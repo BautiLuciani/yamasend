@@ -233,6 +233,20 @@ export type ChatPayload =
       titulo: string;
       // Filas clave/valor para mostrar como lista simple debajo del texto.
       filas: { etiqueta: string; valor: string }[];
+    }
+  | {
+      kind: "tabla_datos";
+      // Tabla genérica que el agente de IA adjunta cuando consultó datos
+      // reales y vale la pena mostrarlos además del texto. A diferencia de
+      // "respuesta_analitica" (lista clave/valor de UN registro), esta
+      // muestra N filas con columnas — se arma dinámicamente a partir de lo
+      // que devolvió la herramienta que el agente eligió llamar, no de una
+      // plantilla fija por tipo de pregunta.
+      titulo: string;
+      columnas: string[];
+      filas: string[][];
+      // Si la consulta devolvió más filas de las que se muestran.
+      totalDisponible?: number;
     };
 
 export interface ChatMessage {
