@@ -1912,7 +1912,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "crear_audiencia_con_estos_contactos",
       description:
-        "Abre el flujo de creación de audiencia con una lista concreta de contactos YA identificados en esta conversación. Usar cuando el usuario pide armar una audiencia con contactos que vos acabás de traer con otra herramienta (ej: 'creá una audiencia con los fríos que me mostraste', 'armá un grupo con estos'). IMPORTANTE: los contacto_id tienen que salir de los resultados reales de listar_contactos o buscar_en_conversaciones en este mismo turno — nunca los inventes.",
+        "Abre el flujo de creación de audiencia con contactos concretos. Hay dos formas de indicar los contactos, y conviene usar la que corresponda:\n- filtro_temperatura: la MÁS confiable. Resuelve los contactos en el momento contra la base (ej: el usuario pide una audiencia con 'los calientes' o 'los fríos'). Usala siempre que el grupo se pueda describir por temperatura.\n- contacto_ids: solo si los ids salen de un resultado de listar_contactos o buscar_en_conversaciones de ESTE MISMO turno. Los ids NO sobreviven entre mensajes: si el usuario se refiere a contactos de un mensaje anterior, volvé a consultarlos con la herramienta correspondiente antes de usar esta.",
       parameters: {
         type: "object",
         properties: {
@@ -1920,13 +1920,18 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             type: "string",
             description: "Nombre sugerido para la audiencia. Si el usuario no dijo uno, proponé uno descriptivo y corto.",
           },
+          filtro_temperatura: {
+            type: "string",
+            enum: ["caliente", "tibio", "frio"],
+            description: "Incluye todos los contactos activos con esta temperatura, resueltos server-side.",
+          },
           contacto_ids: {
             type: "array",
             items: { type: "string" },
-            description: "IDs de los contactos a incluir, tomados de los resultados reales de una herramienta previa.",
+            description: "IDs de contactos de una consulta hecha en este mismo turno. Omitir si usás filtro_temperatura.",
           },
         },
-        required: ["nombre", "contacto_ids"],
+        required: ["nombre"],
       },
     },
   },
@@ -2033,12 +2038,11 @@ async function ejecutarHerramientaAgente(
               typeof args.temperatura === "string"
                 ? `Contactos ${args.temperatura === "frio" ? "fríos" : args.temperatura === "caliente" ? "calientes" : "tibios"}`
                 : "Tus contactos",
-            columnas: ["Nombre", "Teléfono", "Temp.", "Score"],
+            columnas: ["Nombre", "Teléfono", "Temp."],
             filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
               f.nombre,
               f.telefono,
               f.temperatura ?? "—",
-              String(f.score_interes ?? 0),
             ]),
             totalDisponible: filas.length,
           }
@@ -2153,35 +2157,72 @@ async function ejecutarHerramientaAgente(
     const idsPedidos = Array.isArray(args.contacto_ids)
       ? args.contacto_ids.filter((v): v is string => typeof v === "string")
       : [];
+    const filtroTemp =
+      typeof args.filtro_temperatura === "string" &&
+      ["caliente", "tibio", "frio"].includes(args.filtro_temperatura)
+        ? args.filtro_temperatura
+        : null;
 
-    if (idsPedidos.length === 0) {
-      return { datos: { error: "No se recibió ningún contacto para agrupar." } };
-    }
+    // Camino robusto: si el agente indicó un filtro, resolvemos los
+    // contactos acá contra la base. No depende de que el modelo acarree
+    // ids entre turnos (cosa que no puede hacer: el historial que recibe
+    // es solo texto, sin los resultados de herramientas de turnos
+    // anteriores).
+    let idsValidos: string[];
 
-    // Anti-alucinación: verificamos contra la base que TODOS los ids
-    // existan y pertenezcan a este tenant, en vez de confiar en lo que
-    // devolvió el modelo. Si inventó ids (o mezcló de otra conversación),
-    // se descartan acá y nunca llegan a crear una audiencia real.
-    const { data: existentes, error } = await supabase
-      .from("yamas_send_leads")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("activo", true)
-      .in("id", idsPedidos.slice(0, 500));
+    if (filtroTemp) {
+      const { data, error } = await supabase
+        .from("yamas_send_leads")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("activo", true)
+        .or(`temperatura_efectiva.eq.${filtroTemp},and(temperatura_efectiva.is.null,temperatura.eq.${filtroTemp})`)
+        .limit(500);
 
-    if (error) {
-      return { datos: { error: "No se pudieron validar los contactos." } };
-    }
+      if (error) {
+        return { datos: { error: "No se pudieron resolver los contactos por temperatura." } };
+      }
+      idsValidos = (data ?? []).map((r) => r.id as string);
 
-    const idsValidos = (existentes ?? []).map((r) => r.id as string);
+      if (idsValidos.length === 0) {
+        return {
+          datos: { error: `No hay contactos con temperatura "${filtroTemp}" en la cuenta.` },
+        };
+      }
+    } else {
+      if (idsPedidos.length === 0) {
+        return {
+          datos: {
+            error:
+              "No indicaste contactos. Si el usuario se refiere a contactos de un mensaje anterior, volvé a consultarlos ahora con listar_contactos (o usá filtro_temperatura) y después llamá a esta herramienta.",
+          },
+        };
+      }
 
-    if (idsValidos.length === 0) {
-      return {
-        datos: {
-          error:
-            "Ninguno de esos contactos existe en la cuenta. Volvé a consultar los contactos antes de agruparlos.",
-        },
-      };
+      // Anti-alucinación: verificamos contra la base que TODOS los ids
+      // existan y pertenezcan a este tenant, en vez de confiar en lo que
+      // devolvió el modelo.
+      const { data: existentes, error } = await supabase
+        .from("yamas_send_leads")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("activo", true)
+        .in("id", idsPedidos.slice(0, 500));
+
+      if (error) {
+        return { datos: { error: "No se pudieron validar los contactos." } };
+      }
+
+      idsValidos = (existentes ?? []).map((r) => r.id as string);
+
+      if (idsValidos.length === 0) {
+        return {
+          datos: {
+            error:
+              "Esos ids no corresponden a contactos de la cuenta (los ids no sobreviven entre mensajes). Volvé a consultar los contactos ahora con listar_contactos — o usá filtro_temperatura si el grupo se puede describir por temperatura — y reintentá con los ids nuevos.",
+          },
+        };
+      }
     }
 
     return {
@@ -2272,8 +2313,10 @@ CÓMO RESPONDER PREGUNTAS SOBRE SUS DATOS
 - Si la herramienta devuelve una lista vacía, decilo con naturalidad — no inventes.
 
 ACCIONES QUE PODÉS EJECUTAR
-- Si el usuario pide armar una audiencia con contactos que vos ya trajiste en este turno (ej: "creá un grupo con los fríos que me mostraste"), usá crear_audiencia_con_estos_contactos pasando los contacto_id REALES de esos resultados.
-- Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos que ya tengas a mano, usá abrir_flujo.
+- Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
+- MUY IMPORTANTE: los resultados de las herramientas NO se guardan entre mensajes. Solo ves el texto de la conversación previa, no los datos que consultaste antes. Entonces, si el usuario dice "creá una audiencia con esos" refiriéndose a contactos de un mensaje anterior, PRIMERO volvé a consultarlos ahora (con listar_contactos o buscar_en_conversaciones) y recién después creá la audiencia. Si el grupo se puede describir por temperatura, es más simple y confiable usar el parámetro filtro_temperatura.
+- Si una herramienta te devuelve un error, leelo y corregí en el mismo turno (por ejemplo, volviendo a consultar los datos). No le traslades el error al usuario si podés resolverlo vos.
+- Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos, usá abrir_flujo.
 - Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
 - Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes de abrir un flujo.
 
