@@ -54,23 +54,19 @@ export interface IAResponse {
 }
 
 // -----------------------------------------------------------------------
-// Clasificador de intención — se usa SOLO cuando no hay un flujo guiado
-// activo. Es deliberadamente barato (gpt-4o-mini, respuesta corta y
-// estructurada) porque la mayoría de los mensajes durante un flujo ya
-// resuelto no pasan por acá (ver sendIAMessageAction más abajo).
-// -----------------------------------------------------------------------
-// -----------------------------------------------------------------------
-// Clasificador de intención. Su ÚNICO trabajo ahora es detectar si el
-// usuario está pidiendo una ACCIÓN que dispara un flujo guiado con UI de
-// confirmación (crear audiencia/template/campaña, importar contactos).
+// Clasificador de intención — INACTIVO desde que el agente maneja también
+// las acciones.
 //
-// Todo lo demás — preguntas sobre sus datos, búsquedas, saludos, charla —
-// va al agente de datos, que tiene herramientas reales y decide por su
-// cuenta qué consultar. Antes el clasificador también intentaba distinguir
-// entre "pregunta analítica", "búsqueda de contactos" y "charla", y ahí se
-// producían los errores de ruteo: "pasame los contactos fríos" caía en
-// búsqueda de texto y buscaba la frase literal dentro de los mensajes.
-// Menos casilleros = menos formas de errarle.
+// Se retiró del dispatcher porque interceptaba los pedidos ANTES que el
+// agente y perdía el contexto de la conversación: "creá una audiencia con
+// los fríos que me mostraste" se clasificaba como crear_audiencia y
+// arrancaba el flujo desde cero, sin saber a qué contactos se refería el
+// usuario. Ahora el agente ve todo y llama a abrir_flujo /
+// crear_audiencia_con_estos_contactos cuando corresponde.
+//
+// Se conserva porque es un detector barato (gpt-4o-mini) que sirve de
+// respaldo si alguna vez se quiere pre-rutear acciones evidentes sin pagar
+// una llamada al agente.
 // -----------------------------------------------------------------------
 type Intencion =
   | { tipo: "crear_audiencia"; consulta: string | null }
@@ -79,6 +75,7 @@ type Intencion =
   | { tipo: "importar_contactos" }
   | { tipo: "conversar" };
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function clasificarIntencion(
   mensaje: string,
   historial: IAHistoryTurn[],
@@ -424,41 +421,21 @@ export async function sendIAMessageAction(
     if (respuestaImportacion) return respuestaImportacion;
   }
 
-  // ---- Sin flujo activo: detectar si pide una acción -------------------
+  // ---- Sin flujo activo: todo va al agente -----------------------------
+  //
+  // Antes había acá un clasificador que decidía si el mensaje pedía una
+  // acción (y disparaba el flujo correspondiente) o si era una pregunta.
+  // Se eliminó porque interceptaba pedidos que dependían del contexto de
+  // la conversación: "creá una audiencia con los fríos que me mostraste"
+  // se clasificaba como crear_audiencia y arrancaba el flujo desde cero,
+  // perdiendo justamente los contactos que el usuario estaba señalando.
+  //
+  // Ahora el agente ve todo y decide con contexto completo: responde
+  // preguntas con sus herramientas de datos, y para las acciones llama a
+  // crear_audiencia_con_estos_contactos o abrir_flujo, que le entregan el
+  // control a la misma máquina de estados de siempre (con su confirmación
+  // paso a paso intacta).
   const contextoNegocio = await resolverContextoNegocio();
-  let intencion: Intencion;
-  try {
-    intencion = await clasificarIntencion(texto, history, contextoNegocio);
-  } catch (e) {
-    // Log server-side con el detalle real (nunca se muestra tal cual al
-    // usuario, pero queda en los runtime logs de Vercel para diagnosticar).
-    console.error("[IA] Error en clasificarIntencion:", e);
-    // Degradamos al agente en vez de cortar: si el detector de acciones
-    // falla, lo más probable es que fuera una pregunta, no una acción.
-    intencion = { tipo: "conversar" };
-  }
-
-  if (intencion.tipo === "crear_audiencia") {
-    return iniciarFlujoCrearAudiencia(intencion.consulta);
-  }
-
-  if (intencion.tipo === "crear_template") {
-    return iniciarFlujoCrearTemplate();
-  }
-
-  if (intencion.tipo === "crear_campana") {
-    return iniciarFlujoCrearCampana();
-  }
-
-  if (intencion.tipo === "importar_contactos") {
-    return await iniciarFlujoImportarContactos();
-  }
-
-  // "conversar": todo lo demás lo maneja el agente de datos — preguntas
-  // sobre audiencias/contactos/templates/campañas/métricas, búsquedas en
-  // conversaciones, saludos y charla general. El agente decide por su
-  // cuenta qué herramientas llamar y redacta la respuesta mirando los
-  // datos reales que le vuelven.
   const tenantId = await resolverTenantId();
   try {
     return await responderConAgente(texto, history, contextoNegocio, tenantId);
@@ -1922,12 +1899,70 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: { type: "object", properties: {} },
     },
   },
+  // --- Herramientas de ACCIÓN ------------------------------------------
+  // A diferencia de las de arriba (que devuelven datos y dejan que el
+  // agente siga razonando), estas ENTREGAN el control a la máquina de
+  // estados determinística: cortan el loop del agente y devuelven un
+  // flowState con su UI de confirmación paso a paso. El agente nunca crea
+  // ni envía nada por su cuenta — solo abre el flujo correspondiente, y el
+  // usuario confirma en pantalla. Esto es deliberado: una alucinación del
+  // modelo no puede terminar en una campaña enviada a contactos reales.
+  {
+    type: "function",
+    function: {
+      name: "crear_audiencia_con_estos_contactos",
+      description:
+        "Abre el flujo de creación de audiencia con una lista concreta de contactos YA identificados en esta conversación. Usar cuando el usuario pide armar una audiencia con contactos que vos acabás de traer con otra herramienta (ej: 'creá una audiencia con los fríos que me mostraste', 'armá un grupo con estos'). IMPORTANTE: los contacto_id tienen que salir de los resultados reales de listar_contactos o buscar_en_conversaciones en este mismo turno — nunca los inventes.",
+      parameters: {
+        type: "object",
+        properties: {
+          nombre: {
+            type: "string",
+            description: "Nombre sugerido para la audiencia. Si el usuario no dijo uno, proponé uno descriptivo y corto.",
+          },
+          contacto_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "IDs de los contactos a incluir, tomados de los resultados reales de una herramienta previa.",
+          },
+        },
+        required: ["nombre", "contacto_ids"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "abrir_flujo",
+      description:
+        "Abre uno de los asistentes guiados de la plataforma cuando el usuario pide hacer esa acción pero no hay contactos concretos ya identificados. 'crear_audiencia' para armar una lista (podés pasar un criterio en lenguaje natural), 'crear_template' para redactar un mensaje y mandarlo a aprobar a Meta, 'crear_campana' para armar un envío, 'importar_contactos' para sincronizar los contactos de WhatsApp.",
+      parameters: {
+        type: "object",
+        properties: {
+          flujo: {
+            type: "string",
+            enum: ["crear_audiencia", "crear_template", "crear_campana", "importar_contactos"],
+            description: "Cuál asistente abrir.",
+          },
+          criterio: {
+            type: "string",
+            description: "Solo para 'crear_audiencia': criterio de selección en lenguaje natural, si el usuario dio uno (ej: 'los que preguntaron por departamentos').",
+          },
+        },
+        required: ["flujo"],
+      },
+    },
+  },
 ];
 
 /** Resultado de ejecutar una herramienta: datos crudos para el modelo + tabla opcional para la UI. */
 interface ResultadoHerramienta {
   datos: unknown;
   tabla?: { titulo: string; columnas: string[]; filas: string[][]; totalDisponible?: number };
+  // Si viene, corta el loop del agente y esta respuesta se devuelve tal cual
+  // al usuario. Lo usan las herramientas de ACCIÓN, que entregan el control
+  // a la máquina de estados con su UI de confirmación.
+  accion?: IAResponse;
 }
 
 function fechaCorta(v: string | null | undefined): string {
@@ -2110,6 +2145,86 @@ async function ejecutarHerramientaAgente(
     return { datos: data ?? {} };
   }
 
+  if (nombre === "crear_audiencia_con_estos_contactos") {
+    const nombreAudiencia =
+      typeof args.nombre === "string" && args.nombre.trim()
+        ? args.nombre.trim().slice(0, 120)
+        : "Nueva audiencia";
+    const idsPedidos = Array.isArray(args.contacto_ids)
+      ? args.contacto_ids.filter((v): v is string => typeof v === "string")
+      : [];
+
+    if (idsPedidos.length === 0) {
+      return { datos: { error: "No se recibió ningún contacto para agrupar." } };
+    }
+
+    // Anti-alucinación: verificamos contra la base que TODOS los ids
+    // existan y pertenezcan a este tenant, en vez de confiar en lo que
+    // devolvió el modelo. Si inventó ids (o mezcló de otra conversación),
+    // se descartan acá y nunca llegan a crear una audiencia real.
+    const { data: existentes, error } = await supabase
+      .from("yamas_send_leads")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("activo", true)
+      .in("id", idsPedidos.slice(0, 500));
+
+    if (error) {
+      return { datos: { error: "No se pudieron validar los contactos." } };
+    }
+
+    const idsValidos = (existentes ?? []).map((r) => r.id as string);
+
+    if (idsValidos.length === 0) {
+      return {
+        datos: {
+          error:
+            "Ninguno de esos contactos existe en la cuenta. Volvé a consultar los contactos antes de agruparlos.",
+        },
+      };
+    }
+
+    return {
+      datos: { ok: true, contactos_incluidos: idsValidos.length },
+      accion: {
+        text: `Dale, armemos la audiencia "${nombreAudiencia}" con ${idsValidos.length} contacto${idsValidos.length === 1 ? "" : "s"}. Revisá la selección y confirmá.`,
+        payload: {
+          kind: "seleccionar_contactos",
+          preselectedIds: idsValidos,
+        },
+        flowState: {
+          kind: "crear_audiencia",
+          step: "audiencia_esperando_contactos",
+          draft: {
+            nombre: nombreAudiencia,
+            contactosIds: idsValidos,
+            contactosIdsResueltos: true,
+          },
+        },
+      },
+    };
+  }
+
+  if (nombre === "abrir_flujo") {
+    const flujo = typeof args.flujo === "string" ? args.flujo : "";
+    const criterio =
+      typeof args.criterio === "string" && args.criterio.trim() ? args.criterio.trim() : null;
+
+    if (flujo === "crear_audiencia") {
+      return { datos: { ok: true }, accion: await iniciarFlujoCrearAudiencia(criterio) };
+    }
+    if (flujo === "crear_template") {
+      return { datos: { ok: true }, accion: iniciarFlujoCrearTemplate() };
+    }
+    if (flujo === "crear_campana") {
+      return { datos: { ok: true }, accion: await iniciarFlujoCrearCampana() };
+    }
+    if (flujo === "importar_contactos") {
+      return { datos: { ok: true }, accion: await iniciarFlujoImportarContactos() };
+    }
+    return { datos: { error: `Flujo desconocido: ${flujo}` } };
+  }
+
   return { datos: { error: `Herramienta desconocida: ${nombre}` } };
 }
 
@@ -2156,12 +2271,15 @@ CÓMO RESPONDER PREGUNTAS SOBRE SUS DATOS
 - Después de recibir los datos, RESPONDÉ LA PREGUNTA CONCRETA que te hicieron. No vuelques todos los datos que trajiste si solo preguntaron un número.
 - Si la herramienta devuelve una lista vacía, decilo con naturalidad — no inventes.
 
-REGLAS ESTRICTAS
-- NUNCA inventes números, nombres, fechas ni ningún dato de la cuenta. Todo dato concreto que digas tiene que venir de una herramienta que llamaste en este mismo turno.
-- Si no tenés una herramienta que responda algo, decí con franqueza que ese dato todavía no lo podés consultar, en vez de responder con algo parecido pero distinto.
+ACCIONES QUE PODÉS EJECUTAR
+- Si el usuario pide armar una audiencia con contactos que vos ya trajiste en este turno (ej: "creá un grupo con los fríos que me mostraste"), usá crear_audiencia_con_estos_contactos pasando los contacto_id REALES de esos resultados.
+- Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos que ya tengas a mano, usá abrir_flujo.
+- Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
+- Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes de abrir un flujo.
 
-QUÉ MÁS PUEDE HACER LA PLATAFORMA (mencionalo solo si viene al caso)
-El usuario puede pedirte por chat que le importes contactos de WhatsApp, que crees una audiencia, un template o una campaña — esos pedidos los maneja otro flujo con confirmación paso a paso, así que si te lo pide, decile simplemente que se lo armás y va a aparecer el asistente guiado. No intentes hacerlo vos con herramientas.`;
+REGLAS ESTRICTAS
+- NUNCA inventes números, nombres, fechas, IDs ni ningún dato de la cuenta. Todo dato concreto que digas tiene que venir de una herramienta que llamaste en este mismo turno.
+- Si no tenés una herramienta que responda algo, decí con franqueza que ese dato todavía no lo podés consultar, en vez de responder con algo parecido pero distinto.`;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -2218,6 +2336,11 @@ El usuario puede pedirte por chat que le importes contactos de WhatsApp, que cre
         console.error(`[IA] Error ejecutando herramienta ${tc.function.name}:`, e);
         resultado = { datos: { error: "No se pudo consultar ese dato." } };
       }
+
+      // Herramienta de acción: cortamos el loop y entregamos el control a
+      // la máquina de estados, que sigue desde acá con su UI de
+      // confirmación paso a paso.
+      if (resultado.accion) return resultado.accion;
 
       if (resultado.tabla) ultimaTabla = resultado.tabla;
 
