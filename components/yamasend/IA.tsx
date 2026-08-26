@@ -88,6 +88,7 @@ export default function IA({
   const [value, setValue] = useState("");
   const [historialOpen, setHistorialOpen] = useState(false);
   const [accionesAbiertas, setAccionesAbiertas] = useState(false);
+  const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
   const [historialConversaciones, setHistorialConversaciones] = useState<
     IAConversacionResumen[]
   >([]);
@@ -346,16 +347,39 @@ export default function IA({
       <div className="flex-none px-4 md:px-[38px] py-3.5 md:py-[26px] bg-ys-bg">
         <div className="w-full max-w-[760px] mx-auto flex flex-col gap-3">
           {!hayConversacion && (
-            <div className="flex gap-2 flex-wrap">
-              {SUGERENCIAS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => onSend(s)}
-                  className="flex items-center gap-2 bg-white border border-ys-border rounded-full px-3.5 py-2 text-[12.5px] font-semibold text-[#3f4844] cursor-pointer transition-all hover:border-ys-green-border hover:bg-[#f7fbf9] hover:-translate-y-px"
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setSugerenciasAbiertas((v) => !v)}
+                className="flex md:hidden items-center gap-1.5 self-start text-[12.5px] font-bold text-ys-muted cursor-pointer"
+                aria-expanded={sugerenciasAbiertas}
+                aria-controls="ia-chips-sugerencias"
+              >
+                <span>Ideas para empezar</span>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  className="flex-none transition-transform duration-200"
+                  style={{ transform: sugerenciasAbiertas ? "rotate(180deg)" : "rotate(0deg)" }}
                 >
-                  {s}
-                </button>
-              ))}
+                  <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <div
+                id="ia-chips-sugerencias"
+                className={`${sugerenciasAbiertas ? "flex" : "hidden"} md:flex gap-2 flex-wrap`}
+              >
+                {SUGERENCIAS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => onSend(s)}
+                    className="flex items-center gap-2 bg-white border border-ys-border rounded-full px-3.5 py-2 text-[12.5px] font-semibold text-[#3f4844] cursor-pointer transition-all hover:border-ys-green-border hover:bg-[#f7fbf9] hover:-translate-y-px"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
