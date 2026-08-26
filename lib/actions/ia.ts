@@ -400,9 +400,11 @@ function intentaAudienciaDesdeUltimaImportacion(
 // Se usa gpt-4o-mini: es una decisión de 4 opciones con el contexto del
 // paso actual, no necesita el modelo grande.
 // -----------------------------------------------------------------------
+type CampoCorregible = "nombre" | "fecha" | "audiencia" | "template" | "categoria" | "contenido";
+
 type DesvioFlujo =
   | { tipo: "continuar" }
-  | { tipo: "modificar"; campo: "nombre"; valor: string }
+  | { tipo: "modificar"; campo: CampoCorregible; valor: string }
   | { tipo: "pregunta" }
   | { tipo: "cancelar" };
 
@@ -453,14 +455,22 @@ ${describirPasoActual(flowState)}
 En este paso el asistente espera: ${espera}.
 
 Clasificá el último mensaje del usuario y devolvé SOLO un JSON con esta forma:
-{"tipo": "continuar" | "modificar" | "pregunta" | "cancelar", "campo": "nombre" | null, "valor": string | null}
+{"tipo": "continuar" | "modificar" | "pregunta" | "cancelar", "campo": "nombre" | "fecha" | "audiencia" | "template" | "categoria" | "contenido" | null, "valor": string | null}
 
 - "continuar": el mensaje ES lo que el paso esperaba (ej: si espera un nombre, el usuario escribió un nombre).
-- "modificar": el usuario quiere CORREGIR un dato que ya se cargó antes (ej: "mejor llamala X", "cambiale el nombre a X", "no, ponele X"). En ese caso campo="nombre" y valor = el nombre nuevo, limpio, sin comillas ni frases alrededor.
-- "pregunta": el usuario pregunta o comenta algo al margen del flujo (ej: "cuántos contactos calientes tengo?", "qué es un template?", "esperá, cuánto me sale esto?").
+- "modificar": el usuario quiere CORREGIR o CAMBIAR un dato ya cargado. Indicá qué campo y el valor nuevo:
+  - campo "nombre": "mejor llamala X", "cambiale el nombre a X"
+  - campo "fecha": "mejor mandala el viernes a las 10", "cambiala para mañana a la tarde". valor = lo que dijo el usuario sobre cuándo, tal cual.
+  - campo "audiencia": "mejor mandasela a los calientes", "cambiá la audiencia". valor = cómo describió la audiencia (o vacío si solo dijo "cambiá la audiencia").
+  - campo "template": "usá el otro template", "cambiá el mensaje". valor = cómo lo describió, o vacío.
+  - campo "categoria": "que sea de marketing", "cambiá la categoría".
+  - campo "contenido": "cambiá el texto del mensaje", "reescribilo diciendo que...". valor = lo que pide.
+- "pregunta": el usuario pregunta o comenta algo al margen del flujo (ej: "cuántos contactos calientes tengo?", "qué es un template?", "cuánto me sale esto?").
 - "cancelar": el usuario quiere abandonar el flujo (ej: "cancelá", "dejalo", "olvidate", "mejor no").
 
-Regla importante: si el paso espera un nombre y el usuario simplemente escribe un texto corto, eso es "continuar", NO "modificar". Solo es "modificar" si está corrigiendo algo ya cargado, con lenguaje de corrección.
+Reglas importantes:
+- Si el paso espera un dato y el usuario simplemente lo escribe, eso es "continuar", NO "modificar". Solo es "modificar" si está corrigiendo algo ya cargado, con lenguaje de corrección ("mejor", "cambiá", "no, ponele").
+- Si el paso espera una fecha y el usuario escribe una fecha, es "continuar".
 No agregues texto fuera del JSON.`,
       },
       { role: "user", content: mensaje },
@@ -471,8 +481,12 @@ No agregues texto fuera del JSON.`,
     const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
     if (parsed.tipo === "cancelar") return { tipo: "cancelar" };
     if (parsed.tipo === "pregunta") return { tipo: "pregunta" };
-    if (parsed.tipo === "modificar" && parsed.campo === "nombre" && parsed.valor) {
-      return { tipo: "modificar", campo: "nombre", valor: String(parsed.valor).slice(0, 120) };
+    if (parsed.tipo === "modificar") {
+      const campos: CampoCorregible[] = ["nombre", "fecha", "audiencia", "template", "categoria", "contenido"];
+      const campo = campos.find((c) => c === parsed.campo);
+      if (campo) {
+        return { tipo: "modificar", campo, valor: String(parsed.valor ?? "").slice(0, 300) };
+      }
     }
     return { tipo: "continuar" };
   } catch {
@@ -481,58 +495,156 @@ No agregues texto fuera del JSON.`,
 }
 
 /**
- * Aplica una corrección de nombre al draft y re-renderiza la tarjeta del
- * paso actual, para que el usuario vea el cambio reflejado sin perder el
- * progreso ni tener que rehacer el flujo.
+ * Aplica una corrección al draft y re-renderiza la tarjeta del paso
+ * correspondiente, para que el usuario vea el cambio reflejado sin perder
+ * el progreso ni tener que rehacer el flujo.
+ *
+ * Para los campos que se eligen desde una tarjeta (audiencia, template,
+ * categoría) no intentamos adivinar cuál quiso: volvemos a mostrar el
+ * selector correspondiente, que es más rápido y no puede equivocarse.
  */
-function aplicarCambioDeNombre(
-  nombre: string,
+async function aplicarCorreccionEnFlujo(
+  campo: CampoCorregible,
+  valor: string,
   flowState: IAFlowState,
-): IAResponse {
-  const draft = { ...flowState.draft, nombre };
-  const nuevoFlowState: IAFlowState = { ...flowState, draft };
+): Promise<IAResponse> {
+  const draft = { ...flowState.draft };
 
-  // En los pasos de confirmación re-emitimos la tarjeta con el dato nuevo,
-  // así el botón de confirmar ya crea la cosa con el nombre corregido.
-  if (flowState.kind === "crear_audiencia" && flowState.step === "audiencia_esperando_confirmacion") {
-    const ids = draft.contactosIds ?? [];
+  // ---- Nombre --------------------------------------------------------
+  if (campo === "nombre") {
+    if (!valor.trim()) {
+      return { text: "¿Cómo querés que se llame?", flowState };
+    }
+    draft.nombre = valor.trim();
+    const nuevoFlowState: IAFlowState = { ...flowState, draft };
+
+    if (flowState.kind === "crear_audiencia" && flowState.step === "audiencia_esperando_confirmacion") {
+      const ids = draft.contactosIds ?? [];
+      return {
+        text: `Listo, la llamo "${draft.nombre}". Confirmame: creamos la audiencia con ${ids.length} contacto${ids.length === 1 ? "" : "s"}.`,
+        payload: { kind: "confirmar_audiencia", nombre: draft.nombre, contactosIds: ids },
+        flowState: nuevoFlowState,
+      };
+    }
+
+    if (flowState.kind === "crear_audiencia" && flowState.step === "audiencia_esperando_contactos") {
+      return {
+        text: `Dale, la llamo "${draft.nombre}". Seguí eligiendo los contactos desde la tarjeta.`,
+        payload: {
+          kind: "seleccionar_contactos",
+          preselectedIds: draft.contactosIds ?? [],
+          consultaUsada: draft.consultaUsada,
+        },
+        flowState: nuevoFlowState,
+      };
+    }
+
+    if (flowState.kind === "crear_template" && flowState.step === "template_esperando_confirmacion") {
+      return {
+        text: `Listo, lo llamo "${draft.nombre}".`,
+        payload: {
+          kind: "confirmar_template",
+          nombre: draft.nombre,
+          contenido: draft.contenido ?? "",
+          categoria: draft.categoria ?? "",
+        },
+        flowState: nuevoFlowState,
+      };
+    }
+
+    if (flowState.kind === "crear_campana" && flowState.step === "campana_esperando_confirmacion") {
+      return mostrarConfirmacionCampana(draft);
+    }
+
     return {
-      text: `Listo, la llamo "${nombre}". Confirmame: creamos la audiencia con ${ids.length} contacto${ids.length === 1 ? "" : "s"}.`,
-      payload: { kind: "confirmar_audiencia", nombre, contactosIds: ids },
+      text: `Listo, anoté el nombre "${draft.nombre}". Seguimos donde estábamos.`,
       flowState: nuevoFlowState,
     };
   }
 
-  if (flowState.kind === "crear_audiencia" && flowState.step === "audiencia_esperando_contactos") {
+  // ---- Fecha (solo aplica a campañas) --------------------------------
+  if (campo === "fecha") {
+    if (flowState.kind !== "crear_campana") {
+      return {
+        text: "La fecha solo se elige cuando estás armando una campaña. Seguimos donde estábamos.",
+        flowState,
+      };
+    }
+    // No parseamos la fecha en lenguaje natural acá: volvemos a mostrar el
+    // selector de fecha, que ya valida que no sea pasada y evita
+    // interpretar mal cosas como "el viernes".
+    draft.momento = "programar";
     return {
-      text: `Dale, la llamo "${nombre}". Seguí eligiendo los contactos desde la tarjeta.`,
-      payload: {
-        kind: "seleccionar_contactos",
-        preselectedIds: draft.contactosIds ?? [],
-        consultaUsada: draft.consultaUsada,
-      },
-      flowState: nuevoFlowState,
+      text: "Dale, cambiemos cuándo se envía. Elegí la nueva fecha y hora.",
+      payload: { kind: "elegir_fecha_campana" },
+      flowState: { kind: "crear_campana", step: "campana_esperando_fecha", draft },
     };
   }
 
-  if (flowState.kind === "crear_template" && flowState.step === "template_esperando_confirmacion") {
+  // ---- Audiencia (solo campañas) -------------------------------------
+  if (campo === "audiencia") {
+    if (flowState.kind !== "crear_campana") {
+      return {
+        text: "La audiencia se elige cuando armás una campaña. Seguimos donde estábamos.",
+        flowState,
+      };
+    }
     return {
-      text: `Listo, lo llamo "${nombre}".`,
-      payload: {
-        kind: "confirmar_template",
-        nombre,
-        contenido: draft.contenido ?? "",
-        categoria: draft.categoria ?? "",
-      },
-      flowState: nuevoFlowState,
+      text: "Dale, elegí a qué audiencia se la mandamos.",
+      payload: await payloadElegirAudienciaCampana(),
+      flowState: { kind: "crear_campana", step: "campana_esperando_audiencia", draft },
     };
   }
 
-  // Resto de los pasos: confirmamos el cambio y dejamos que el flujo siga
-  // desde donde estaba, sin re-renderizar tarjeta (no hay uno que mostrar).
+  // ---- Template (solo campañas) --------------------------------------
+  if (campo === "template") {
+    if (flowState.kind !== "crear_campana") {
+      return {
+        text: "El template se elige cuando armás una campaña. Seguimos donde estábamos.",
+        flowState,
+      };
+    }
+    return {
+      text: "Dale, elegí qué template querés usar.",
+      payload: await payloadElegirTemplateCampana(),
+      flowState: { kind: "crear_campana", step: "campana_esperando_template", draft },
+    };
+  }
+
+  // ---- Categoría (solo templates) ------------------------------------
+  if (campo === "categoria") {
+    if (flowState.kind !== "crear_template") {
+      return {
+        text: "La categoría se elige cuando creás un template. Seguimos donde estábamos.",
+        flowState,
+      };
+    }
+    return {
+      text: "Dale, elegí la categoría del template.",
+      payload: { kind: "elegir_categoria_template" },
+      flowState: { kind: "crear_template", step: "template_esperando_categoria", draft },
+    };
+  }
+
+  // ---- Contenido (solo templates) ------------------------------------
+  // Volvemos al paso de descripción para que la IA regenere el texto con
+  // el pedido nuevo, en vez de editar el contenido a ciegas.
+  if (flowState.kind !== "crear_template") {
+    return {
+      text: "El contenido se edita cuando estás creando un template. Seguimos donde estábamos.",
+      flowState,
+    };
+  }
+  if (valor.trim()) {
+    return handleCrearTemplateStep(valor.trim(), {
+      kind: "crear_template",
+      step: "template_esperando_descripcion",
+      draft,
+    });
+  }
   return {
-    text: `Listo, anoté el nombre "${nombre}". Seguimos donde estábamos.`,
-    flowState: nuevoFlowState,
+    text: "Contame qué querés que diga el mensaje y lo reescribo.",
+    flowState: { kind: "crear_template", step: "template_esperando_descripcion", draft },
   };
 }
 
@@ -574,7 +686,7 @@ export async function sendIAMessageAction(
     }
 
     if (desvio.tipo === "modificar") {
-      return aplicarCambioDeNombre(desvio.valor, flowState);
+      return aplicarCorreccionEnFlujo(desvio.campo, desvio.valor, flowState);
     }
 
     if (desvio.tipo === "pregunta") {
