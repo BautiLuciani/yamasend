@@ -87,6 +87,7 @@ export default function IA({
 }: IAProps) {
   const [value, setValue] = useState("");
   const [historialOpen, setHistorialOpen] = useState(false);
+  const [accionesAbiertas, setAccionesAbiertas] = useState(false);
   const [historialConversaciones, setHistorialConversaciones] = useState<
     IAConversacionResumen[]
   >([]);
@@ -131,20 +132,41 @@ export default function IA({
 
   return (
     <div className="flex-1 min-w-0 bg-ys-bg flex flex-col h-full pt-[58px] md:pt-0">
-      <div className="flex-none px-4 md:px-[38px] pt-3 md:pt-7 pb-3 md:pb-[18px] flex items-end gap-4 border-b border-ys-border-softest bg-ys-bg flex-wrap">
+      <div className="flex-none px-4 md:px-[38px] pt-3 md:pt-7 pb-3 md:pb-[18px] flex flex-col md:flex-row md:items-end gap-3 md:gap-4 border-b border-ys-border-softest bg-ys-bg">
         <div className="flex flex-col gap-1.5">
           <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
             IA
           </div>
-          <div className="text-sm md:text-[15px] text-ys-muted font-medium">
+          <button
+            onClick={() => setAccionesAbiertas((v) => !v)}
+            className="flex md:hidden items-center gap-1.5 text-sm text-ys-muted font-medium text-left cursor-pointer"
+            aria-expanded={accionesAbiertas}
+            aria-controls="ia-header-acciones"
+          >
+            <span>Analizá tu negocio conversando con YamaSend.</span>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              className="flex-none transition-transform duration-200"
+              style={{ transform: accionesAbiertas ? "rotate(180deg)" : "rotate(0deg)" }}
+            >
+              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <div className="hidden md:block text-[15px] text-ys-muted font-medium">
             Analizá tu negocio conversando con YamaSend.
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-2.5">
-          <div className="relative">
+        <div
+          id="ia-header-acciones"
+          className={`${accionesAbiertas ? "flex" : "hidden"} md:flex flex-col md:flex-row md:ml-auto items-stretch md:items-center gap-2.5`}
+        >
+          <div className="relative w-full md:w-auto">
             <button
               onClick={handleToggleHistorial}
-              className="flex items-center gap-2 bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8]"
+              className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8]"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
@@ -154,7 +176,7 @@ export default function IA({
             </button>
             {historialOpen && (
               <div
-                className="absolute top-[calc(100%+6px)] right-0 w-[280px] max-h-[360px] overflow-y-auto bg-white border border-ys-border rounded-xl p-1.5 shadow-[var(--shadow-popover)] z-30"
+                className="absolute top-[calc(100%+6px)] left-0 right-0 md:left-auto md:right-0 w-auto md:w-[280px] max-h-[360px] overflow-y-auto bg-white border border-ys-border rounded-xl p-1.5 shadow-[var(--shadow-popover)] z-30"
                 style={{ animation: "ys-fade-up .17s cubic-bezier(.4,0,.2,1) both" }}
               >
                 {historialCargando && (
@@ -205,7 +227,7 @@ export default function IA({
               onNuevaConversacion();
               setHistorialOpen(false);
             }}
-            className="flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-4 py-2.5 rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+            className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-ys-green text-white text-[13.5px] font-bold px-4 py-2.5 rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
           >
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
               <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
