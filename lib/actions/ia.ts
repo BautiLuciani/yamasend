@@ -113,7 +113,7 @@ Tu única tarea es decidir qué quiere hacer el usuario a partir de su último m
 - "importar_contactos": el usuario quiere importar, sincronizar o traer sus contactos de WhatsApp (ej: "importá mis contactos", "sincronizá mis chats", "traé mis contactos nuevos").
 - "buscar_contactos": el usuario quiere VER o ENCONTRAR contactos según un tema que se haya hablado en las conversaciones, SIN pedir explícitamente crear una audiencia (ej: "mostrame los que hablamos de Coca-Cola", "quiénes preguntaron por el departamento de 3 ambientes", "buscá contactos que mencionaron descuentos"). La clave para diferenciarlo de "crear_audiencia": acá el usuario quiere VER/EXPLORAR resultados primero, no está pidiendo crear una audiencia de una.
   - En este caso, "consulta" es obligatorio: el tema o palabra clave que hay que buscar (ej: "coca cola", "departamento de 3 ambientes").
-- "consulta_analitica": el usuario está preguntando por MÉTRICAS, DESEMPEÑO o HECHOS CONCRETOS sobre sus campañas/mensajes/gasto, incluyendo preguntas cronológicas (primera/última campaña), rankings de desempeño, conteos por tema, gasto en un período, o mejor horario de envío (ej: "cuál fue la primera campaña que envié", "cuál fue la campaña que mejor rindió este mes", "cuánto gasté la semana pasada", "a cuántos les mandé algo de la promo de verano", "cuál es el mejor horario para mandar campañas"). Si la pregunta es sobre SUS DATOS REALES en la plataforma (aunque no sepas si hay una función exacta para resolverla), preferí este tipo antes que "otra" — es mejor intentar buscar el dato real que asumir que no se puede.
+- "consulta_analitica": el usuario está preguntando por MÉTRICAS, DESEMPEÑO, CONTEOS o HECHOS CONCRETOS sobre sus recursos en la plataforma: campañas, mensajes, gasto, AUDIENCIAS, TEMPLATES o CONTACTOS/LEADS. Incluye preguntas cronológicas (primera/última campaña o audiencia), rankings de desempeño, conteos por tema o por estado, gasto en un período, o mejor horario de envío (ej: "cuál fue la primera campaña que envié", "cuál fue mi primera audiencia", "cuántas audiencias tengo", "cuántos templates aprobados tengo", "cuántos contactos calientes tengo", "cuál fue la campaña que mejor rindió este mes", "cuánto gasté la semana pasada", "cuál es el mejor horario para mandar campañas"). Si la pregunta es sobre SUS DATOS REALES en la plataforma, sea cual sea el recurso (campaña, audiencia, template, contacto), preferí este tipo antes que "otra" — es mejor intentar buscar el dato real que asumir que no se puede.
   - En este caso, "consulta" es obligatorio: la pregunta del usuario tal cual la escribió (se usa después para extraer parámetros como fechas o temas).
 - "charla": saludos, agradecimientos, despedidas, charla casual, preguntas sobre qué puede hacer el asistente, o cualquier mensaje conversacional que NO pide un dato concreto de la cuenta ni una acción del sistema (ej: "hola", "cómo andás", "gracias", "qué podés hacer", "buen día").
   - En este caso, "consulta" es obligatorio: el mensaje del usuario tal cual lo escribió.
@@ -212,7 +212,7 @@ Qué podés hacer (mencionalo SOLO si el usuario pregunta qué hacés o parece p
 - Importar/sincronizar sus contactos de WhatsApp
 - Crear audiencias, templates y campañas hablando en lenguaje natural
 - Buscar contactos por tema en su historial de conversaciones
-- Responder preguntas sobre el desempeño de sus campañas (mejor campaña, gasto, mejor horario para enviar, etc)
+- Responder preguntas con datos reales de la cuenta: cuántas audiencias/templates/contactos tiene, cuál fue su primera o última campaña o audiencia, cuál campaña rindió mejor, cuánto gastó, o cuál es su mejor horario para enviar
 
 Reglas estrictas:
 - NUNCA inventes ni afirmes un número, nombre de campaña, estadística o cualquier hecho concreto de la cuenta del usuario — no tenés acceso a esos datos acá. Si el usuario te pregunta algo así, decile amablemente que se lo buscás si te lo vuelve a pedir como pregunta (por ejemplo: "esa te la puedo averiguar, preguntame directamente por ese dato y te tiro los números reales").
@@ -1864,6 +1864,8 @@ type LlamadaAnalitica =
   | { funcion: "resumen_periodo"; desde: string; hasta: string }
   | { funcion: "mejor_campana"; desde: string; hasta: string; metrica: string }
   | { funcion: "primera_ultima_campana"; orden: "primera" | "ultima" }
+  | { funcion: "primera_ultima_audiencia"; orden: "primera" | "ultima" }
+  | { funcion: "conteo_recursos" }
   | { funcion: "mensajes_por_tema"; tema: string; dias: number }
   | { funcion: "mejor_horario_envio" };
 
@@ -1927,6 +1929,34 @@ const HERRAMIENTAS_ANALITICA: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "primera_ultima_audiencia",
+      description:
+        "Devuelve la primera o la última AUDIENCIA/LISTA creada, ordenada cronológicamente por fecha de creación. Usar para \"cuál fue la primera audiencia que creé\", \"cuál fue mi última audiencia/lista\". No confundir con campañas: una audiencia es un grupo de contactos, no un envío.",
+      parameters: {
+        type: "object",
+        properties: {
+          orden: {
+            type: "string",
+            enum: ["primera", "ultima"],
+            description: "'primera' para la más antigua, 'ultima' para la más reciente.",
+          },
+        },
+        required: ["orden"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "conteo_recursos",
+      description:
+        "Devuelve conteos actuales de TODOS los recursos de la cuenta de una sola vez: cantidad de audiencias, contactos (activos, calientes, tibios, fríos), templates (total, aprobados, en revisión, rechazados, borrador) y campañas (total, enviadas, programadas). Usar para CUALQUIER pregunta de tipo \"cuántas/cuántos tengo\" sobre audiencias, templates, contactos o campañas (ej: \"cuántas audiencias tengo\", \"cuántos templates aprobados tengo\", \"cuántos contactos calientes tengo\", \"cuántas campañas programadas tengo\"). No requiere parámetros — siempre devuelve todo, elegís después qué mostrar de la respuesta.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "mensajes_por_tema",
       description:
         "Cuenta a cuántos contactos se les envió un mensaje sobre un tema puntual en los últimos N días. Usar para \"a cuántos les mandé algo sobre X\", \"cuántos contactos recibieron la promo de Y\".",
@@ -1967,7 +1997,7 @@ async function elegirLlamadaAnalitica(
         role: "system",
         content: `Sos el módulo analítico del chat de IA de YamaSend. Tu única tarea es elegir cuál de las funciones disponibles responde mejor la pregunta del usuario y con qué parámetros, resolviendo fechas relativas ("este mes", "la semana pasada", "últimos 15 días") a fechas concretas ISO 8601. Hoy es ${hoy}. Si la pregunta menciona un período sin especificar, asumí el mes calendario en curso.
 
-Importante: "primera"/"última" campaña (orden cronológico) usa primera_ultima_campana, NO mejor_campana (que ordena por desempeño) — son cosas distintas aunque suenen parecido.
+Importante: "primera"/"última" campaña (orden cronológico de ENVÍOS) usa primera_ultima_campana; "primera"/"última" AUDIENCIA (orden cronológico de grupos de contactos creados) usa primera_ultima_audiencia — son recursos distintos, no los confundas. Para cualquier pregunta de "cuántos/cuántas tengo" (audiencias, templates, contactos, campañas) usá conteo_recursos, que trae todos los conteos de una sola vez.
 
 Si NINGUNA de las funciones disponibles responde realmente lo que se pregunta, NO llames a ninguna — es preferible admitir que no tenés esa función a forzar la que más se parece. Nunca inventes datos: tu trabajo es solo elegir la función y los parámetros, no responder la pregunta vos mismo.`,
       },
@@ -2006,6 +2036,13 @@ Si NINGUNA de las funciones disponibles responde realmente lo que se pregunta, N
         funcion: "primera_ultima_campana",
         orden: args.orden === "ultima" ? "ultima" : "primera",
       };
+    case "primera_ultima_audiencia":
+      return {
+        funcion: "primera_ultima_audiencia",
+        orden: args.orden === "ultima" ? "ultima" : "primera",
+      };
+    case "conteo_recursos":
+      return { funcion: "conteo_recursos" };
     case "mensajes_por_tema":
       if (typeof args.tema === "string" && args.tema.trim()) {
         return {
@@ -2056,7 +2093,7 @@ async function responderConsultaAnalitica(pregunta: string): Promise<IAResponse>
 
   if (!llamada) {
     return {
-      text: "Esa todavía no la sé responder con datos reales. Puedo contarte cosas como cuál fue tu primera o última campaña, cuál rindió mejor, cuánto gastaste en un período, a cuántos contactos les mandaste algo sobre un tema, o cuál es tu mejor horario para enviar — probá reformulando por ese lado.",
+      text: "Esa todavía no la sé responder con datos reales. Puedo contarte cosas como cuántas audiencias, templates o contactos tenés, cuál fue tu primera o última campaña o audiencia, cuál campaña rindió mejor, cuánto gastaste en un período, a cuántos contactos les mandaste algo sobre un tema, o cuál es tu mejor horario para enviar — probá reformulando por ese lado.",
       flowState: IA_FLOW_IDLE,
     };
   }
@@ -2250,6 +2287,127 @@ async function responderConsultaAnalitica(pregunta: string): Promise<IAResponse>
           { etiqueta: "Fecha de envío", valor: fecha },
           { etiqueta: "Contactos", valor: String(data.contactos_count) },
           { etiqueta: "Mensajes enviados", valor: String(data.mensajes_ok) },
+        ],
+      },
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (llamada.funcion === "primera_ultima_audiencia") {
+    const { data: rawData, error } = await supabase
+      .rpc("analytics_primera_ultima_audiencia", {
+        p_tenant_id: tenantId,
+        p_orden: llamada.orden,
+      })
+      .maybeSingle();
+
+    if (error) {
+      console.error("[IA] Error en analytics_primera_ultima_audiencia:", error);
+      return {
+        text: "Tuve un problema para buscar esa audiencia. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+
+    const data = rawData as {
+      audiencia_id: string;
+      nombre: string;
+      created_at: string;
+      contactos_count: number;
+      status: string;
+    } | null;
+
+    if (!data) {
+      return {
+        text: "Todavía no encontré ninguna audiencia creada en tu cuenta.",
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    const etiquetaOrden = llamada.orden === "ultima" ? "última" : "primera";
+    const fecha = new Date(data.created_at).toLocaleDateString("es-AR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+
+    return {
+      text: `Tu ${etiquetaOrden} audiencia fue "${data.nombre}", creada el ${fecha}.`,
+      payload: {
+        kind: "respuesta_analitica",
+        titulo: `Tu ${etiquetaOrden} audiencia`,
+        filas: [
+          { etiqueta: "Audiencia", valor: data.nombre },
+          { etiqueta: "Fecha de creación", valor: fecha },
+          { etiqueta: "Contactos", valor: String(data.contactos_count) },
+        ],
+      },
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (llamada.funcion === "conteo_recursos") {
+    const { data: rawData, error } = await supabase
+      .rpc("analytics_conteo_recursos", { p_tenant_id: tenantId })
+      .maybeSingle();
+
+    if (error) {
+      console.error("[IA] Error en analytics_conteo_recursos:", error);
+      return {
+        text: "Tuve un problema para calcular esos conteos. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+
+    const data = rawData as {
+      audiencias_total: number;
+      contactos_activos: number;
+      contactos_calientes: number;
+      contactos_tibios: number;
+      contactos_frios: number;
+      templates_total: number;
+      templates_aprobados: number;
+      templates_en_revision: number;
+      templates_rechazados: number;
+      templates_borrador: number;
+      campanas_total: number;
+      campanas_enviadas: number;
+      campanas_programadas: number;
+    } | null;
+
+    if (!data) {
+      return {
+        text: "No pude calcular los conteos de tu cuenta ahora. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    // Devolvemos SIEMPRE el resumen completo (una sola RPC cubre todos los
+    // recursos), sin intentar adivinar con un LLM cuál de los ~13 números
+    // era el que preguntaron — es más rápido y evita el riesgo de recortar
+    // mal justo el dato que importaba. El texto principal destaca
+    // audiencias (el recurso más consultado hasta ahora), y la tarjeta
+    // completa deja el resto a mano para cualquier otra pregunta de conteo.
+    return {
+      text: `Tenés ${data.audiencias_total} audiencia${data.audiencias_total === 1 ? "" : "s"} creada${data.audiencias_total === 1 ? "" : "s"}. Te dejo el resto de los números de tu cuenta:`,
+      payload: {
+        kind: "respuesta_analitica",
+        titulo: "Estado de tu cuenta",
+        filas: [
+          { etiqueta: "Audiencias", valor: String(data.audiencias_total) },
+          { etiqueta: "Contactos activos", valor: String(data.contactos_activos) },
+          { etiqueta: "— Calientes", valor: String(data.contactos_calientes) },
+          { etiqueta: "— Tibios", valor: String(data.contactos_tibios) },
+          { etiqueta: "— Fríos", valor: String(data.contactos_frios) },
+          { etiqueta: "Templates totales", valor: String(data.templates_total) },
+          { etiqueta: "— Aprobados", valor: String(data.templates_aprobados) },
+          { etiqueta: "— En revisión", valor: String(data.templates_en_revision) },
+          { etiqueta: "— Rechazados", valor: String(data.templates_rechazados) },
+          { etiqueta: "Campañas totales", valor: String(data.campanas_total) },
+          { etiqueta: "— Enviadas", valor: String(data.campanas_enviadas) },
+          { etiqueta: "— Programadas", valor: String(data.campanas_programadas) },
         ],
       },
       flowState: IA_FLOW_IDLE,
