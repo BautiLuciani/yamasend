@@ -66,6 +66,7 @@ type Intencion =
   | { tipo: "importar_contactos" }
   | { tipo: "buscar_contactos"; consulta: string }
   | { tipo: "consulta_analitica"; pregunta: string }
+  | { tipo: "charla"; mensaje: string }
   | { tipo: "otra" };
 
 async function clasificarIntencion(
@@ -103,7 +104,7 @@ async function clasificarIntencion(
 
 Tu única tarea es decidir qué quiere hacer el usuario a partir de su último mensaje (y el historial reciente como contexto). Devolvé ÚNICAMENTE un JSON con esta forma exacta:
 
-{"tipo": "crear_audiencia" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "consulta_analitica" | "otra", "consulta": string | null}
+{"tipo": "crear_audiencia" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "consulta_analitica" | "charla" | "otra", "consulta": string | null}
 
 - "crear_audiencia": el usuario quiere armar/crear una lista o audiencia de contactos directamente (ej: "creame una audiencia con los que preguntaron por X", "quiero armar una audiencia nueva").
   - Si además especificó un criterio de selección en lenguaje natural, poné ese criterio tal cual en "consulta". Si no especificó ningún criterio, "consulta" debe ser null.
@@ -112,9 +113,11 @@ Tu única tarea es decidir qué quiere hacer el usuario a partir de su último m
 - "importar_contactos": el usuario quiere importar, sincronizar o traer sus contactos de WhatsApp (ej: "importá mis contactos", "sincronizá mis chats", "traé mis contactos nuevos").
 - "buscar_contactos": el usuario quiere VER o ENCONTRAR contactos según un tema que se haya hablado en las conversaciones, SIN pedir explícitamente crear una audiencia (ej: "mostrame los que hablamos de Coca-Cola", "quiénes preguntaron por el departamento de 3 ambientes", "buscá contactos que mencionaron descuentos"). La clave para diferenciarlo de "crear_audiencia": acá el usuario quiere VER/EXPLORAR resultados primero, no está pidiendo crear una audiencia de una.
   - En este caso, "consulta" es obligatorio: el tema o palabra clave que hay que buscar (ej: "coca cola", "departamento de 3 ambientes").
-- "consulta_analitica": el usuario está preguntando por MÉTRICAS o DESEMPEÑO de su cuenta: qué campaña rindió mejor, cuántos mensajes se mandaron/entregaron/leyeron/respondieron en un período, a cuántos contactos se les mandó algo sobre un tema, cuánto se gastó, o cuál es el mejor horario para enviar. Son preguntas que se responden con NÚMEROS o RANKINGS, no con una lista de contactos para elegir (ej: "cuál fue la campaña que mejor rindió este mes", "cuánto gasté la semana pasada", "a cuántos les mandé algo de la promo de verano", "cuál es el mejor horario para mandar campañas").
+- "consulta_analitica": el usuario está preguntando por MÉTRICAS, DESEMPEÑO o HECHOS CONCRETOS sobre sus campañas/mensajes/gasto, incluyendo preguntas cronológicas (primera/última campaña), rankings de desempeño, conteos por tema, gasto en un período, o mejor horario de envío (ej: "cuál fue la primera campaña que envié", "cuál fue la campaña que mejor rindió este mes", "cuánto gasté la semana pasada", "a cuántos les mandé algo de la promo de verano", "cuál es el mejor horario para mandar campañas"). Si la pregunta es sobre SUS DATOS REALES en la plataforma (aunque no sepas si hay una función exacta para resolverla), preferí este tipo antes que "otra" — es mejor intentar buscar el dato real que asumir que no se puede.
   - En este caso, "consulta" es obligatorio: la pregunta del usuario tal cual la escribió (se usa después para extraer parámetros como fechas o temas).
-- "otra": cualquier otra cosa (charla general, preguntas que no encajan en ninguna de las anteriores, etc).
+- "charla": saludos, agradecimientos, despedidas, charla casual, preguntas sobre qué puede hacer el asistente, o cualquier mensaje conversacional que NO pide un dato concreto de la cuenta ni una acción del sistema (ej: "hola", "cómo andás", "gracias", "qué podés hacer", "buen día").
+  - En este caso, "consulta" es obligatorio: el mensaje del usuario tal cual lo escribió.
+- "otra": cualquier otra cosa que no encaje en ninguna de las anteriores.
 
 Para "crear_template", "crear_campana", "importar_contactos" y "otra", "consulta" siempre va null.
 No agregues texto fuera del JSON.${bloqueContextoNegocio}`,
@@ -143,10 +146,92 @@ No agregues texto fuera del JSON.${bloqueContextoNegocio}`,
     if (parsed.tipo === "consulta_analitica" && parsed.consulta) {
       return { tipo: "consulta_analitica", pregunta: String(parsed.consulta) };
     }
+    if (parsed.tipo === "charla" && parsed.consulta) {
+      return { tipo: "charla", mensaje: String(parsed.consulta) };
+    }
     return { tipo: "otra" };
   } catch {
     return { tipo: "otra" };
   }
+}
+
+// -----------------------------------------------------------------------
+// Flujo: charla
+// Cubre saludos, charla casual, agradecimientos y cualquier mensaje que no
+// pide una acción ni un dato concreto. A diferencia del resto del chat
+// (máquina de estados determinística + RPCs), acá SÍ dejamos que el LLM
+// redacte libremente el texto de respuesta — es la única rama donde eso es
+// seguro, porque no hay ningún dato de negocio real que pueda inventarse:
+// el prompt tiene una regla explícita para nunca afirmar un número, nombre
+// de campaña, o hecho de la cuenta que no venga de una función anterior.
+// Si el mensaje en realidad pedía un dato, ya no llega acá: lo intercepta
+// "consulta_analitica" o "buscar_contactos" antes en el clasificador.
+//
+// gpt-4o-mini igual (mismo modelo barato que el resto del chat) — acá el
+// costo es por redacción de tono, no por razonamiento complejo, así que no
+// hace falta un modelo más caro.
+// -----------------------------------------------------------------------
+async function responderCharla(
+  mensaje: string,
+  history: IAHistoryTurn[],
+  contexto: ContextoNegocio | null,
+): Promise<IAResponse> {
+  const openai = getOpenAI();
+
+  const contextoHistorial = history
+    .slice(-8)
+    .map((h) => `${h.role === "user" ? "Usuario" : "Asistente"}: ${h.text}`)
+    .join("\n");
+
+  const lineasPersonalidad = contexto
+    ? [
+        contexto.nombreUsuario && `El usuario se llama ${contexto.nombreUsuario} — llamalo por su nombre de pila cuando quede natural, no en cada mensaje.`,
+        contexto.nombreEmpresa && `Trabaja en/con la empresa "${contexto.nombreEmpresa}".`,
+        contexto.rubro && `Rubro del negocio: ${contexto.rubro}.`,
+        contexto.tonoComunicacion && `Tono de comunicación que prefiere la marca: ${contexto.tonoComunicacion}.`,
+        contexto.diferenciales && `Diferenciales que destacan de su negocio: ${contexto.diferenciales}.`,
+      ].filter(Boolean)
+    : [];
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0.6,
+    max_tokens: 200,
+    messages: [
+      {
+        role: "system",
+        content: `Sos el asistente conversacional de YamaSend, una plataforma de mensajería masiva por WhatsApp. Estás charlando con el dueño o encargado de una cuenta de YamaSend, DENTRO del panel de la app.
+
+Cómo hablar:
+- Hablá como una persona real, natural y cercana, en español rioplatense (voseo: "vos", "tenés", "querés"). Nada de tono de manual ni de call center.
+- Sé breve: 1-3 oraciones salvo que la situación pida más.
+- No repitas el nombre del usuario en cada mensaje ni fuerces referencias a su negocio si no vienen a cuento — usalas solo cuando aporten calidez genuina.
+${lineasPersonalidad.length ? "\nDatos reales de esta cuenta que podés usar para sonar más cercano (nunca inventes datos que no estén acá):\n" + lineasPersonalidad.join("\n") : ""}
+
+Qué podés hacer (mencionalo SOLO si el usuario pregunta qué hacés o parece perdido, nunca como respuesta genérica a un saludo):
+- Importar/sincronizar sus contactos de WhatsApp
+- Crear audiencias, templates y campañas hablando en lenguaje natural
+- Buscar contactos por tema en su historial de conversaciones
+- Responder preguntas sobre el desempeño de sus campañas (mejor campaña, gasto, mejor horario para enviar, etc)
+
+Reglas estrictas:
+- NUNCA inventes ni afirmes un número, nombre de campaña, estadística o cualquier hecho concreto de la cuenta del usuario — no tenés acceso a esos datos acá. Si el usuario te pregunta algo así, decile amablemente que se lo buscás si te lo vuelve a pedir como pregunta (por ejemplo: "esa te la puedo averiguar, preguntame directamente por ese dato y te tiro los números reales").
+- No prometas acciones que no podés cumplir vos mismo en este chat.`,
+      },
+      {
+        role: "user",
+        content: contextoHistorial
+          ? `Historial reciente:\n${contextoHistorial}\n\nÚltimo mensaje del usuario: ${mensaje}`
+          : mensaje,
+      },
+    ],
+  });
+
+  const texto =
+    completion.choices[0]?.message?.content?.trim() ||
+    "¡Hola! ¿En qué te ayudo hoy?";
+
+  return { text: texto, flowState: IA_FLOW_IDLE };
 }
 
 // -----------------------------------------------------------------------
@@ -179,9 +264,13 @@ async function resolverTenantId(): Promise<string | null> {
 // caso (degradación genérica, no error).
 // -----------------------------------------------------------------------
 interface ContextoNegocio {
+  nombreUsuario: string | null;
+  nombreEmpresa: string | null;
   rubro: string;
   descripcionNegocio: string;
   publicoObjetivo: string;
+  tonoComunicacion: string;
+  diferenciales: string;
 }
 
 async function resolverContextoNegocio(): Promise<ContextoNegocio | null> {
@@ -193,16 +282,22 @@ async function resolverContextoNegocio(): Promise<ContextoNegocio | null> {
 
   const { data: cliente } = await supabase
     .from("yamas_inmo_clientes")
-    .select("rubro, descripcion_negocio, publico_objetivo")
+    .select(
+      "contacto_nombre, nombre_empresa, rubro, descripcion_negocio, publico_objetivo, tono_comunicacion, diferenciales",
+    )
     .eq("auth_user_id", user.id)
     .maybeSingle();
 
   if (!cliente) return null;
 
   return {
+    nombreUsuario: cliente.contacto_nombre ?? null,
+    nombreEmpresa: cliente.nombre_empresa ?? null,
     rubro: cliente.rubro ?? "",
     descripcionNegocio: cliente.descripcion_negocio ?? "",
     publicoObjetivo: cliente.publico_objetivo ?? "",
+    tonoComunicacion: cliente.tono_comunicacion ?? "",
+    diferenciales: cliente.diferenciales ?? "",
   };
 }
 
@@ -412,10 +507,10 @@ export async function sendIAMessageAction(
   }
 
   // ---- Sin flujo activo: clasificar intención --------------------------
+  const contextoNegocioParaCharla = await resolverContextoNegocio();
   let intencion: Intencion;
   try {
-    const contextoNegocio = await resolverContextoNegocio();
-    intencion = await clasificarIntencion(texto, history, contextoNegocio);
+    intencion = await clasificarIntencion(texto, history, contextoNegocioParaCharla);
   } catch (e) {
     // Log server-side con el detalle real (nunca se muestra tal cual al
     // usuario, pero queda en los runtime logs de Vercel para diagnosticar).
@@ -451,13 +546,15 @@ export async function sendIAMessageAction(
     return responderConsultaAnalitica(intencion.pregunta);
   }
 
-  // "otra": placeholder conversacional — no es el foco de esta iteración,
-  // así que respondemos con guía hacia lo que sí sabemos hacer en vez de
-  // inventar una respuesta sin datos reales detrás.
-  return {
-    text: "Puedo ayudarte a importar contactos, crear una audiencia, un template o una campaña, buscar contactos por tema, y responder preguntas sobre el desempeño de tus campañas. Por ejemplo, pedime: \"cuál fue la campaña que mejor rindió este mes\" o \"mostrame los que hablamos de casas de 3 ambientes\". ¿Querés que empecemos?",
-    flowState: IA_FLOW_IDLE,
-  };
+  if (intencion.tipo === "charla") {
+    return responderCharla(intencion.mensaje, history, contextoNegocioParaCharla);
+  }
+
+  // "otra": red de seguridad para lo que ni siquiera "charla" pudo cubrir
+  // (el clasificador no está seguro de qué es). Mismo tratamiento que
+  // "charla" — nunca mostramos un manual de instrucciones frío acá tampoco,
+  // pero sin el contexto conversacional adicional que sí usa "charla".
+  return responderCharla(texto, history, contextoNegocioParaCharla);
 }
 
 // -----------------------------------------------------------------------
@@ -1766,6 +1863,7 @@ export async function iniciarAudienciaDesdeResultadosBusquedaAction(
 type LlamadaAnalitica =
   | { funcion: "resumen_periodo"; desde: string; hasta: string }
   | { funcion: "mejor_campana"; desde: string; hasta: string; metrica: string }
+  | { funcion: "primera_ultima_campana"; orden: "primera" | "ultima" }
   | { funcion: "mensajes_por_tema"; tema: string; dias: number }
   | { funcion: "mejor_horario_envio" };
 
@@ -1810,6 +1908,25 @@ const HERRAMIENTAS_ANALITICA: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "primera_ultima_campana",
+      description:
+        "Devuelve la primera o la última campaña enviada, ORDENADA CRONOLÓGICAMENTE (por fecha de envío), sin importar su desempeño. Usar SIEMPRE que la pregunta sea sobre orden temporal y no sobre qué campaña rindió mejor (ej: \"cuál fue la primera campaña que envié\", \"cuál fue mi última campaña\", \"cuál fue la más reciente\"). No confundir con mejor_campana: esa ordena por métricas de desempeño, esta por fecha.",
+      parameters: {
+        type: "object",
+        properties: {
+          orden: {
+            type: "string",
+            enum: ["primera", "ultima"],
+            description: "'primera' para la más antigua, 'ultima' para la más reciente.",
+          },
+        },
+        required: ["orden"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "mensajes_por_tema",
       description:
         "Cuenta a cuántos contactos se les envió un mensaje sobre un tema puntual en los últimos N días. Usar para \"a cuántos les mandé algo sobre X\", \"cuántos contactos recibieron la promo de Y\".",
@@ -1844,11 +1961,15 @@ async function elegirLlamadaAnalitica(
     model: "gpt-4o-mini",
     temperature: 0,
     tools: HERRAMIENTAS_ANALITICA,
-    tool_choice: "required",
+    tool_choice: "auto",
     messages: [
       {
         role: "system",
-        content: `Sos el módulo analítico del chat de IA de YamaSend. Tu única tarea es elegir cuál de las funciones disponibles responde mejor la pregunta del usuario y con qué parámetros, resolviendo fechas relativas ("este mes", "la semana pasada", "últimos 15 días") a fechas concretas ISO 8601. Hoy es ${hoy}. Si la pregunta menciona un período sin especificar, asumí el mes calendario en curso. Nunca inventes datos: tu trabajo es solo elegir la función y los parámetros, no responder la pregunta vos mismo.`,
+        content: `Sos el módulo analítico del chat de IA de YamaSend. Tu única tarea es elegir cuál de las funciones disponibles responde mejor la pregunta del usuario y con qué parámetros, resolviendo fechas relativas ("este mes", "la semana pasada", "últimos 15 días") a fechas concretas ISO 8601. Hoy es ${hoy}. Si la pregunta menciona un período sin especificar, asumí el mes calendario en curso.
+
+Importante: "primera"/"última" campaña (orden cronológico) usa primera_ultima_campana, NO mejor_campana (que ordena por desempeño) — son cosas distintas aunque suenen parecido.
+
+Si NINGUNA de las funciones disponibles responde realmente lo que se pregunta, NO llames a ninguna — es preferible admitir que no tenés esa función a forzar la que más se parece. Nunca inventes datos: tu trabajo es solo elegir la función y los parámetros, no responder la pregunta vos mismo.`,
       },
       { role: "user", content: pregunta },
     ],
@@ -1880,6 +2001,11 @@ async function elegirLlamadaAnalitica(
         };
       }
       return null;
+    case "primera_ultima_campana":
+      return {
+        funcion: "primera_ultima_campana",
+        orden: args.orden === "ultima" ? "ultima" : "primera",
+      };
     case "mensajes_por_tema":
       if (typeof args.tema === "string" && args.tema.trim()) {
         return {
@@ -1930,7 +2056,7 @@ async function responderConsultaAnalitica(pregunta: string): Promise<IAResponse>
 
   if (!llamada) {
     return {
-      text: "No pude identificar bien qué dato necesitás. Podés preguntarme, por ejemplo, \"cuál fue la campaña que mejor rindió este mes\", \"cuánto gasté la semana pasada\", \"a cuántos les mandé algo sobre [tema]\" o \"cuál es el mejor horario para enviar\".",
+      text: "Esa todavía no la sé responder con datos reales. Puedo contarte cosas como cuál fue tu primera o última campaña, cuál rindió mejor, cuánto gastaste en un período, a cuántos contactos les mandaste algo sobre un tema, o cuál es tu mejor horario para enviar — probá reformulando por ese lado.",
       flowState: IA_FLOW_IDLE,
     };
   }
@@ -2066,6 +2192,64 @@ async function responderConsultaAnalitica(pregunta: string): Promise<IAResponse>
           ...(filas.length > 1
             ? [{ etiqueta: "Otras campañas del período", valor: filas.slice(1).map((f) => f.nombre).join(", ") }]
             : []),
+        ],
+      },
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (llamada.funcion === "primera_ultima_campana") {
+    const { data: rawData, error } = await supabase
+      .rpc("analytics_primera_ultima_campana", {
+        p_tenant_id: tenantId,
+        p_orden: llamada.orden,
+      })
+      .maybeSingle();
+
+    if (error) {
+      console.error("[IA] Error en analytics_primera_ultima_campana:", error);
+      return {
+        text: "Tuve un problema para buscar esa campaña. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+
+    const data = rawData as {
+      campana_id: string;
+      nombre: string;
+      enviado_at: string;
+      status: string;
+      contactos_count: number;
+      mensajes_ok: number;
+      mensajes_error: number;
+      costo_usd: number | null;
+    } | null;
+
+    if (!data) {
+      return {
+        text: "Todavía no encontré ninguna campaña enviada en tu cuenta.",
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    const etiquetaOrden = llamada.orden === "ultima" ? "última" : "primera";
+    const fecha = new Date(data.enviado_at).toLocaleDateString("es-AR", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    });
+
+    return {
+      text: `Tu ${etiquetaOrden} campaña enviada fue "${data.nombre}", el ${fecha}.`,
+      payload: {
+        kind: "respuesta_analitica",
+        titulo: `Tu ${etiquetaOrden} campaña`,
+        filas: [
+          { etiqueta: "Campaña", valor: data.nombre },
+          { etiqueta: "Fecha de envío", valor: fecha },
+          { etiqueta: "Contactos", valor: String(data.contactos_count) },
+          { etiqueta: "Mensajes enviados", valor: String(data.mensajes_ok) },
         ],
       },
       flowState: IA_FLOW_IDLE,

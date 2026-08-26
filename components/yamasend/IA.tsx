@@ -40,6 +40,7 @@ const SUGERENCIAS = [
   "Quiero importar mis contactos",
   "Quiero armar un template nuevo",
   "Quiero mandar una campaña",
+  "¿Cuál fue la campaña que mejor me rindió?",
 ];
 
 // Variantes del mensaje de bienvenida — se elige una al azar por sesión de
