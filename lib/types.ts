@@ -226,6 +226,13 @@ export type ChatPayload =
   | {
       kind: "follow_ups";
       opciones: string[];
+    }
+  | {
+      kind: "respuesta_analitica";
+      // Título corto de la métrica respondida (ej: "Mejor campaña del mes").
+      titulo: string;
+      // Filas clave/valor para mostrar como lista simple debajo del texto.
+      filas: { etiqueta: string; valor: string }[];
     };
 
 export interface ChatMessage {

@@ -65,6 +65,7 @@ type Intencion =
   | { tipo: "crear_campana" }
   | { tipo: "importar_contactos" }
   | { tipo: "buscar_contactos"; consulta: string }
+  | { tipo: "consulta_analitica"; pregunta: string }
   | { tipo: "otra" };
 
 async function clasificarIntencion(
@@ -102,7 +103,7 @@ async function clasificarIntencion(
 
 Tu única tarea es decidir qué quiere hacer el usuario a partir de su último mensaje (y el historial reciente como contexto). Devolvé ÚNICAMENTE un JSON con esta forma exacta:
 
-{"tipo": "crear_audiencia" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "otra", "consulta": string | null}
+{"tipo": "crear_audiencia" | "crear_template" | "crear_campana" | "importar_contactos" | "buscar_contactos" | "consulta_analitica" | "otra", "consulta": string | null}
 
 - "crear_audiencia": el usuario quiere armar/crear una lista o audiencia de contactos directamente (ej: "creame una audiencia con los que preguntaron por X", "quiero armar una audiencia nueva").
   - Si además especificó un criterio de selección en lenguaje natural, poné ese criterio tal cual en "consulta". Si no especificó ningún criterio, "consulta" debe ser null.
@@ -111,7 +112,9 @@ Tu única tarea es decidir qué quiere hacer el usuario a partir de su último m
 - "importar_contactos": el usuario quiere importar, sincronizar o traer sus contactos de WhatsApp (ej: "importá mis contactos", "sincronizá mis chats", "traé mis contactos nuevos").
 - "buscar_contactos": el usuario quiere VER o ENCONTRAR contactos según un tema que se haya hablado en las conversaciones, SIN pedir explícitamente crear una audiencia (ej: "mostrame los que hablamos de Coca-Cola", "quiénes preguntaron por el departamento de 3 ambientes", "buscá contactos que mencionaron descuentos"). La clave para diferenciarlo de "crear_audiencia": acá el usuario quiere VER/EXPLORAR resultados primero, no está pidiendo crear una audiencia de una.
   - En este caso, "consulta" es obligatorio: el tema o palabra clave que hay que buscar (ej: "coca cola", "departamento de 3 ambientes").
-- "otra": cualquier otra cosa (preguntas sobre sus datos, métricas, charla general, etc).
+- "consulta_analitica": el usuario está preguntando por MÉTRICAS o DESEMPEÑO de su cuenta: qué campaña rindió mejor, cuántos mensajes se mandaron/entregaron/leyeron/respondieron en un período, a cuántos contactos se les mandó algo sobre un tema, cuánto se gastó, o cuál es el mejor horario para enviar. Son preguntas que se responden con NÚMEROS o RANKINGS, no con una lista de contactos para elegir (ej: "cuál fue la campaña que mejor rindió este mes", "cuánto gasté la semana pasada", "a cuántos les mandé algo de la promo de verano", "cuál es el mejor horario para mandar campañas").
+  - En este caso, "consulta" es obligatorio: la pregunta del usuario tal cual la escribió (se usa después para extraer parámetros como fechas o temas).
+- "otra": cualquier otra cosa (charla general, preguntas que no encajan en ninguna de las anteriores, etc).
 
 Para "crear_template", "crear_campana", "importar_contactos" y "otra", "consulta" siempre va null.
 No agregues texto fuera del JSON.${bloqueContextoNegocio}`,
@@ -136,6 +139,9 @@ No agregues texto fuera del JSON.${bloqueContextoNegocio}`,
     if (parsed.tipo === "importar_contactos") return { tipo: "importar_contactos" };
     if (parsed.tipo === "buscar_contactos" && parsed.consulta) {
       return { tipo: "buscar_contactos", consulta: String(parsed.consulta) };
+    }
+    if (parsed.tipo === "consulta_analitica" && parsed.consulta) {
+      return { tipo: "consulta_analitica", pregunta: String(parsed.consulta) };
     }
     return { tipo: "otra" };
   } catch {
@@ -441,11 +447,15 @@ export async function sendIAMessageAction(
     return buscarContactosPorTema(intencion.consulta);
   }
 
-  // "otra": placeholder conversacional (analítica libre) — no es el foco de
-  // esta iteración, así que respondemos con guía hacia lo que sí sabemos
-  // hacer en vez de inventar una respuesta analítica sin datos reales detrás.
+  if (intencion.tipo === "consulta_analitica") {
+    return responderConsultaAnalitica(intencion.pregunta);
+  }
+
+  // "otra": placeholder conversacional — no es el foco de esta iteración,
+  // así que respondemos con guía hacia lo que sí sabemos hacer en vez de
+  // inventar una respuesta sin datos reales detrás.
   return {
-    text: "Puedo ayudarte a importar contactos, crear una audiencia, un template o una campaña, y buscar contactos por tema hablando conmigo. Por ejemplo, pedime: \"mostrame los que hablamos de casas de 3 ambientes\" o \"quiero mandar una campaña\". ¿Querés que empecemos?",
+    text: "Puedo ayudarte a importar contactos, crear una audiencia, un template o una campaña, buscar contactos por tema, y responder preguntas sobre el desempeño de tus campañas. Por ejemplo, pedime: \"cuál fue la campaña que mejor rindió este mes\" o \"mostrame los que hablamos de casas de 3 ambientes\". ¿Querés que empecemos?",
     flowState: IA_FLOW_IDLE,
   };
 }
@@ -1729,5 +1739,426 @@ export async function iniciarAudienciaDesdeResultadosBusquedaAction(
       step: "audiencia_esperando_nombre",
       draft: { consultaUsada: consulta, contactosIds, contactosIdsResueltos: true },
     },
+  };
+}
+
+// -----------------------------------------------------------------------
+// Flujo: consulta_analitica
+//
+// Responde preguntas de negocio ("cuál campaña rindió mejor", "cuánto
+// gasté", "a cuántos les mandé X", "mejor horario para enviar") llamando a
+// una de 4 funciones SQL fijas (analytics_resumen_periodo,
+// analytics_mejor_campana, analytics_mensajes_por_tema,
+// analytics_mejor_horario_envio) — NUNCA generando SQL libre.
+//
+// El LLM solo elige CUÁL de las 4 llamar y con qué parámetros (function
+// calling estructurado de OpenAI), igual que clasificarIntencion elige un
+// tipo de intención. Nunca ve ni produce una sola línea de SQL. Esto es
+// deliberado: es el patrón recomendado para NL-to-data en producción
+// (separar decisión de ejecución, cero superficie de inyección) en vez de
+// dejar que el modelo escriba queries contra la base real.
+//
+// Si el modelo no puede mapear la pregunta a ninguna de las 4 funciones
+// (parámetros ambiguos, pregunta fuera de alcance), respondemos con lo más
+// cercano que sabemos hacer en vez de inventar un número.
+// -----------------------------------------------------------------------
+
+type LlamadaAnalitica =
+  | { funcion: "resumen_periodo"; desde: string; hasta: string }
+  | { funcion: "mejor_campana"; desde: string; hasta: string; metrica: string }
+  | { funcion: "mensajes_por_tema"; tema: string; dias: number }
+  | { funcion: "mejor_horario_envio" };
+
+const HERRAMIENTAS_ANALITICA: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "resumen_periodo",
+      description:
+        "Resumen agregado de mensajería en un rango de fechas: campañas enviadas, mensajes enviados/entregados/leídos/respondidos, tasas y gasto total. Usar para preguntas generales de desempeño en un período (\"cómo me fue este mes\", \"cuánto gasté la semana pasada\").",
+      parameters: {
+        type: "object",
+        properties: {
+          desde: { type: "string", description: "Fecha de inicio del período en formato ISO 8601 (YYYY-MM-DD)." },
+          hasta: { type: "string", description: "Fecha de fin del período en formato ISO 8601 (YYYY-MM-DD), exclusiva." },
+        },
+        required: ["desde", "hasta"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mejor_campana",
+      description:
+        "Ranking de campañas enviadas en un rango de fechas, ordenado por una métrica. Usar para \"cuál campaña rindió mejor\", \"qué campaña tuvo más respuestas\", \"cuál fue más barata por respuesta\".",
+      parameters: {
+        type: "object",
+        properties: {
+          desde: { type: "string", description: "Fecha de inicio en formato ISO 8601 (YYYY-MM-DD)." },
+          hasta: { type: "string", description: "Fecha de fin en formato ISO 8601 (YYYY-MM-DD), exclusiva." },
+          metrica: {
+            type: "string",
+            enum: ["tasa_respuesta", "tasa_lectura", "tasa_entrega", "costo_por_respuesta"],
+            description: "Métrica para ordenar el ranking. Default tasa_respuesta si el usuario no especifica.",
+          },
+        },
+        required: ["desde", "hasta", "metrica"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mensajes_por_tema",
+      description:
+        "Cuenta a cuántos contactos se les envió un mensaje sobre un tema puntual en los últimos N días. Usar para \"a cuántos les mandé algo sobre X\", \"cuántos contactos recibieron la promo de Y\".",
+      parameters: {
+        type: "object",
+        properties: {
+          tema: { type: "string", description: "El tema o palabra clave a buscar, tal cual lo mencionó el usuario." },
+          dias: { type: "integer", description: "Cuántos días hacia atrás buscar. Default 7 si no se especifica." },
+        },
+        required: ["tema", "dias"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mejor_horario_envio",
+      description:
+        "Analiza el histórico completo de envíos y sugiere la franja horaria con mejor tasa de lectura/respuesta. Usar para \"cuál es el mejor horario para enviar\", \"cuándo es mejor mandar mis campañas\". No requiere parámetros.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+];
+
+async function elegirLlamadaAnalitica(
+  pregunta: string,
+): Promise<LlamadaAnalitica | null> {
+  const openai = getOpenAI();
+  const hoy = new Date().toISOString().slice(0, 10);
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    temperature: 0,
+    tools: HERRAMIENTAS_ANALITICA,
+    tool_choice: "required",
+    messages: [
+      {
+        role: "system",
+        content: `Sos el módulo analítico del chat de IA de YamaSend. Tu única tarea es elegir cuál de las funciones disponibles responde mejor la pregunta del usuario y con qué parámetros, resolviendo fechas relativas ("este mes", "la semana pasada", "últimos 15 días") a fechas concretas ISO 8601. Hoy es ${hoy}. Si la pregunta menciona un período sin especificar, asumí el mes calendario en curso. Nunca inventes datos: tu trabajo es solo elegir la función y los parámetros, no responder la pregunta vos mismo.`,
+      },
+      { role: "user", content: pregunta },
+    ],
+  });
+
+  const toolCall = completion.choices[0]?.message?.tool_calls?.[0];
+  if (!toolCall || toolCall.type !== "function") return null;
+
+  let args: Record<string, unknown>;
+  try {
+    args = JSON.parse(toolCall.function.arguments);
+  } catch {
+    return null;
+  }
+
+  switch (toolCall.function.name) {
+    case "resumen_periodo":
+      if (typeof args.desde === "string" && typeof args.hasta === "string") {
+        return { funcion: "resumen_periodo", desde: args.desde, hasta: args.hasta };
+      }
+      return null;
+    case "mejor_campana":
+      if (typeof args.desde === "string" && typeof args.hasta === "string") {
+        return {
+          funcion: "mejor_campana",
+          desde: args.desde,
+          hasta: args.hasta,
+          metrica: typeof args.metrica === "string" ? args.metrica : "tasa_respuesta",
+        };
+      }
+      return null;
+    case "mensajes_por_tema":
+      if (typeof args.tema === "string" && args.tema.trim()) {
+        return {
+          funcion: "mensajes_por_tema",
+          tema: args.tema,
+          dias: typeof args.dias === "number" && args.dias > 0 ? Math.min(args.dias, 365) : 7,
+        };
+      }
+      return null;
+    case "mejor_horario_envio":
+      return { funcion: "mejor_horario_envio" };
+    default:
+      return null;
+  }
+}
+
+const FORMATO_PORCENTAJE = new Intl.NumberFormat("es-AR", {
+  style: "percent",
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+const FORMATO_USD = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+});
+
+async function responderConsultaAnalitica(pregunta: string): Promise<IAResponse> {
+  const tenantId = await resolverTenantId();
+  if (!tenantId) {
+    return {
+      text: "No pude identificar tu cuenta. Probá recargar la página e intentar de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  let llamada: LlamadaAnalitica | null;
+  try {
+    llamada = await elegirLlamadaAnalitica(pregunta);
+  } catch (e) {
+    console.error("[IA] Error en elegirLlamadaAnalitica:", e);
+    return {
+      text: "Tuve un problema para interpretar tu consulta. ¿Podés reformularla?",
+      flowState: IA_FLOW_IDLE,
+      error: e instanceof Error ? e.message : "Error desconocido",
+    };
+  }
+
+  if (!llamada) {
+    return {
+      text: "No pude identificar bien qué dato necesitás. Podés preguntarme, por ejemplo, \"cuál fue la campaña que mejor rindió este mes\", \"cuánto gasté la semana pasada\", \"a cuántos les mandé algo sobre [tema]\" o \"cuál es el mejor horario para enviar\".",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const supabase = await createClient();
+
+  if (llamada.funcion === "resumen_periodo") {
+    const { data: rawData, error } = await supabase
+      .rpc("analytics_resumen_periodo", {
+        p_tenant_id: tenantId,
+        p_desde: llamada.desde,
+        p_hasta: llamada.hasta,
+      })
+      .maybeSingle();
+
+    if (error) {
+      console.error("[IA] Error en analytics_resumen_periodo:", error);
+      return {
+        text: "Tuve un problema para calcular ese resumen. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+
+    // Cast manual: la función es nueva y no está reflejada en los tipos
+    // generados de Supabase (mismo patrón que buscar_mensajes_historico
+    // más arriba en este archivo).
+    const data = rawData as {
+      campanas_enviadas: number;
+      mensajes_enviados: number;
+      mensajes_entregados: number;
+      mensajes_leidos: number;
+      mensajes_respondidos: number;
+      mensajes_error: number;
+      costo_total_usd: number;
+      tasa_entrega: number;
+      tasa_lectura: number;
+      tasa_respuesta: number;
+    } | null;
+
+    if (!data || data.mensajes_enviados === 0) {
+      return {
+        text: `No encontré mensajes enviados entre el ${llamada.desde} y el ${llamada.hasta}. Probá con otro período, o mandá tu primera campaña para empezar a ver datos acá.`,
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    return {
+      text: `Así te fue entre el ${llamada.desde} y el ${llamada.hasta}:`,
+      payload: {
+        kind: "respuesta_analitica",
+        titulo: "Resumen del período",
+        filas: [
+          { etiqueta: "Campañas enviadas", valor: String(data.campanas_enviadas) },
+          { etiqueta: "Mensajes enviados", valor: String(data.mensajes_enviados) },
+          { etiqueta: "Tasa de entrega", valor: FORMATO_PORCENTAJE.format(Number(data.tasa_entrega)) },
+          { etiqueta: "Tasa de lectura", valor: FORMATO_PORCENTAJE.format(Number(data.tasa_lectura)) },
+          { etiqueta: "Tasa de respuesta", valor: FORMATO_PORCENTAJE.format(Number(data.tasa_respuesta)) },
+          { etiqueta: "Gasto total", valor: FORMATO_USD.format(Number(data.costo_total_usd)) },
+        ],
+      },
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (llamada.funcion === "mejor_campana") {
+    const { data, error } = await supabase.rpc("analytics_mejor_campana", {
+      p_tenant_id: tenantId,
+      p_desde: llamada.desde,
+      p_hasta: llamada.hasta,
+      p_metrica: llamada.metrica,
+      p_limite: 3,
+    });
+
+    if (error) {
+      console.error("[IA] Error en analytics_mejor_campana:", error);
+      return {
+        text: "Tuve un problema para armar ese ranking. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+
+    const filas = (data ?? []) as {
+      nombre: string;
+      tasa_respuesta: number;
+      tasa_lectura: number;
+      tasa_entrega: number;
+      costo_por_respuesta: number | null;
+      mensajes_ok: number;
+    }[];
+
+    if (filas.length === 0) {
+      return {
+        text: `No encontré campañas enviadas entre el ${llamada.desde} y el ${llamada.hasta}. Probá con otro período.`,
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    const mejor = filas[0];
+    const etiquetaMetrica =
+      llamada.metrica === "costo_por_respuesta"
+        ? "Costo por respuesta"
+        : llamada.metrica === "tasa_lectura"
+          ? "Tasa de lectura"
+          : llamada.metrica === "tasa_entrega"
+            ? "Tasa de entrega"
+            : "Tasa de respuesta";
+    const valorMetrica =
+      llamada.metrica === "costo_por_respuesta"
+        ? mejor.costo_por_respuesta != null
+          ? FORMATO_USD.format(mejor.costo_por_respuesta)
+          : "Sin respuestas aún"
+        : FORMATO_PORCENTAJE.format(
+            Number(
+              llamada.metrica === "tasa_lectura"
+                ? mejor.tasa_lectura
+                : llamada.metrica === "tasa_entrega"
+                  ? mejor.tasa_entrega
+                  : mejor.tasa_respuesta,
+            ),
+          );
+
+    return {
+      text: `La campaña que mejor rindió (${etiquetaMetrica.toLowerCase()}) entre el ${llamada.desde} y el ${llamada.hasta} fue "${mejor.nombre}".`,
+      payload: {
+        kind: "respuesta_analitica",
+        titulo: `Mejor campaña — ${etiquetaMetrica}`,
+        filas: [
+          { etiqueta: "Campaña", valor: mejor.nombre },
+          { etiqueta: etiquetaMetrica, valor: valorMetrica },
+          { etiqueta: "Mensajes enviados", valor: String(mejor.mensajes_ok) },
+          ...(filas.length > 1
+            ? [{ etiqueta: "Otras campañas del período", valor: filas.slice(1).map((f) => f.nombre).join(", ") }]
+            : []),
+        ],
+      },
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (llamada.funcion === "mensajes_por_tema") {
+    const { data: rawData, error } = await supabase
+      .rpc("analytics_mensajes_por_tema", {
+        p_tenant_id: tenantId,
+        p_tema: llamada.tema,
+        p_dias: llamada.dias,
+      })
+      .maybeSingle();
+
+    if (error) {
+      console.error("[IA] Error en analytics_mensajes_por_tema:", error);
+      return {
+        text: "Tuve un problema buscando ese dato. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+
+    const data = rawData as {
+      contactos_alcanzados: number;
+      menciones_totales: number;
+      contactos: unknown;
+    } | null;
+
+    const contactosAlcanzados = data?.contactos_alcanzados ?? 0;
+
+    if (contactosAlcanzados === 0) {
+      return {
+        text: `No encontré mensajes enviados sobre "${llamada.tema}" en los últimos ${llamada.dias} días.`,
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    return {
+      text: `En los últimos ${llamada.dias} días le mandaste algo sobre "${llamada.tema}" a ${contactosAlcanzados} contacto${contactosAlcanzados === 1 ? "" : "s"}.`,
+      payload: {
+        kind: "respuesta_analitica",
+        titulo: `Mensajes sobre "${llamada.tema}"`,
+        filas: [
+          { etiqueta: "Contactos alcanzados", valor: String(contactosAlcanzados) },
+          { etiqueta: "Menciones totales", valor: String(data?.menciones_totales ?? 0) },
+          { etiqueta: "Período", valor: `Últimos ${llamada.dias} días` },
+        ],
+      },
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  // mejor_horario_envio
+  const { data: rawData, error } = await supabase
+    .rpc("analytics_mejor_horario_envio", { p_tenant_id: tenantId, p_minimo_muestras: 20 })
+    .maybeSingle();
+
+  if (error) {
+    console.error("[IA] Error en analytics_mejor_horario_envio:", error);
+    return {
+      text: "Tuve un problema para calcular el mejor horario. Probá de nuevo en un momento.",
+      flowState: IA_FLOW_IDLE,
+      error: error.message,
+    };
+  }
+
+  const data = rawData as {
+    minimo_alcanzado: boolean;
+    total_mensajes_analizados: number;
+    mejor_hora_inicio: number | null;
+    mejor_hora_fin: number | null;
+    detalle_por_hora: unknown;
+  } | null;
+
+  if (!data?.minimo_alcanzado) {
+    return {
+      text: `Todavía no tengo suficiente historial de envíos para sugerirte un horario con confianza (llevás ${data?.total_mensajes_analizados ?? 0} mensajes enviados). Segui enviando campañas y en un tiempo voy a poder decirte cuál es tu mejor franja horaria.`,
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text: `Según tu historial de envíos, tu mejor franja horaria es entre las ${data.mejor_hora_inicio}:00 y las ${data.mejor_hora_fin}:00 — es cuando mejor tasa de lectura y respuesta tenés.`,
+    payload: {
+      kind: "respuesta_analitica",
+      titulo: "Mejor horario para enviar",
+      filas: [
+        { etiqueta: "Franja recomendada", valor: `${data.mejor_hora_inicio}:00 – ${data.mejor_hora_fin}:00` },
+        { etiqueta: "Mensajes analizados", valor: String(data.total_mensajes_analizados) },
+      ],
+    },
+    flowState: IA_FLOW_IDLE,
   };
 }

@@ -416,7 +416,43 @@ export function renderChatCard(
       />
     );
   }
+  if (payload.kind === "respuesta_analitica") {
+    return <RespuestaAnaliticaCard titulo={payload.titulo} filas={payload.filas} />;
+  }
   return null;
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: respuesta_analitica
+// Lista clave/valor simple para respuestas del módulo analítico del chat
+// (resumen de período, ranking de campañas, mensajes por tema, mejor
+// horario de envío). Deliberadamente minimalista — es texto tabulado, no
+// un gráfico, porque la mayoría de estas respuestas son 3-6 datos puntuales
+// donde un gráfico agregaría ruido visual sin aportar claridad.
+// -------------------------------------------------------------------------
+interface RespuestaAnaliticaCardProps {
+  titulo: string;
+  filas: { etiqueta: string; valor: string }[];
+}
+
+function RespuestaAnaliticaCard({ titulo, filas }: RespuestaAnaliticaCardProps) {
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl overflow-hidden">
+      <div className="px-4 py-2.5 bg-ys-green-bg text-xs font-bold text-ys-green-text border-b border-ys-border-softest">
+        {titulo}
+      </div>
+      <div className="divide-y divide-ys-border-softest">
+        {filas.map((fila, i) => (
+          <div key={i} className="flex items-center justify-between gap-3 px-4 py-2.5">
+            <span className="text-sm text-ys-dim">{fila.etiqueta}</span>
+            <span className="font-mono text-sm font-medium text-ys-text text-right">
+              {fila.valor}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // -------------------------------------------------------------------------
