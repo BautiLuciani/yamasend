@@ -248,11 +248,11 @@ export default function IA({
                             setConfirmandoBorrado(c);
                           }}
                           aria-label={`Eliminar conversación "${c.titulo}"`}
-                          className="flex-none w-7 h-7 mr-1 rounded-md flex items-center justify-center text-ys-dim opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer transition-all hover:bg-ys-red-bg hover:text-ys-red-text"
+                          className="flex-none w-8 h-8 mr-1 rounded-lg flex items-center justify-center text-ys-dim opacity-0 group-hover:opacity-100 focus-visible:opacity-100 cursor-pointer transition-all hover:bg-ys-warn-bg hover:text-ys-orange"
                         >
-                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                             <path
-                              d="M3.5 5h9M6.5 5V3.6c0-.55.45-1 1-1h1c.55 0 1 .45 1 1V5M6.2 5v6.8c0 .55.45 1 1 1h1.6c.55 0 1-.45 1-1V5M5.5 7.3v3M9.5 7.3v3"
+                              d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.25 4.5l.55 8.05a1.2 1.2 0 0 0 1.2 1.1h4a1.2 1.2 0 0 0 1.2-1.1l.55-8.05M6.75 7.3v3.6M9.25 7.3v3.6"
                               stroke="currentColor"
                               strokeWidth="1.4"
                               strokeLinecap="round"
@@ -277,11 +277,11 @@ export default function IA({
                   updatedAt: "",
                 })
               }
-              className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-white border border-ys-border text-[13px] font-bold text-ys-dim px-3.5 py-2.5 rounded-[10px] cursor-pointer transition-colors hover:bg-ys-red-bg hover:text-ys-red-text hover:border-ys-red-bg"
+              className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-white border border-ys-border text-[13px] font-bold text-[#3f4844] px-3.5 py-2.5 rounded-[10px] cursor-pointer transition-colors hover:bg-ys-warn-bg hover:text-ys-orange hover:border-ys-warn-bg"
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <path
-                  d="M3.5 5h9M6.5 5V3.6c0-.55.45-1 1-1h1c.55 0 1 .45 1 1V5M6.2 5v6.8c0 .55.45 1 1 1h1.6c.55 0 1-.45 1-1V5M5.5 7.3v3M9.5 7.3v3"
+                  d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.25 4.5l.55 8.05a1.2 1.2 0 0 0 1.2 1.1h4a1.2 1.2 0 0 0 1.2-1.1l.55-8.05M6.75 7.3v3.6M9.25 7.3v3.6"
                   stroke="currentColor"
                   strokeWidth="1.4"
                   strokeLinecap="round"
@@ -514,7 +514,7 @@ export default function IA({
             <button
               onClick={handleConfirmarBorrado}
               disabled={borrando}
-              className="text-[13.5px] font-bold text-ys-red-text bg-ys-red-bg border border-ys-red-bg rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="text-[13.5px] font-bold text-ys-orange bg-ys-orange-bg border border-ys-warn-bg rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {borrando ? "Eliminando..." : "Eliminar"}
             </button>
