@@ -30,6 +30,7 @@ interface IAProps {
   onCrearAudienciaDesdeImportacion: (contactosIds: string[]) => void;
   onNuevaConversacion: () => void;
   onSeleccionarConversacion: (conversacionId: string) => void;
+  onBorrarConversacion: (conversacionId: string) => Promise<{ error: string | null }>;
   conversacionActivaId: string | null;
   sending?: boolean;
 }
@@ -84,6 +85,7 @@ export default function IA({
   onCrearAudienciaDesdeImportacion,
   onNuevaConversacion,
   onSeleccionarConversacion,
+  onBorrarConversacion,
   conversacionActivaId,
   sending,
 }: IAProps) {
@@ -95,6 +97,10 @@ export default function IA({
     IAConversacionResumen[]
   >([]);
   const [historialCargando, setHistorialCargando] = useState(false);
+  const [confirmandoBorrado, setConfirmandoBorrado] = useState<IAConversacionResumen | null>(
+    null,
+  );
+  const [borrando, setBorrando] = useState(false);
   // Inicializador lazy: se elige una sola vez al montar el componente, no
   // en cada render — así el mensaje no "salta" mientras el usuario lo lee.
   const [bienvenida] = useState(
@@ -120,6 +126,18 @@ export default function IA({
     }
   }
 
+  async function handleConfirmarBorrado() {
+    if (!confirmandoBorrado) return;
+    setBorrando(true);
+    const { error } = await onBorrarConversacion(confirmandoBorrado.id);
+    setBorrando(false);
+    if (error) return;
+    setHistorialConversaciones((prev) =>
+      prev.filter((c) => c.id !== confirmandoBorrado.id),
+    );
+    setConfirmandoBorrado(null);
+  }
+
   function handleSend() {
     const text = value.trim();
     if (!text || sending) return;
@@ -134,6 +152,7 @@ export default function IA({
   const hayConversacion = messages.some((m) => m.type === "user");
 
   return (
+    <>
     <div className="flex-1 min-w-0 bg-ys-bg flex flex-col h-full pt-[58px] md:pt-0">
       <div className="flex-none px-4 md:px-[38px] pt-3 md:pt-7 pb-3 md:pb-[18px] flex flex-col md:flex-row md:items-end gap-3 md:gap-4 border-b border-ys-border-softest bg-ys-bg">
         <div className="flex flex-col gap-1.5">
@@ -196,35 +215,82 @@ export default function IA({
                   historialConversaciones.map((c) => {
                     const activa = c.id === conversacionActivaId;
                     return (
-                      <button
+                      <div
                         key={c.id}
-                        onClick={() => {
-                          onSeleccionarConversacion(c.id);
-                          setHistorialOpen(false);
-                        }}
-                        className={`w-full text-left px-2.5 py-2.5 rounded-lg cursor-pointer transition-colors flex flex-col gap-0.5 ${
+                        className={`group w-full flex items-center gap-1 rounded-lg transition-colors ${
                           activa ? "bg-ys-green-bg" : "hover:bg-[#f7f9f8]"
                         }`}
                       >
-                        <div
-                          className={`text-[12.5px] font-bold truncate ${activa ? "text-ys-green-text" : "text-ys-text"}`}
+                        <button
+                          onClick={() => {
+                            onSeleccionarConversacion(c.id);
+                            setHistorialOpen(false);
+                          }}
+                          className="flex-1 min-w-0 text-left px-2.5 py-2.5 cursor-pointer flex flex-col gap-0.5"
                         >
-                          {c.titulo}
-                        </div>
-                        <div className="text-[11px] text-ys-dim font-medium">
-                          {new Date(c.updatedAt).toLocaleDateString("es-AR", {
-                            day: "2-digit",
-                            month: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </div>
-                      </button>
+                          <div
+                            className={`text-[12.5px] font-bold truncate ${activa ? "text-ys-green-text" : "text-ys-text"}`}
+                          >
+                            {c.titulo}
+                          </div>
+                          <div className="text-[11px] text-ys-dim font-medium">
+                            {new Date(c.updatedAt).toLocaleDateString("es-AR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmandoBorrado(c);
+                          }}
+                          aria-label={`Eliminar conversación "${c.titulo}"`}
+                          className="flex-none w-7 h-7 mr-1 rounded-md flex items-center justify-center text-ys-dim opacity-0 group-hover:opacity-100 focus:opacity-100 cursor-pointer transition-all hover:bg-ys-red-bg hover:text-ys-red-text"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                            <path
+                              d="M3.5 5h9M6.5 5V3.6c0-.55.45-1 1-1h1c.55 0 1 .45 1 1V5M6.2 5v6.8c0 .55.45 1 1 1h1.6c.55 0 1-.45 1-1V5M5.5 7.3v3M9.5 7.3v3"
+                              stroke="currentColor"
+                              strokeWidth="1.4"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </button>
+                      </div>
                     );
                   })}
               </div>
             )}
           </div>
+          {conversacionActivaId && (
+            <button
+              onClick={() =>
+                setConfirmandoBorrado({
+                  id: conversacionActivaId,
+                  titulo:
+                    historialConversaciones.find((c) => c.id === conversacionActivaId)
+                      ?.titulo ?? "esta conversación",
+                  updatedAt: "",
+                })
+              }
+              className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-white border border-ys-border text-[13px] font-bold text-ys-dim px-3.5 py-2.5 rounded-[10px] cursor-pointer transition-colors hover:bg-ys-red-bg hover:text-ys-red-text hover:border-ys-red-bg"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M3.5 5h9M6.5 5V3.6c0-.55.45-1 1-1h1c.55 0 1 .45 1 1V5M6.2 5v6.8c0 .55.45 1 1 1h1.6c.55 0 1-.45 1-1V5M5.5 7.3v3M9.5 7.3v3"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              Eliminar conversación
+            </button>
+          )}
           <button
             onClick={() => {
               onNuevaConversacion();
@@ -416,5 +482,46 @@ export default function IA({
         </div>
       </div>
     </div>
+
+    {confirmandoBorrado && (
+      <div
+        onClick={() => !borrando && setConfirmandoBorrado(null)}
+        className="fixed inset-0 z-[9000] bg-[rgba(16,24,20,0.4)] flex items-center justify-center px-6 py-8"
+        style={{ animation: "ys-fade .16s ease both" }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-[420px] bg-ys-card rounded-[18px] px-7 pt-[26px] pb-[22px] flex flex-col gap-4 shadow-[var(--shadow-modal)]"
+          style={{ animation: "ys-modal .19s cubic-bezier(.4,0,.2,1) both" }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <div className="text-lg font-extrabold tracking-[-0.02em] text-ys-text">
+              ¿Eliminar esta conversación?
+            </div>
+            <div className="text-[13.5px] text-ys-muted font-medium leading-[1.5]">
+              Se va a borrar &ldquo;{confirmandoBorrado.titulo}&rdquo; para siempre, junto con todo
+              su historial de mensajes. Esta acción no se puede deshacer.
+            </div>
+          </div>
+          <div className="flex justify-end gap-2.5">
+            <button
+              onClick={() => setConfirmandoBorrado(null)}
+              disabled={borrando}
+              className="text-[13.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleConfirmarBorrado}
+              disabled={borrando}
+              className="text-[13.5px] font-bold text-ys-red-text bg-ys-red-bg border border-ys-red-bg rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {borrando ? "Eliminando..." : "Eliminar"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

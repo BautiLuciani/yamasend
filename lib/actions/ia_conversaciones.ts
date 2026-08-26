@@ -178,9 +178,10 @@ export async function generarTituloConversacionAction(
 }
 
 /**
- * Borra una conversación del historial. No se usa todavía desde la UI de
- * hoy (el foco es historial + nueva conversación), pero queda disponible
- * para una futura opción de "Eliminar" en el popover de Historial.
+ * Borra una conversación del historial. Se usa tanto desde el botón
+ * "Eliminar conversación" del chat activo como desde el ícono de tacho en
+ * cada fila del popover de Historial (ver AppShell.handleIABorrarConversacion
+ * e IA.tsx).
  */
 export async function borrarConversacionIAAction(
   conversacionId: string,

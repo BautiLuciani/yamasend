@@ -86,6 +86,7 @@ import {
   cargarConversacionIAAction,
   guardarConversacionIAAction,
   generarTituloConversacionAction,
+  borrarConversacionIAAction,
 } from "@/lib/actions/ia_conversaciones";
 import { createClient } from "@/lib/supabase/client";
 
@@ -603,6 +604,36 @@ export default function AppShell({
       conversacion.messages.length > 0 ? conversacion.messages : [IA_MENSAJE_BIENVENIDA],
     );
     setIaFlowState(conversacion.flowState);
+  }
+
+  /**
+   * Borra una conversación del historial (yamas_send_ia_conversaciones).
+   * Si es la conversación abierta actualmente, resetea el chat al estado de
+   * "nueva conversación" — mismo camino que handleIANuevaConversacion,
+   * cancelando cualquier guardado con debounce pendiente para que no
+   * "resucite" la fila recién borrada un instante después.
+   */
+  async function handleIABorrarConversacion(
+    conversacionId: string,
+  ): Promise<{ error: string | null }> {
+    const eraLaActiva = conversacionId === iaConversacionIdRef.current;
+
+    if (eraLaActiva && iaGuardadoTimeoutRef.current) {
+      clearTimeout(iaGuardadoTimeoutRef.current);
+    }
+
+    const { error } = await borrarConversacionIAAction(conversacionId);
+    if (error) return { error };
+
+    if (eraLaActiva) {
+      iaConversacionIdRef.current = null;
+      iaTituloGeneradoRef.current = false;
+      setIaConversacionId(null);
+      setMessages([IA_MENSAJE_BIENVENIDA]);
+      setIaFlowState(IA_FLOW_IDLE);
+    }
+
+    return { error: null };
   }
 
   // ── filtrado combinado, replicando la lógica del original ──
@@ -1240,6 +1271,7 @@ export default function AppShell({
           onCrearAudienciaDesdeImportacion={handleIACrearAudienciaDesdeImportacion}
           onNuevaConversacion={handleIANuevaConversacion}
           onSeleccionarConversacion={handleIASeleccionarConversacion}
+          onBorrarConversacion={handleIABorrarConversacion}
           conversacionActivaId={iaConversacionId}
           sending={iaSending}
         />
