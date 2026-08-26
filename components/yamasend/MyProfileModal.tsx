@@ -174,6 +174,10 @@ export default function MyProfileModal({
 }: MyProfileModalProps) {
   const { t } = useLang();
   const [section, setSection] = useState<Section>("personal");
+  // Solo tiene efecto en mobile: controla si se muestra el menú de
+  // secciones o el contenido de la sección elegida (pantallas separadas,
+  // una a la vez). En desktop ambas conviven siempre lado a lado.
+  const [mobileView, setMobileView] = useState<"menu" | "content">("menu");
 
   // Perfil personal
   const [nombre, setNombre] = useState(user.contactoNombre);
@@ -219,10 +223,16 @@ export default function MyProfileModal({
   }
 
   // Al cerrar, volver siempre a la primera sección y limpiar mensajes/contraseñas
+  function handleSelectSection(s: Section) {
+    setSection(s);
+    setMobileView("content");
+  }
+
   function handleClose() {
     onClose();
     setTimeout(() => {
       setSection("personal");
+      setMobileView("menu");
       setCurrentPw("");
       setNewPw("");
       setConfirmPw("");
@@ -321,14 +331,16 @@ export default function MyProfileModal({
         style={{ animation: "ys-modal .19s cubic-bezier(.4,0,.2,1) both" }}
       >
         {/* Sidebar interno */}
-        <div className="w-[220px] flex-none bg-ys-el2 border-r border-ys-border-soft p-4 flex flex-col gap-1">
+        <div
+          className={`${mobileView === "menu" ? "flex" : "hidden"} md:flex w-full md:w-[220px] flex-none bg-ys-el2 border-r border-ys-border-soft p-4 flex-col gap-1`}
+        >
           <div className="text-[15px] font-extrabold text-ys-text px-2 pb-3">
             {t("myprofile_title")}
           </div>
 
           <NavItem
             active={section === "personal"}
-            onClick={() => setSection("personal")}
+            onClick={() => handleSelectSection("personal")}
             label={t("myprofile_nav_personal")}
             icon={
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -339,7 +351,7 @@ export default function MyProfileModal({
           />
           <NavItem
             active={section === "security"}
-            onClick={() => setSection("security")}
+            onClick={() => handleSelectSection("security")}
             label={t("myprofile_nav_security")}
             icon={
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -349,7 +361,7 @@ export default function MyProfileModal({
           />
           <NavItem
             active={section === "agency"}
-            onClick={() => setSection("agency")}
+            onClick={() => handleSelectSection("agency")}
             label={t("myprofile_nav_agency")}
             icon={
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -360,7 +372,7 @@ export default function MyProfileModal({
           />
           <NavItem
             active={section === "billing"}
-            onClick={() => setSection("billing")}
+            onClick={() => handleSelectSection("billing")}
             label={t("myprofile_nav_billing")}
             icon={
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -370,7 +382,7 @@ export default function MyProfileModal({
             }
           />
 
-          <div className="mt-auto pt-3 border-t border-ys-border-softest">
+          <div className="hidden md:block mt-auto pt-3 border-t border-ys-border-softest">
             <button
               onClick={handleClose}
               className="w-full text-[12.5px] font-bold text-ys-muted hover:text-ys-text transition-colors px-2 py-2 text-left cursor-pointer"
@@ -381,7 +393,19 @@ export default function MyProfileModal({
         </div>
 
         {/* Contenido */}
-        <div className="flex-1 min-w-0 overflow-y-auto p-7 flex flex-col gap-6 relative">
+        <div
+          className={`${mobileView === "content" ? "flex" : "hidden"} md:flex flex-1 min-w-0 overflow-y-auto p-5 md:p-7 flex-col gap-6 relative`}
+        >
+          <button
+            onClick={() => setMobileView("menu")}
+            className="flex md:hidden items-center gap-1.5 self-start text-[13px] font-bold text-ys-muted hover:text-ys-text transition-colors cursor-pointer -mt-1"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M10 3.5 5 8l5 4.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {t("myprofile_title")}
+          </button>
+
           <button
             onClick={handleClose}
             className="absolute top-5 right-5 w-8 h-8 rounded-lg flex items-center justify-center text-ys-dimmer hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer text-xl leading-none"
