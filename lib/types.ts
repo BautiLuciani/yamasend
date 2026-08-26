@@ -87,7 +87,7 @@ export interface Campaign {
 export interface CampaignDetail extends Campaign {
   mensajesOk: number;
   mensajesError: number;
-  respuestas: number;
+  mensajesLeidos: number;
   costoUsd: number | null;
   duracionMin: number | null;
 }
@@ -406,22 +406,22 @@ export interface ActivityLogEntry {
 // Período seleccionable en el switch del Dashboard.
 export type DashboardPeriodo = "7d" | "30d" | "ano";
 
-// Una barra del gráfico "Volumen de envíos": entregados = delivered/read
-// (llegó al dispositivo), fallidos = failed (nunca llegó). accepted/sent
-// quedan afuera de ambos conteos porque todavía no tienen resultado
-// confirmado por WhatsApp.
+// Una barra del gráfico "Volumen de envíos": enviados = todo mensaje
+// registrado en el período (cualquier status), leidos = read_time no nulo
+// (el contacto abrió el mensaje). leidos es un subconjunto de enviados.
 export interface VolumenBarra {
   label: string;
-  entregados: number;
-  fallidos: number;
+  enviados: number;
+  leidos: number;
 }
 
 export interface DashboardStats {
   barras: VolumenBarra[];
   mensajesEnviados: number;
   mensajesEnviadosDeltaPct: number | null;
-  tasaEntrega: number | null; // 0-100, null si no hay mensajes con resultado confirmado
-  tasaEntregaDeltaPts: number | null;
+  mensajesLeidos: number;
+  mensajesLeidosPct: number | null; // % de enviados que fueron leídos, null si no hubo envíos
+  mensajesLeidosDeltaPct: number | null;
   leadsCalificados: number;
   leadsCalificadosDelta: number | null;
 }

@@ -59,7 +59,7 @@ function formatDelta(valor: number | null, sufijo: string = "%"): { texto: strin
 // Línea de detalle bajo el nombre de la campaña: si está programada (a
 // futuro) muestra la fecha objetivo, igual que hacía el mock; para el
 // resto de los estados muestra audiencia + contactos, ya que el listado
-// liviano de campañas no trae mensajes_ok/mensajes_error/respuestas (esos
+// liviano de campañas no trae mensajes_ok/mensajes_error/leídos (esos
 // números solo están en el detalle ampliado, pedido on-demand).
 function detalleCampana(c: Campaign): string {
   if (c.status === "programada" && c.fechaProgramada) {
@@ -308,6 +308,43 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
     };
   }, [tenantId]);
 
+  // Suscripción en tiempo real: cualquier INSERT o UPDATE en
+  // yamas_send_mensajes para este tenant (nuevo mensaje de campaña, o
+  // status actualizado por el webhook de YCloud con send_time/read_time)
+  // dispara un refetch de las estadísticas, para que "Mensajes enviados",
+  // "Mensajes leídos" y el gráfico de volumen se actualicen solos sin
+  // esperar a que el usuario cambie de período o recargue la página.
+  useEffect(() => {
+    const supabase = createClient();
+
+    const channel = supabase
+      .channel(`mensajes-stats-${tenantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "yamas_send_mensajes",
+          filter: `tenant_id=eq.${tenantId}`,
+        },
+        () => {
+          getDashboardStatsAction(tenantId, periodo).then((result) => {
+            setStats(result);
+            setStatsPeriodo(periodo);
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // periodo se lee dentro del callback vía closure; no hace falta
+    // resuscribirse cuando cambia porque el efecto de arriba ya refetchea
+    // al cambiar de período. Solo re-suscribimos si cambia el tenant.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
+
   return (
     <div className="flex-1 min-w-0 bg-ys-bg px-4 md:px-[38px] pt-3 md:pt-[34px] pb-7 md:pb-10 flex flex-col gap-5 md:gap-6 overflow-y-auto">
       <div className="flex items-end gap-5 flex-wrap">
@@ -369,19 +406,19 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
         <KpiCard
           icon={
             <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
-              <path d="m1.5 8.5 3 3 5-6M7 11.5l1 1 6.5-7.5" stroke="#12B76A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="m1.5 6 6.5 4.5L14.5 6" stroke="#12B76A" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.3 4.5h11.4c.4 0 .8.4.8.8v6.4c0 .5-.4.8-.8.8H2.3a.8.8 0 0 1-.8-.8V5.3c0-.4.4-.8.8-.8Z" stroke="#12B76A" strokeWidth="1.4" strokeLinejoin="round" />
+              <path d="m2.8 10.8 3.4-3M13.2 10.8l-3.4-3" stroke="#12B76A" strokeWidth="1.3" strokeLinecap="round" />
             </svg>
           }
-          value={
-            statsLoading
-              ? "…"
-              : stats?.tasaEntrega !== null && stats?.tasaEntrega !== undefined
-                ? `${stats.tasaEntrega.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`
-                : "—"
+          value={statsLoading ? "…" : (stats?.mensajesLeidos ?? 0).toLocaleString("es-AR")}
+          label={
+            !statsLoading && stats?.mensajesLeidosPct !== null && stats?.mensajesLeidosPct !== undefined
+              ? `Mensajes leídos · ${stats.mensajesLeidosPct.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%`
+              : "Mensajes leídos"
           }
-          label="Tasa de entrega"
-          delta={statsLoading ? "" : formatDelta(stats?.tasaEntregaDeltaPts ?? null, " pts").texto}
-          deltaNegativo={!statsLoading && formatDelta(stats?.tasaEntregaDeltaPts ?? null).negativo}
+          delta={statsLoading ? "" : formatDelta(stats?.mensajesLeidosDeltaPct ?? null).texto}
+          deltaNegativo={!statsLoading && formatDelta(stats?.mensajesLeidosDeltaPct ?? null).negativo}
         />
         <KpiCard
           dark
@@ -439,12 +476,12 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
             <div className="text-[15px] font-extrabold text-ys-text">Volumen de envíos</div>
             <div className="flex items-center gap-4 text-[11.5px] font-semibold text-[#7b837e]">
               <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-sm bg-ys-green" />
-                Entregados
+                <span className="w-2 h-2 rounded-sm bg-ys-border-softest" />
+                Enviados
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-sm bg-ys-border-softest" />
-                Fallidos
+                <span className="w-2 h-2 rounded-sm bg-ys-green" />
+                Leídos
               </span>
             </div>
           </div>
@@ -466,7 +503,7 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
                 ))}
               </div>
             </div>
-          ) : !stats || stats.barras.every((b) => b.entregados === 0 && b.fallidos === 0) ? (
+          ) : !stats || stats.barras.every((b) => b.enviados === 0) ? (
             <div className="h-[140px] flex items-center justify-center text-[13px] text-ys-dim font-medium">
               Todavía no hay envíos en este período.
             </div>
@@ -474,15 +511,19 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
             <div className={stats.barras.length > 7 ? "overflow-x-auto -mx-5 md:mx-0 px-5 md:px-0" : ""}>
               <div className={`flex items-end gap-3 md:gap-4 h-[172px] ${stats.barras.length > 7 ? "min-w-max md:min-w-0" : ""}`}>
                 {(() => {
-                  const maxTotal = Math.max(1, ...stats.barras.map((b) => b.entregados + b.fallidos));
+                  const maxTotal = Math.max(1, ...stats.barras.map((b) => b.enviados));
                   const muchasBarras = stats.barras.length > 7;
                   return stats.barras.map((b, i) => {
-                    const total = b.entregados + b.fallidos;
+                    // leidos es subconjunto de enviados: se apila una barra
+                    // verde (leídos) sobre el resto de la barra gris (enviados
+                    // no leídos), así el total de la columna siempre es
+                    // "enviados" y el segmento verde muestra la proporción leída.
+                    const noLeidos = Math.max(0, b.enviados - b.leidos);
                     // Altura mínima visual (2px) para que una barra con datos
                     // no desaparezca del todo cuando el total es muy chico
                     // respecto al máximo del set.
-                    const altoEntregados = b.entregados > 0 ? Math.max(2, (b.entregados / maxTotal) * 140) : 0;
-                    const altoFallidos = b.fallidos > 0 ? Math.max(2, (b.fallidos / maxTotal) * 140) : 0;
+                    const altoLeidos = b.leidos > 0 ? Math.max(2, (b.leidos / maxTotal) * 140) : 0;
+                    const altoNoLeidos = noLeidos > 0 ? Math.max(2, (noLeidos / maxTotal) * 140) : 0;
                     return (
                       <div
                         key={`${b.label}-${i}`}
@@ -495,10 +536,10 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
                         <div
                           className="w-full flex flex-col justify-end gap-0.5 h-[140px]"
                           style={{ animation: "ys-grow .6s cubic-bezier(.4,0,.2,1) both", transformOrigin: "bottom" }}
-                          title={`${b.label}: ${b.entregados} entregados, ${b.fallidos} fallidos${total === 0 ? " (sin envíos)" : ""}`}
+                          title={`${b.label}: ${b.enviados} enviados, ${b.leidos} leídos${b.enviados === 0 ? " (sin envíos)" : ""}`}
                         >
-                          <div className="rounded-t-[3px] bg-ys-border-softest" style={{ height: `${altoFallidos}px` }} />
-                          <div className="rounded-b-[3px] bg-ys-green" style={{ height: `${altoEntregados}px` }} />
+                          <div className="rounded-t-[3px] bg-ys-border-softest" style={{ height: `${altoNoLeidos}px` }} />
+                          <div className="rounded-b-[3px] bg-ys-green" style={{ height: `${altoLeidos}px` }} />
                         </div>
                         <div className="text-[11.5px] text-ys-dimmer font-medium">{b.label}</div>
                       </div>

@@ -90,13 +90,18 @@ function pctDelta(actual: number, anterior: number): number | null {
 
 /**
  * Estadísticas reales para el Dashboard: gráfico "Volumen de envíos" +
- * los 3 KPIs derivados de datos (mensajes enviados, tasa de entrega,
+ * los 3 KPIs derivados de datos (mensajes enviados, mensajes leídos,
  * leads calificados por IA). "Créditos disponibles" queda fuera —
  * depende de un feature de billing todavía no implementado.
  *
- * send_time no se está poblando en yamas_send_mensajes hoy (ver nota en
- * getCampaignDetailAction), así que se usa created_at como aproximación
- * del momento de envío, igual que ya hace el resto de la app.
+ * A partir del fix en el workflow n8n "Aprobar Template Meta (YCloud)"
+ * (nodo "Actualizar Mensaje Status"), el webhook de status de YCloud
+ * (whatsapp.message.updated) escribe send_time/deliver_time/read_time
+ * reales en cada fila. "Enviados" se sigue contando por fila creada en el
+ * período (created_at) porque un mensaje que falló antes de salir de
+ * YCloud puede no tener send_time, y de todas formas cuenta como intento
+ * de envío; "leídos" usa read_time real, que solo se completa cuando
+ * WhatsApp confirmó la lectura.
  */
 export async function getDashboardStatsAction(
   tenantId: string,
@@ -109,13 +114,13 @@ export async function getDashboardStatsAction(
   const [mensajesActuales, mensajesAnteriores, leadsActuales, leadsAnteriores] = await Promise.all([
     supabase
       .from("yamas_send_mensajes")
-      .select("status, created_at")
+      .select("status, created_at, read_time")
       .eq("tenant_id", tenantId)
       .gte("created_at", desde.toISOString())
       .lte("created_at", hasta.toISOString()),
     supabase
       .from("yamas_send_mensajes")
-      .select("status", { count: "exact", head: false })
+      .select("status, read_time", { count: "exact", head: false })
       .eq("tenant_id", tenantId)
       .gte("created_at", desdeAnterior.toISOString())
       .lte("created_at", hastaAnterior.toISOString()),
@@ -137,30 +142,25 @@ export async function getDashboardStatsAction(
   const filasAnteriores = mensajesAnteriores.data ?? [];
 
   const barras: VolumenBarra[] = buckets.map((b) => {
-    let entregados = 0;
-    let fallidos = 0;
+    let enviados = 0;
+    let leidos = 0;
     for (const m of filasActuales) {
       if (!m.created_at) continue;
       const t = new Date(m.created_at).getTime();
       if (t < b.desde.getTime() || t > b.hasta.getTime()) continue;
-      if (m.status === "delivered" || m.status === "read") entregados++;
-      else if (m.status === "failed") fallidos++;
+      enviados++;
+      if (m.read_time) leidos++;
     }
-    return { label: b.label, entregados, fallidos };
+    return { label: b.label, enviados, leidos };
   });
-
-  const entregadosActuales = filasActuales.filter((m) => m.status === "delivered" || m.status === "read").length;
-  const fallidosActuales = filasActuales.filter((m) => m.status === "failed").length;
-  const entregadosAnteriores = filasAnteriores.filter((m) => m.status === "delivered" || m.status === "read").length;
-  const fallidosAnteriores = filasAnteriores.filter((m) => m.status === "failed").length;
 
   const mensajesEnviados = filasActuales.length;
   const mensajesEnviadosAnterior = filasAnteriores.length;
 
-  const confirmadosActuales = entregadosActuales + fallidosActuales;
-  const confirmadosAnteriores = entregadosAnteriores + fallidosAnteriores;
-  const tasaEntrega = confirmadosActuales > 0 ? (entregadosActuales / confirmadosActuales) * 100 : null;
-  const tasaEntregaAnterior = confirmadosAnteriores > 0 ? (entregadosAnteriores / confirmadosAnteriores) * 100 : null;
+  const mensajesLeidos = filasActuales.filter((m) => m.read_time !== null).length;
+  const mensajesLeidosAnterior = filasAnteriores.filter((m) => m.read_time !== null).length;
+
+  const mensajesLeidosPct = mensajesEnviados > 0 ? (mensajesLeidos / mensajesEnviados) * 100 : null;
 
   const leadsCalificados = leadsActuales.count ?? 0;
   const leadsCalificadosAnterior = leadsAnteriores.count ?? 0;
@@ -169,8 +169,9 @@ export async function getDashboardStatsAction(
     barras,
     mensajesEnviados,
     mensajesEnviadosDeltaPct: pctDelta(mensajesEnviados, mensajesEnviadosAnterior),
-    tasaEntrega,
-    tasaEntregaDeltaPts: tasaEntrega !== null && tasaEntregaAnterior !== null ? tasaEntrega - tasaEntregaAnterior : null,
+    mensajesLeidos,
+    mensajesLeidosPct,
+    mensajesLeidosDeltaPct: pctDelta(mensajesLeidos, mensajesLeidosAnterior),
     leadsCalificados,
     leadsCalificadosDelta: leadsCalificados - leadsCalificadosAnterior,
   };

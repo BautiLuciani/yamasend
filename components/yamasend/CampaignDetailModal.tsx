@@ -91,6 +91,25 @@ export default function CampaignDetailModal({
     };
   }, [campaignId, tenantId, onFetchDetail, onFetchInsight]);
 
+  // Refresco periódico liviano mientras el modal está abierto: los
+  // status de YCloud (deliver/read) llegan de forma asincrónica vía
+  // webhook, y la persona puede tener el modal abierto justo cuando un
+  // contacto lee el mensaje. Se resuelve con polling en vez de Realtime
+  // acá porque este modal no tiene un cliente Supabase propio (recibe
+  // todo por Server Action vía props) y reabrir un canal por cada
+  // apertura de modal sería más costoso que refrescar cada few segundos.
+  useEffect(() => {
+    if (!campaignId) return;
+
+    const interval = setInterval(() => {
+      onFetchDetail(tenantId, campaignId).then((result) => {
+        setDetail(result);
+      });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [campaignId, tenantId, onFetchDetail]);
+
   if (!campaignId) return null;
 
   const conMetricas = detail && (detail.status === "enviado" || detail.status === "error");
@@ -163,7 +182,7 @@ export default function CampaignDetailModal({
 
             {conMetricas && (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="border border-[#e8ebe9] rounded-[14px] px-4 py-3.5 flex flex-col gap-[3px]">
                     <div className="font-mono text-[19px] text-ys-text tracking-[-0.02em]">
                       {detail.contactosCount.toLocaleString("es-AR")}
@@ -176,24 +195,12 @@ export default function CampaignDetailModal({
                     </div>
                     <div className="text-[11.5px] text-[#8a908c] font-semibold">Enviados</div>
                   </div>
-                  {/* "Entregados" usa mensajesOk como aproximación: yamas_send_mensajes
-                      solo registra status "accepted" hoy, no hay webhook de status de
-                      YCloud (delivered/read) todavía. Cuando exista, reemplazar por el
-                      conteo real de status = 'delivered'. */}
                   <div className="border border-[#e8ebe9] rounded-[14px] px-4 py-3.5 flex flex-col gap-[3px]">
                     <div className="font-mono text-[19px] text-ys-text tracking-[-0.02em]">
-                      {detail.mensajesOk.toLocaleString("es-AR")}
+                      {detail.mensajesLeidos.toLocaleString("es-AR")}
                     </div>
                     <div className="text-[11.5px] text-[#067647] font-bold">
-                      {pct(detail.mensajesOk, detail.contactosCount)} entregados
-                    </div>
-                  </div>
-                  <div className="border border-[#e8ebe9] rounded-[14px] px-4 py-3.5 flex flex-col gap-[3px]">
-                    <div className="font-mono text-[19px] text-ys-text tracking-[-0.02em]">
-                      {detail.respuestas.toLocaleString("es-AR")}
-                    </div>
-                    <div className="text-[11.5px] text-[#067647] font-bold">
-                      {pct(detail.respuestas, detail.mensajesOk)} respuestas
+                      {pct(detail.mensajesLeidos, detail.mensajesOk)} leídos
                     </div>
                   </div>
                 </div>

@@ -91,17 +91,19 @@ export async function getCampaignsForTenant(
 /**
  * Detalle ampliado de una campaña puntual, para el modal "Recorrido de la
  * campaña". Se pide bajo demanda (no en la carga inicial del panel) para
- * que enviados/entregados/respuestas estén siempre frescos.
+ * que enviados/leídos estén siempre frescos.
  *
  * - mensajesOk / mensajesError / costoUsd salen directo de
  *   yamas_send_campanas (ya los mantiene actualizados el workflow de
  *   envío).
- * - respuestas se cuenta agregando yamas_send_mensajes.respondido_at
- *   (poblado por el workflow "Yamasend - Sync de Contactos (WAHA)").
- * - duracionMin es una aproximación: MAX(created_at) - MIN(created_at) de
- *   los mensajes de esa campaña en yamas_send_mensajes, ya que
- *   send_time no se está poblando hoy. Null si no hay mensajes registrados
- *   todavía.
+ * - mensajesLeidos cuenta yamas_send_mensajes.read_time no nulo, poblado
+ *   en tiempo real por el webhook de YCloud (whatsapp.message.updated)
+ *   vía el workflow "Aprobar Template Meta (YCloud)".
+ * - duracionMin usa send_time cuando está disponible (momento real en que
+ *   YCloud despachó cada mensaje); si algún mensaje de la campaña todavía
+ *   no tiene send_time (por ejemplo mensajes fallidos antes de salir de
+ *   YCloud), cae a created_at para ese mensaje puntual. Null si no hay
+ *   mensajes registrados todavía.
  */
 export async function getCampaignDetailAction(
   tenantId: string,
@@ -122,16 +124,19 @@ export async function getCampaignDetailAction(
 
   const { data: mensajes } = await supabase
     .from("yamas_send_mensajes")
-    .select("created_at, respondido_at")
+    .select("created_at, send_time, read_time")
     .eq("tenant_id", tenantId)
     .eq("campana_id", campaignId);
 
-  const respuestas = (mensajes ?? []).filter((m) => m.respondido_at !== null).length;
+  const mensajesLeidos = (mensajes ?? []).filter((m) => m.read_time !== null).length;
 
   let duracionMin: number | null = null;
   if (mensajes && mensajes.length > 0) {
     const timestamps = mensajes
-      .map((m) => (m.created_at ? new Date(m.created_at).getTime() : null))
+      .map((m) => {
+        const fuente = m.send_time ?? m.created_at;
+        return fuente ? new Date(fuente).getTime() : null;
+      })
       .filter((t): t is number => t !== null);
 
     if (timestamps.length > 0) {
@@ -155,7 +160,7 @@ export async function getCampaignDetailAction(
     createdAt: campana.created_at,
     mensajesOk: campana.mensajes_ok ?? 0,
     mensajesError: campana.mensajes_error ?? 0,
-    respuestas,
+    mensajesLeidos,
     costoUsd: campana.costo_usd,
     duracionMin,
   };
