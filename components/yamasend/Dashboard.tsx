@@ -449,10 +449,17 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
             </div>
           </div>
           {statsLoading ? (
-            <div className="overflow-x-auto -mx-5 md:mx-0 px-5 md:px-0">
-              <div className="flex items-end gap-3 md:gap-4 h-[172px] min-w-max md:min-w-0">
-                {Array.from({ length: 7 }).map((_, i) => (
-                  <div key={i} className="w-10 md:w-auto md:flex-1 flex flex-col items-center gap-2.5">
+            <div className={periodo === "ano" ? "overflow-x-auto -mx-5 md:mx-0 px-5 md:px-0" : ""}>
+              <div className={`flex items-end gap-3 md:gap-4 h-[172px] ${periodo === "ano" ? "min-w-max md:min-w-0" : ""}`}>
+                {Array.from({ length: periodo === "ano" ? 12 : 7 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={
+                      periodo === "ano"
+                        ? "w-10 flex-none md:w-auto md:flex-1 flex flex-col items-center gap-2.5"
+                        : "flex-1 flex flex-col items-center gap-2.5"
+                    }
+                  >
                     <div className="w-full h-[140px] rounded-[3px] bg-ys-el2 animate-pulse" />
                     <div className="text-[11.5px] text-ys-dimmer font-medium">&nbsp;</div>
                   </div>
@@ -464,10 +471,11 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
               Todavía no hay envíos en este período.
             </div>
           ) : (
-            <div className="overflow-x-auto -mx-5 md:mx-0 px-5 md:px-0">
-              <div className="flex items-end gap-3 md:gap-4 h-[172px] min-w-max md:min-w-0">
+            <div className={stats.barras.length > 7 ? "overflow-x-auto -mx-5 md:mx-0 px-5 md:px-0" : ""}>
+              <div className={`flex items-end gap-3 md:gap-4 h-[172px] ${stats.barras.length > 7 ? "min-w-max md:min-w-0" : ""}`}>
                 {(() => {
                   const maxTotal = Math.max(1, ...stats.barras.map((b) => b.entregados + b.fallidos));
+                  const muchasBarras = stats.barras.length > 7;
                   return stats.barras.map((b, i) => {
                     const total = b.entregados + b.fallidos;
                     // Altura mínima visual (2px) para que una barra con datos
@@ -476,7 +484,14 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
                     const altoEntregados = b.entregados > 0 ? Math.max(2, (b.entregados / maxTotal) * 140) : 0;
                     const altoFallidos = b.fallidos > 0 ? Math.max(2, (b.fallidos / maxTotal) * 140) : 0;
                     return (
-                      <div key={`${b.label}-${i}`} className="w-10 flex-none md:w-auto md:flex-1 flex flex-col items-center gap-2.5">
+                      <div
+                        key={`${b.label}-${i}`}
+                        className={
+                          muchasBarras
+                            ? "w-10 flex-none md:w-auto md:flex-1 flex flex-col items-center gap-2.5"
+                            : "flex-1 flex flex-col items-center gap-2.5"
+                        }
+                      >
                         <div
                           className="w-full flex flex-col justify-end gap-0.5 h-[140px]"
                           style={{ animation: "ys-grow .6s cubic-bezier(.4,0,.2,1) both", transformOrigin: "bottom" }}
