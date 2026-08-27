@@ -1599,7 +1599,7 @@ function ElegirRecursoEditarCard({ tipo, items, onElegir, disabled }: ElegirRecu
               type="button"
               onClick={() => onElegir(item.id, item.nombre)}
               disabled={disabled}
-              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <span className="text-sm font-medium text-ys-text truncate">{item.nombre}</span>
               {item.detalle && (
@@ -1645,7 +1645,7 @@ function ElegirCampoCampanaCard({
             type="button"
             onClick={() => onElegir(c.campo)}
             disabled={disabled}
-            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <span className="text-sm font-medium text-ys-text">{c.etiqueta}</span>
             {c.detalle && (
@@ -1655,7 +1655,7 @@ function ElegirCampoCampanaCard({
         ))}
       </div>
       {nota && (
-        <div className="px-4 py-3 bg-ys-el1 border-t border-ys-border-softest">
+        <div className="px-4 py-3 bg-ys-el2 border-t border-ys-border-softest">
           <p className="text-xs text-ys-dim leading-relaxed">{nota}</p>
         </div>
       )}

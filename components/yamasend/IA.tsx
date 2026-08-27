@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Contact, IAConversacionResumen } from "@/lib/types";
 import { renderChatCard } from "./IAChatCards";
+import IAAyudaModal from "./IAAyudaModal";
 import { listarConversacionesIAAction } from "@/lib/actions/ia_conversaciones";
 
 interface IAProps {
@@ -100,6 +101,7 @@ export default function IA({
   const [historialOpen, setHistorialOpen] = useState(false);
   const [accionesAbiertas, setAccionesAbiertas] = useState(false);
   const [sugerenciasAbiertas, setSugerenciasAbiertas] = useState(false);
+  const [ayudaAbierta, setAyudaAbierta] = useState(false);
   const [historialConversaciones, setHistorialConversaciones] = useState<
     IAConversacionResumen[]
   >([]);
@@ -458,6 +460,17 @@ export default function IA({
                     {s}
                   </button>
                 ))}
+                <button
+                  onClick={() => setAyudaAbierta(true)}
+                  className="flex items-center gap-1.5 bg-ys-green-bg border border-ys-green-border rounded-full px-3.5 py-2 text-[12.5px] font-semibold text-ys-green-text cursor-pointer transition-all hover:-translate-y-px"
+                >
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-none">
+                    <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
+                    <path d="M6.3 6.1a1.75 1.75 0 1 1 2.3 1.66c-.4.14-.6.5-.6.92v.32" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    <circle cx="8" cy="11.4" r="0.75" fill="currentColor" />
+                  </svg>
+                  Qué le puedo pedir
+                </button>
               </div>
             </div>
           )}
@@ -532,6 +545,14 @@ export default function IA({
         </div>
       </div>
     )}
+    <IAAyudaModal
+      open={ayudaAbierta}
+      onClose={() => setAyudaAbierta(false)}
+      onProbarEjemplo={(texto) => {
+        setAyudaAbierta(false);
+        onSend(texto);
+      }}
+    />
     </>
   );
 }
