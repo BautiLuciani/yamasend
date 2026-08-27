@@ -655,6 +655,38 @@ async function aplicarCorreccionEnFlujo(
   };
 }
 
+/**
+ * Detecta pedidos de edición explícitos sin pasar por el LLM.
+ *
+ * Solo matchea cuando hay un verbo de MODIFICACIÓN junto al recurso, así
+ * que "creá una campaña" o "armá una audiencia" no se ven afectados y
+ * siguen su curso normal hacia el agente.
+ */
+function detectarPedidoEdicion(texto: string): "audiencia" | "campana" | "contacto" | null {
+  const t = texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  // Prefijos en vez de palabras completas: así "cambiarle", "cambiarla",
+  // "renombrarla" o "ponele" matchean igual que "cambiar" o "renombrar".
+  const verboEdicion = /\b(cambi|modific|edit|renombr|actualiz|pon)/.test(t);
+  if (!verboEdicion) return null;
+
+  // La temperatura solo aplica a contactos, así que alcanza con nombrarla.
+  if (/temperatura/.test(t)) return "contacto";
+
+  // Para audiencias y campañas, el pedido tiene que ser sobre el nombre
+  // (es lo único que sabemos editar hoy en esos recursos).
+  const mencionaNombre = /nombre|titulo|llamar|llama/.test(t);
+  if (!mencionaNombre) return null;
+
+  if (/campan/.test(t)) return "campana";
+  if (/audiencia|lista|grupo/.test(t)) return "audiencia";
+
+  return null;
+}
+
 export async function sendIAMessageAction(
   userMessage: string,
   history: IAHistoryTurn[],
@@ -750,6 +782,18 @@ export async function sendIAMessageAction(
   if (!flowState.kind) {
     const respuestaImportacion = intentaAudienciaDesdeUltimaImportacion(texto, flowState);
     if (respuestaImportacion) return respuestaImportacion;
+  }
+
+  // ---- Atajo determinístico para pedidos de edición explícitos ---------
+  //
+  // Estos pedidos son inequívocos y no necesitan criterio del modelo. Se
+  // resuelven acá para que no dependan de que el agente elija bien la
+  // herramienta: hubo casos donde el modelo narraba "te abro el asistente"
+  // sin llegar a llamarla, y el usuario se quedaba mirando un mensaje sin
+  // tarjeta. Si no matchea ninguno de estos patrones, sigue al agente.
+  if (!flowState.kind) {
+    const atajo = detectarPedidoEdicion(texto);
+    if (atajo) return iniciarFlujoEditarRecurso(atajo);
   }
 
   // ---- Sin flujo activo: todo va al agente -----------------------------
@@ -2610,32 +2654,54 @@ async function ejecutarHerramientaAgente(
   }
 
   if (nombre === "abrir_flujo") {
-    const flujo = typeof args.flujo === "string" ? args.flujo : "";
     const criterio =
       typeof args.criterio === "string" && args.criterio.trim() ? args.criterio.trim() : null;
 
-    if (flujo === "crear_audiencia") {
-      return { datos: { ok: true }, accion: await iniciarFlujoCrearAudiencia(criterio) };
-    }
-    if (flujo === "crear_template") {
-      return { datos: { ok: true }, accion: iniciarFlujoCrearTemplate() };
-    }
-    if (flujo === "crear_campana") {
-      return { datos: { ok: true }, accion: await iniciarFlujoCrearCampana() };
-    }
-    if (flujo === "importar_contactos") {
-      return { datos: { ok: true }, accion: await iniciarFlujoImportarContactos() };
-    }
-    if (flujo === "editar_audiencia") {
-      return { datos: { ok: true }, accion: await iniciarFlujoEditarRecurso("audiencia") };
-    }
-    if (flujo === "editar_campana") {
+    // Normalizamos el valor recibido en vez de exigir coincidencia exacta
+    // con el enum. El modelo a veces manda variantes ("renombrar_campana",
+    // "editar campaña", "cambiar_nombre_campana") y antes cualquiera de
+    // esas caía en "Flujo desconocido", el agente no recibía la acción y
+    // terminaba narrando que había abierto un asistente que nunca se abrió.
+    const crudo = typeof args.flujo === "string" ? args.flujo : "";
+    const norm = crudo
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\s-]+/g, "_");
+
+    const esEdicion = /edit|renombr|cambi|modific/.test(norm);
+    const mencionaCampana = /campan/.test(norm);
+    const mencionaAudiencia = /audiencia|lista|grupo/.test(norm);
+    const mencionaContacto = /contacto|lead|temperatura/.test(norm);
+    const mencionaTemplate = /template|plantilla|mensaje/.test(norm);
+
+    if (esEdicion && mencionaCampana) {
       return { datos: { ok: true }, accion: await iniciarFlujoEditarRecurso("campana") };
     }
-    if (flujo === "editar_contacto") {
+    if (esEdicion && mencionaAudiencia) {
+      return { datos: { ok: true }, accion: await iniciarFlujoEditarRecurso("audiencia") };
+    }
+    if (esEdicion && mencionaContacto) {
       return { datos: { ok: true }, accion: await iniciarFlujoEditarRecurso("contacto") };
     }
-    return { datos: { error: `Flujo desconocido: ${flujo}` } };
+    if (mencionaCampana) {
+      return { datos: { ok: true }, accion: await iniciarFlujoCrearCampana() };
+    }
+    if (mencionaTemplate) {
+      return { datos: { ok: true }, accion: iniciarFlujoCrearTemplate() };
+    }
+    if (mencionaAudiencia) {
+      return { datos: { ok: true }, accion: await iniciarFlujoCrearAudiencia(criterio) };
+    }
+    if (/import|sincroniz/.test(norm)) {
+      return { datos: { ok: true }, accion: await iniciarFlujoImportarContactos() };
+    }
+
+    return {
+      datos: {
+        error: `No reconocí el flujo "${crudo}". Valores válidos: crear_audiencia, crear_template, crear_campana, importar_contactos, editar_audiencia, editar_campana, editar_contacto. Reintentá con uno de esos exactamente.`,
+      },
+    };
   }
 
   return { datos: { error: `Herramienta desconocida: ${nombre}` } };
