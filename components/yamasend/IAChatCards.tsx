@@ -179,7 +179,7 @@ export function ConfirmarAudienciaCard({
         disabled={confirmed || disabled}
         className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {confirmed ? "Creando..." : "Crear audiencia"}
+        {confirmed ? (disabled ? "Audiencia creada ✓" : "Creando...") : "Crear audiencia"}
       </button>
     </div>
   );
@@ -732,7 +732,7 @@ export function ConfirmarTemplateCard({
           disabled={disabled || !!accion}
           className="text-[12.5px] font-extrabold text-white bg-ys-green rounded-[9px] px-3.5 py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {accion === "meta" ? "Enviando..." : "Enviar a Meta"}
+          {accion === "meta" ? (disabled ? "Enviado a Meta ✓" : "Enviando...") : "Enviar a Meta"}
         </button>
       </div>
     </div>
@@ -1085,7 +1085,7 @@ export function ConfirmarCampanaCard({
         disabled={confirmado || disabled}
         className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {confirmado ? "Creando..." : "Crear campaña"}
+        {confirmado ? (disabled ? "Campaña creada ✓" : "Creando...") : "Crear campaña"}
       </button>
     </div>
   );
@@ -1225,7 +1225,10 @@ export function ConfirmarImportarContactosCard({
         disabled={confirmado || disabled}
         className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {confirmado ? "Importando..." : "Importar contactos"}
+        {/* disabled pasa a true cuando llega un mensaje posterior, o sea
+            cuando la acción ya terminó: ahí el botón deja de decir
+            "Importando..." y confirma que se completó. */}
+        {confirmado ? (disabled ? "Importado ✓" : "Importando...") : "Importar contactos"}
       </button>
     </div>
   );

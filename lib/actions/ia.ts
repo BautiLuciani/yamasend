@@ -798,6 +798,52 @@ function detectarPedidoImportacion(texto: string): boolean {
   return /\bcontactos?\b|\bleads?\b|\bchats?\b|\bconversaciones?\b|\bwhatsapp\b|\bagenda\b/.test(t);
 }
 
+/**
+ * Detecta pedidos de creación "en seco" — "quiero crear una audiencia", "armá
+ * un template nuevo" — y abre el asistente correspondiente sin pasar por el
+ * LLM.
+ *
+ * Tercera vez que aparece el mismo patrón (edición, importación y ahora
+ * creación): el modelo respondía "te abro el asistente para que puedas crear
+ * la audiencia" y se quedaba ahí, sin llamar a abrir_flujo, así que el
+ * usuario leía la promesa y nunca veía la tarjeta.
+ *
+ * Solo dispara cuando el pedido NO trae criterio. Si el usuario dice "creá
+ * una audiencia con los contactos calientes" o "con los que hablaron de X",
+ * eso tiene que seguir yendo al agente, que sabe resolver el filtro y armar
+ * la audiencia ya poblada — abrir el asistente en blanco sería un downgrade.
+ */
+function detectarPedidoCreacionSimple(
+  texto: string,
+): "audiencia" | "template" | "campana" | null {
+  const t = texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+
+  // Preguntas informativas siguen al agente.
+  if (/^(que|como|cuando|cuanto|cuantos|cuantas|donde|por que|porque|para que|cual)\b/.test(t)) {
+    return null;
+  }
+
+  const verboCrear = /\b(cre(a|ar|ame|emos|o)|arm(a|ar|ame|emos|o)|hac(e|er|eme|emos|go)|gener(a|ar)|nuev[ao])\b/;
+  if (!verboCrear.test(t)) return null;
+
+  // Si viene con criterio, filtro o referencia, es trabajo del agente.
+  const tieneCriterio =
+    /\bcon\b|\bde los\b|\bque hablaron\b|\bque hablo\b|\bpara los\b|\bcalient|\btibi|\bfrio|\binteresad|\bese\b|\besos\b|\bestos\b|\beste\b|\besa\b|\besas\b|\bmostrast|\bencontrast/.test(
+      t,
+    );
+  if (tieneCriterio) return null;
+
+  if (/\b(audiencia|lista|grupo)\b/.test(t)) return "audiencia";
+  if (/\b(template|plantilla)\b/.test(t)) return "template";
+  if (/\bcampanas?\b|\bcampanias?\b/.test(t)) return "campana";
+
+  return null;
+}
+
 export async function sendIAMessageAction(
   userMessage: string,
   history: IAHistoryTurn[],
@@ -912,6 +958,11 @@ export async function sendIAMessageAction(
     if (detectarPedidoImportacion(texto)) {
       return iniciarFlujoImportarContactos();
     }
+
+    const creacion = detectarPedidoCreacionSimple(texto);
+    if (creacion === "audiencia") return await iniciarFlujoCrearAudiencia(null);
+    if (creacion === "template") return iniciarFlujoCrearTemplate();
+    if (creacion === "campana") return await iniciarFlujoCrearCampana();
   }
 
   // ---- Sin flujo activo: todo va al agente -----------------------------

@@ -29,7 +29,11 @@ import TemplateCreateModal from "./TemplateCreateModal";
 import TemplateDetailModal from "./TemplateDetailModal";
 import Campanas from "./Campanas";
 import CampaignWizardModal from "./CampaignWizardModal";
+import Toast, { type ToastData } from "./Toast";
 import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
+
+/** Clave de localStorage con el id de la conversación de IA abierta. */
+const IA_CONVERSACION_ABIERTA_KEY = "ys-ia-conversacion-abierta";
 import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
@@ -525,6 +529,18 @@ export default function AppShell({
   // mismo tiempo y crear dos filas para la misma conversación.
   const iaGuardadoEnCursoRef = useRef<Promise<void>>(Promise.resolve());
 
+  const [toast, setToast] = useState<ToastData | null>(null);
+
+  /**
+   * Feedback de acciones hechas FUERA del chat de IA. Antes esto se escribía
+   * como un mensaje en la conversación, lo que la ensuciaba con eventos que
+   * el usuario no había pedido ahí y encima quedaban en el historial
+   * guardado. Ahora va a un aviso flotante.
+   */
+  function notificar(texto: string, tipo: ToastData["tipo"] = "exito") {
+    setToast({ id: `${Date.now()}-${Math.random()}`, texto, tipo });
+  }
+
   function addMsg(
     text: string,
     type: ChatMessage["type"] = "bot",
@@ -534,6 +550,63 @@ export default function AppShell({
     setMessages((prev) => [...prev, { id, text, type, payload }]);
     return id;
   }
+
+  // Restaura la conversación que estaba abierta antes de recargar. El id se
+  // guarda en localStorage y no en la base a propósito: "la conversación
+  // abierta" es estado de ESTA pestaña, no de la cuenta. Si se tomara la más
+  // reciente de la base, abrir una pestaña nueva o recargar después de haber
+  // arrancado un chat nuevo reabriría la anterior, que no es lo que el
+  // usuario dejó en pantalla.
+  useEffect(() => {
+    let cancelado = false;
+
+    async function restaurar() {
+      let guardado: string | null = null;
+      try {
+        guardado = window.localStorage.getItem(IA_CONVERSACION_ABIERTA_KEY);
+      } catch {
+        // Modo incógnito o storage bloqueado: se arranca con chat nuevo.
+        return;
+      }
+      if (!guardado) return;
+
+      const conversacion = await cargarConversacionIAAction(guardado);
+      // Si la conversación fue borrada (desde otra pestaña, por ejemplo) se
+      // limpia la referencia en vez de dejarla colgada.
+      if (!conversacion) {
+        try {
+          window.localStorage.removeItem(IA_CONVERSACION_ABIERTA_KEY);
+        } catch {}
+        return;
+      }
+      if (cancelado) return;
+
+      iaConversacionIdRef.current = conversacion.id;
+      iaTituloGeneradoRef.current = true;
+      setIaConversacionId(conversacion.id);
+      setMessages(
+        conversacion.messages.length > 0 ? conversacion.messages : [IA_MENSAJE_BIENVENIDA],
+      );
+      setIaFlowState(conversacion.flowState);
+    }
+
+    restaurar();
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mantiene sincronizado el id de la conversación abierta con localStorage.
+  useEffect(() => {
+    try {
+      if (iaConversacionId) {
+        window.localStorage.setItem(IA_CONVERSACION_ABIERTA_KEY, iaConversacionId);
+      } else {
+        window.localStorage.removeItem(IA_CONVERSACION_ABIERTA_KEY);
+      }
+    } catch {}
+  }, [iaConversacionId]);
 
   // Persistencia del chat de IA: cada vez que cambian los mensajes o el
   // estado de flujo, guardamos (con debounce de 1.2s) en
@@ -1497,13 +1570,13 @@ export default function AppShell({
         onRun={async (config) => {
           const result = await syncAndAnalyzeAction(config);
           if (result.success) {
-            addMsg(
-              `✅ Analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés. Ya podés verlos en tu lista de contactos.`,
+            notificar(
+              `Analicé ${result.contactosAnalizados} conversaciones y encontré ${result.leadsIdentificados} leads con interés.`,
             );
             router.refresh();
           } else {
-            addMsg(
-              `⚠️ No pude completar el análisis: ${result.error ?? "error desconocido"}`,
+            notificar(
+              `No pude completar el análisis: ${result.error ?? "error desconocido"}`,
               "error",
             );
           }
@@ -1561,8 +1634,8 @@ export default function AppShell({
           }
 
           if (momento === "programar") {
-            addMsg(
-              `🕒 Campaña "${nombre}" programada para ${fechaProgramada ? new Date(fechaProgramada).toLocaleString("es-AR") : ""}.`,
+            notificar(
+              `Campaña "${nombre}" programada para ${fechaProgramada ? new Date(fechaProgramada).toLocaleString("es-AR") : ""}.`,
             );
             router.refresh();
             return { error: null };
@@ -1582,8 +1655,8 @@ export default function AppShell({
             return { error: sendResult.error };
           }
 
-          addMsg(
-            `✅ Campaña "${nombre}" enviándose a ${contactosIds.length} contactos.`,
+          notificar(
+            `Campaña "${nombre}" enviándose a ${contactosIds.length} contactos.`,
           );
           router.refresh();
           return { error: null };
@@ -1615,10 +1688,10 @@ export default function AppShell({
         onDelete={async (campaignId) => {
           const result = await deleteCampaignAction(campaignId);
           if (result.error) {
-            addMsg(`⚠️ No se pudo eliminar la campaña: ${result.error}`, "error");
+            notificar(`No se pudo eliminar la campaña: ${result.error}`, "error");
             return { error: result.error };
           }
-          addMsg("Campaña eliminada ✓");
+          notificar("Campaña eliminada");
           setDetailCampaignId(null);
           router.refresh();
           return { error: null };
@@ -1638,9 +1711,9 @@ export default function AppShell({
         onCreate={async (nombre, contactIds) => {
           const result = await saveListAction(nombre, contactIds);
           if (result.error) {
-            addMsg(`⚠️ No se pudo crear la audiencia: ${result.error}`, "error");
+            notificar(`No se pudo crear la audiencia: ${result.error}`, "error");
           } else {
-            addMsg(`Audiencia "${nombre}" creada con ${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} ✓`);
+            notificar(`Audiencia "${nombre}" creada con ${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"}`);
             router.refresh();
             setCreateGroupOpen(false);
             handleClearSel();
@@ -1656,11 +1729,11 @@ export default function AppShell({
         onAdd={async (listaId) => {
           const result = await addContactsToListAction(listaId, Array.from(sel));
           if (result.error) {
-            addMsg(`⚠️ No se pudo agregar a la audiencia: ${result.error}`, "error");
+            notificar(`No se pudo agregar a la audiencia: ${result.error}`, "error");
           } else {
             const audiencia = lists.find((l) => l.id === listaId);
-            addMsg(
-              `${sel.size} contacto${sel.size === 1 ? "" : "s"} agregado${sel.size === 1 ? "" : "s"} a "${audiencia?.nombre ?? "audiencia"}" ✓`,
+            notificar(
+              `${sel.size} contacto${sel.size === 1 ? "" : "s"} agregado${sel.size === 1 ? "" : "s"} a "${audiencia?.nombre ?? "audiencia"}"`,
             );
             router.refresh();
             setAddToGroupOpen(false);
@@ -1678,16 +1751,16 @@ export default function AppShell({
         onRename={async (id, nombre) => {
           const result = await renameListAction(id, nombre);
           if (result.error) {
-            addMsg(`⚠️ No se pudo renombrar la audiencia: ${result.error}`, "error");
+            notificar(`No se pudo renombrar la audiencia: ${result.error}`, "error");
           } else {
-            addMsg(`Audiencia renombrada a "${nombre}" ✓`);
+            notificar(`Audiencia renombrada a "${nombre}"`);
             router.refresh();
           }
         }}
         onRemoveContacts={async (id, contactIds) => {
           const result = await removeContactsFromListAction(id, contactIds);
           if (result.error) {
-            addMsg(`⚠️ No se pudo quitar el contacto de la audiencia: ${result.error}`, "error");
+            notificar(`No se pudo quitar el contacto de la audiencia: ${result.error}`, "error");
           } else {
             router.refresh();
           }
@@ -1695,10 +1768,10 @@ export default function AppShell({
         onAddContacts={async (id, contactIds) => {
           const result = await addContactsToListAction(id, contactIds);
           if (result.error) {
-            addMsg(`⚠️ No se pudo agregar contactos a la audiencia: ${result.error}`, "error");
+            notificar(`No se pudo agregar contactos a la audiencia: ${result.error}`, "error");
           } else {
-            addMsg(
-              `${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} agregado${contactIds.length === 1 ? "" : "s"} a la audiencia ✓`,
+            notificar(
+              `${contactIds.length} contacto${contactIds.length === 1 ? "" : "s"} agregado${contactIds.length === 1 ? "" : "s"} a la audiencia`,
             );
             router.refresh();
           }
@@ -1707,9 +1780,9 @@ export default function AppShell({
           const audiencia = lists.find((l) => l.id === id);
           const result = await deleteListAction(id);
           if (result.error) {
-            addMsg(`⚠️ No se pudo eliminar la audiencia: ${result.error}`, "error");
+            notificar(`No se pudo eliminar la audiencia: ${result.error}`, "error");
           } else {
-            addMsg(`Audiencia "${audiencia?.nombre ?? ""}" eliminada ✓`);
+            notificar(`Audiencia "${audiencia?.nombre ?? ""}" eliminada`);
             router.refresh();
             setOpenGroupId(null);
           }
@@ -1727,7 +1800,7 @@ export default function AppShell({
         onSetTemperaturaManual={async (contactId, temperatura) => {
           const result = await setTemperaturaManualAction(contactId, temperatura);
           if (result.error) {
-            addMsg(`⚠️ No se pudo guardar el ajuste: ${result.error}`, "error");
+            notificar(`No se pudo guardar el ajuste: ${result.error}`, "error");
             return;
           }
           // Actualización optimista en el modal abierto, así el cambio se ve
@@ -1740,6 +1813,8 @@ export default function AppShell({
           router.refresh();
         }}
       />
+
+      <Toast toast={toast} onCerrar={() => setToast(null)} />
     </div>
   );
 }
