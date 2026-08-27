@@ -2684,6 +2684,7 @@ ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
 - MUY IMPORTANTE: los resultados de las herramientas NO se guardan entre mensajes. Solo ves el texto de la conversación previa, no los datos que consultaste antes. Entonces, si el usuario dice "creá una audiencia con esos" refiriéndose a contactos de un mensaje anterior, PRIMERO volvé a consultarlos ahora (con listar_contactos o buscar_en_conversaciones) y recién después creá la audiencia. Si el grupo se puede describir por temperatura, es más simple y confiable usar el parámetro filtro_temperatura.
 - Si una herramienta te devuelve un error, leelo y corregí en el mismo turno (por ejemplo, volviendo a consultar los datos). No le traslades el error al usuario si podés resolverlo vos.
+- NUNCA digas que abriste un asistente, que creaste algo o que hiciste una acción si la herramienta correspondiente no te devolvió un resultado exitoso. Si falló, decí que no pudiste y ofrecé reintentar — nunca narres una acción que no ocurrió.
 - Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos, usá abrir_flujo.
 - Si pide MODIFICAR algo que ya existe (renombrar una audiencia o campaña, cambiarle la temperatura a un contacto), usá abrir_flujo con editar_audiencia / editar_campana / editar_contacto. No hace falta que sepas cuál: el asistente le muestra la lista para que elija. Nunca le digas que no podés hacer estos cambios.
 - Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
@@ -2798,6 +2799,10 @@ async function iniciarFlujoEditarRecurso(
   const supabase = await createClient();
   let items: { id: string; nombre: string; detalle?: string }[] = [];
 
+  // Usamos las mismas RPCs que ya usa el agente (SECURITY DEFINER, probadas)
+  // en vez de consultas armadas a mano acá. Y capturamos el error en vez de
+  // descartarlo: antes un fallo devolvía data=null, la lista salía vacía y
+  // el flujo seguía como si el usuario no tuviera nada, sin avisar nada.
   if (tipo === "audiencia") {
     const lists = await getListsForTenant(tenantId);
     items = lists.map((l) => ({
@@ -2806,29 +2811,48 @@ async function iniciarFlujoEditarRecurso(
       detalle: `${l.contactosIds.length} contacto${l.contactosIds.length === 1 ? "" : "s"}`,
     }));
   } else if (tipo === "campana") {
-    const { data } = await supabase
-      .from("yamas_send_campanas")
-      .select("id, nombre, status")
-      .eq("tenant_id", tenantId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-    items = (data ?? []).map((c) => ({
-      id: c.id as string,
-      nombre: (c.nombre as string) ?? "Sin nombre",
-      detalle: (c.status as string) ?? undefined,
+    const { data, error } = await supabase.rpc("listar_campanas", {
+      p_tenant_id: tenantId,
+      p_desde: null,
+      p_hasta: null,
+      p_orden_por: "fecha",
+      p_direccion: "desc",
+      p_limite: 50,
+    });
+    if (error) {
+      console.error("[IA] Error listando campañas para editar:", error);
+      return {
+        text: "No pude traer tus campañas ahora. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+    items = ((data ?? []) as { campana_id: string; nombre: string; status: string }[]).map((c) => ({
+      id: c.campana_id,
+      nombre: c.nombre ?? "Sin nombre",
+      detalle: c.status ?? undefined,
     }));
   } else {
-    const { data } = await supabase
-      .from("yamas_send_leads")
-      .select("id, nombre, telefono, temperatura_efectiva, temperatura")
-      .eq("tenant_id", tenantId)
-      .eq("activo", true)
-      .order("ultimo_mensaje_at", { ascending: false, nullsFirst: false })
-      .limit(50);
-    items = (data ?? []).map((c) => ({
-      id: c.id as string,
-      nombre: (c.nombre as string) || (c.telefono as string) || "Sin nombre",
-      detalle: ((c.temperatura_efectiva ?? c.temperatura) as string) ?? undefined,
+    const { data, error } = await supabase.rpc("listar_contactos", {
+      p_tenant_id: tenantId,
+      p_temperatura: null,
+      p_orden_por: "reciente",
+      p_limite: 50,
+    });
+    if (error) {
+      console.error("[IA] Error listando contactos para editar:", error);
+      return {
+        text: "No pude traer tus contactos ahora. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error: error.message,
+      };
+    }
+    items = (
+      (data ?? []) as { contacto_id: string; nombre: string; telefono: string; temperatura: string }[]
+    ).map((c) => ({
+      id: c.contacto_id,
+      nombre: c.nombre || c.telefono || "Sin nombre",
+      detalle: c.temperatura ?? undefined,
     }));
   }
 

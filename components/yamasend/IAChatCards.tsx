@@ -1532,7 +1532,7 @@ function ElegirRecursoEditarCard({ tipo, items, onElegir, disabled }: ElegirRecu
             type="button"
             onClick={() => onElegir(item.id, item.nombre)}
             disabled={disabled}
-            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <span className="text-sm font-medium text-ys-text truncate">{item.nombre}</span>
             {item.detalle && (
@@ -1554,10 +1554,12 @@ interface ElegirTemperaturaCardProps {
   disabled: boolean;
 }
 
+// Mismos colores que TEMP_CONFIG en ContactDetailModal, para que la
+// temperatura se vea igual en todo el producto.
 const OPCIONES_TEMPERATURA: { valor: "caliente" | "tibio" | "frio"; label: string; clase: string }[] = [
-  { valor: "caliente", label: "Caliente", clase: "bg-ys-red-bg text-ys-red-text" },
-  { valor: "tibio", label: "Tibio", clase: "bg-ys-amber-bg text-ys-amber-text" },
-  { valor: "frio", label: "Frío", clase: "bg-ys-blue-bg text-ys-blue-text" },
+  { valor: "caliente", label: "Caliente", clase: "bg-ys-green-bg text-ys-green-text border-ys-green" },
+  { valor: "tibio", label: "Tibio", clase: "bg-ys-warn-bg text-ys-warn-text border-ys-warn" },
+  { valor: "frio", label: "Frío", clase: "bg-ys-el2 text-[#5d6560] border-[#8a908c]" },
 ];
 
 function ElegirTemperaturaCard({ contactoNombre, onElegir, disabled }: ElegirTemperaturaCardProps) {
@@ -1573,7 +1575,7 @@ function ElegirTemperaturaCard({ contactoNombre, onElegir, disabled }: ElegirTem
             type="button"
             onClick={() => onElegir(op.valor)}
             disabled={disabled}
-            className={`px-4 py-2 rounded-xl text-sm font-medium ${op.clase} disabled:opacity-50 disabled:cursor-not-allowed transition-opacity`}
+            className={`px-4 py-2 rounded-xl border text-sm font-medium cursor-pointer ${op.clase} disabled:opacity-50 disabled:cursor-not-allowed transition-opacity`}
           >
             {op.label}
           </button>
