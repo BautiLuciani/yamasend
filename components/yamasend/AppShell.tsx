@@ -141,6 +141,7 @@ export default function AppShell({
   // server component. Necesario para poder actualizarlo desde el polling de
   // abajo sin depender de router.refresh() (que recarga todo /panel).
   const [templates, setTemplates] = useState<Template[]>(templatesProp);
+  const templatesAprobados = templates.filter((t) => t.status === "verificado");
   useEffect(() => {
     setTemplates(templatesProp);
   }, [templatesProp]);
@@ -1536,7 +1537,7 @@ export default function AppShell({
         key={wizardInitial ? `dup-${wizardInitial.nombre}` : "new"}
         open={wizardOpen}
         lists={lists}
-        templates={templates}
+        templates={templatesAprobados}
         costPerMsg={COST_PER_MSG}
         initial={wizardInitial ?? undefined}
         onClose={() => setWizardOpen(false)}
