@@ -2817,7 +2817,9 @@ async function iniciarFlujoEditarRecurso(
       p_hasta: null,
       p_orden_por: "fecha",
       p_direccion: "desc",
-      p_limite: 50,
+      // La tarjeta tiene buscador propio, así que traemos un rango amplio
+      // para que el filtro sea útil y no se corte en las primeras 50.
+      p_limite: 100,
     });
     if (error) {
       console.error("[IA] Error listando campañas para editar:", error);
@@ -2837,7 +2839,7 @@ async function iniciarFlujoEditarRecurso(
       p_tenant_id: tenantId,
       p_temperatura: null,
       p_orden_por: "reciente",
-      p_limite: 50,
+      p_limite: 200,
     });
     if (error) {
       console.error("[IA] Error listando contactos para editar:", error);

@@ -1517,29 +1517,64 @@ interface ElegirRecursoEditarCardProps {
 }
 
 function ElegirRecursoEditarCard({ tipo, items, onElegir, disabled }: ElegirRecursoEditarCardProps) {
+  const [query, setQuery] = useState("");
+
   const titulo =
     tipo === "audiencia" ? "Tus audiencias" : tipo === "campana" ? "Tus campañas" : "Tus contactos";
+  const placeholder =
+    tipo === "audiencia" ? "Buscar audiencia..." : tipo === "campana" ? "Buscar campaña..." : "Buscar contacto...";
+
+  // Filtro por nombre y también por el detalle (temperatura en contactos,
+  // estado en campañas), que es lo que el usuario suele tener en la cabeza
+  // cuando busca ("los fríos", "las que dieron error").
+  const filtrados = items.filter((item) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      item.nombre.toLowerCase().includes(q) ||
+      (item.detalle?.toLowerCase().includes(q) ?? false)
+    );
+  });
 
   return (
     <div className="bg-white border border-ys-border rounded-2xl overflow-hidden">
-      <div className="px-4 py-2.5 bg-ys-green-bg text-xs font-bold text-ys-green-text border-b border-ys-border-softest">
-        {titulo}
+      <div className="flex items-center justify-between gap-3 px-4 py-2.5 bg-ys-green-bg border-b border-ys-border-softest">
+        <span className="text-xs font-bold text-ys-green-text whitespace-nowrap">{titulo}</span>
+        <div className="flex items-center gap-1.5 flex-1 min-w-0 max-w-[200px] bg-white border border-ys-border-softer rounded-lg px-2 py-1">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-none">
+            <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
+            <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={placeholder}
+            disabled={disabled}
+            className="flex-1 min-w-0 border-none outline-none bg-transparent text-[12.5px] font-medium text-ys-text disabled:cursor-not-allowed"
+          />
+        </div>
       </div>
       <div className="max-h-72 overflow-y-auto divide-y divide-ys-border-softest">
-        {items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onElegir(item.id, item.nombre)}
-            disabled={disabled}
-            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <span className="text-sm font-medium text-ys-text truncate">{item.nombre}</span>
-            {item.detalle && (
-              <span className="text-xs text-ys-dim font-mono whitespace-nowrap">{item.detalle}</span>
-            )}
-          </button>
-        ))}
+        {filtrados.length === 0 ? (
+          <div className="px-4 py-6 text-center text-[13px] text-ys-muted font-medium">
+            No encontramos nada con ese nombre.
+          </div>
+        ) : (
+          filtrados.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onElegir(item.id, item.nombre)}
+              disabled={disabled}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <span className="text-sm font-medium text-ys-text truncate">{item.nombre}</span>
+              {item.detalle && (
+                <span className="text-xs text-ys-dim font-mono whitespace-nowrap">{item.detalle}</span>
+              )}
+            </button>
+          ))
+        )}
       </div>
     </div>
   );
