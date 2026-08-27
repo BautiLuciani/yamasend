@@ -25,6 +25,7 @@ import {
 import {
   generarEmbeddingConsulta,
   sincronizarEmbeddingsLeads,
+  sincronizarEmbeddingsMensajes,
 } from "@/lib/embeddings";
 import type {
   ChatPayload,
@@ -691,6 +692,36 @@ function detectarPedidoEdicion(texto: string): "audiencia" | "campana" | "contac
   return null;
 }
 
+/**
+ * Detecta pedidos de importación/sincronización de contactos sin pasar por
+ * el LLM.
+ *
+ * Mismo motivo que detectarPedidoEdicion: el modelo narraba "te abro el
+ * asistente para que importes tus contactos" y se quedaba ahí, sin llamar a
+ * abrir_flujo, así que el usuario leía la promesa pero nunca aparecía la
+ * tarjeta. Estos pedidos son inequívocos y no necesitan criterio del modelo.
+ *
+ * Exige un verbo de acción junto al objeto para no capturar preguntas como
+ * "¿cuántos contactos tengo?" o "¿cómo importo contactos?", que sí tienen
+ * que seguir al agente.
+ */
+function detectarPedidoImportacion(texto: string): boolean {
+  const t = texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  // Las preguntas informativas van al agente, no abren el asistente.
+  if (/^(que|como|cuando|cuanto|cuantos|donde|por que|porque|para que)\b/.test(t.trim())) {
+    return false;
+  }
+
+  const verbo = /\b(import|sincroniz|traer|trae|traeme|cargar|carga|cargame|analiz)/.test(t);
+  if (!verbo) return false;
+
+  return /\bcontactos?\b|\bleads?\b|\bchats?\b|\bconversaciones?\b|\bwhatsapp\b|\bagenda\b/.test(t);
+}
+
 export async function sendIAMessageAction(
   userMessage: string,
   history: IAHistoryTurn[],
@@ -798,6 +829,10 @@ export async function sendIAMessageAction(
   if (!flowState.kind) {
     const atajo = detectarPedidoEdicion(texto);
     if (atajo) return iniciarFlujoEditarRecurso(atajo);
+
+    if (detectarPedidoImportacion(texto)) {
+      return iniciarFlujoImportarContactos();
+    }
   }
 
   // ---- Sin flujo activo: todo va al agente -----------------------------
@@ -838,9 +873,17 @@ async function iniciarFlujoCrearAudiencia(
   const totalContactos = await contarContactos();
 
   if (totalContactos === 0) {
+    // En vez de derivar al usuario a otra sección y cortar la conversación,
+    // le ofrecemos resolverlo acá mismo. El flujo queda esperando un sí/no
+    // en importar_ofrecido, que es un paso previo a la tarjeta de
+    // confirmación de siempre — no cambia nada de lo que venía después.
     return {
-      text: "Todavía no tenés contactos sincronizados, así que no puedo armar una audiencia. Sincronizá tus contactos de WhatsApp desde la sección Contactos y volvé a intentarlo.",
-      flowState: IA_FLOW_IDLE,
+      text: "Todavía no tenés contactos sincronizados, así que no puedo armar una audiencia. ¿Querés que importemos tus contactos de WhatsApp ahora?",
+      flowState: {
+        kind: "importar_contactos",
+        step: "importar_ofrecido",
+        draft: {},
+      },
     };
   }
 
@@ -1888,6 +1931,39 @@ async function handleImportarContactosStep(
     };
   }
 
+  // Paso previo: le ofrecimos importar porque la cuenta está vacía y está
+  // contestando si quiere o no. Recién con el sí abrimos el asistente.
+  if (flowState.step === "importar_ofrecido") {
+    const t = texto
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+
+    const dijoQueNo = /^(no|nop|ahora no|despues|mas tarde|luego|no gracias|paso)\b/.test(t);
+    if (dijoQueNo) {
+      return {
+        text: "Dale, cuando quieras me pedís que los importe. ¿Te ayudo con otra cosa?",
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    const dijoQueSi =
+      /^(si|s|dale|ok|oka|okey|bueno|listo|obvio|claro|sip|sisi|va|vamos|de una|hagamoslo|por favor|porfa|quiero|importa|importalos|adelante)\b/.test(
+        t,
+      ) || detectarPedidoImportacion(texto);
+
+    if (dijoQueSi) {
+      return iniciarFlujoImportarContactos();
+    }
+
+    // Cualquier otra cosa: no adivinamos. Repreguntamos manteniendo el paso.
+    return {
+      text: "¿Querés que importe tus contactos de WhatsApp? Decime que sí y te abro el asistente.",
+      flowState,
+    };
+  }
+
   const draft = flowState.draft;
   const matchDias = texto.match(/(\d+)\s*d[ií]as?/i);
   const matchLimite = texto.match(/(\d+)\s*contactos?/i);
@@ -2175,21 +2251,29 @@ const MAX_ITERACIONES_AGENTE = 5;
 const MAX_FILAS_TABLA = 12;
 
 /**
- * Similitud de coseno mínima para que un contacto entre por la rama
- * semántica de la búsqueda. Es el parámetro más sensible de toda la
- * función: una búsqueda vectorial SIEMPRE tiene un vecino más cercano, así
- * que sin umbral cualquier consulta "encontraría" a todos los contactos de
- * la cuenta ordenados por parecido, y el agente los reportaría como
- * coincidencias reales.
+ * Umbrales de similitud de coseno para las dos ramas semánticas. Una
+ * búsqueda vectorial SIEMPRE tiene un vecino más cercano, así que sin
+ * umbral cualquier consulta "encontraría" a toda la cuenta ordenada por
+ * parecido y el agente lo reportaría como coincidencias reales.
  *
- * 0.30 está calibrado para text-embedding-3-small sobre textos cortos en
- * español: contactos realmente relacionados con la consulta suelen quedar
- * por encima de 0.40, y los no relacionados bastante por debajo de 0.25. Si
- * en producción aparecen falsos positivos, subirlo; si búsquedas legítimas
- * vuelven vacías, bajarlo. Las ramas de texto completo no dependen de este
- * valor, así que tocarlo no puede romper la búsqueda literal.
+ * MENSAJE (0.42): compara la consulta contra lo que el contacto escribió de
+ * verdad. Es la rama principal y la que mejor discrimina, porque cada
+ * mensaje dice algo distinto.
+ *
+ * PERFIL (0.50): más exigente, y aún así es solo el PISO. La RPC le suma un
+ * criterio relativo (media + 1.5 desvíos de la propia cuenta) por un motivo
+ * medido: en una cuenta real los resúmenes que escribe el análisis de IA se
+ * parecen entre sí 0.52-0.83, promedio 0.69. Son casi todos la misma frase
+ * ("no se detecta interés comercial, conversación personal"), así que forman
+ * un bloque que ningún umbral absoluto separa — subirlo solo haría que no
+ * pase nadie. El criterio relativo deja pasar únicamente a los que se
+ * despegan del bloque y se autocalibra por cuenta.
+ *
+ * Las ramas de texto completo no dependen de estos valores, así que tocarlos
+ * no puede romper la búsqueda literal.
  */
-const SIMILITUD_MINIMA = 0.3;
+const SIMILITUD_MINIMA_MENSAJE = 0.42;
+const SIMILITUD_MINIMA_PERFIL = 0.5;
 
 const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -2568,10 +2652,13 @@ async function ejecutarHerramientaAgente(
     //    leads cuyo análisis cambió) y nunca lanza: si OpenAI no responde,
     //    la búsqueda sigue igual apoyada en las ramas de texto completo,
     //    que es exactamente lo que hacía antes de existir la semántica.
-    let embeddingConsulta: string | null = null;
+    let embeddingConsulta: { perfil: string; mensaje: string } | null = null;
     try {
       const openai = getOpenAI();
-      await sincronizarEmbeddingsLeads(openai, supabase, tenantId);
+      await Promise.all([
+        sincronizarEmbeddingsLeads(openai, supabase, tenantId),
+        sincronizarEmbeddingsMensajes(openai, supabase, tenantId),
+      ]);
       embeddingConsulta = await generarEmbeddingConsulta(openai, consulta);
     } catch (e) {
       console.error("[IA] Capa semántica no disponible, sigo con texto completo:", e);
@@ -2623,11 +2710,13 @@ async function ejecutarHerramientaAgente(
     const { data, error } = await supabase.rpc("yamas_send_buscar_contactos_hibrido", {
       p_tenant_id: tenantId,
       p_consulta: consulta,
-      p_embedding: embeddingConsulta,
+      p_embedding: embeddingConsulta?.perfil ?? null,
+      p_embedding_msg: embeddingConsulta?.mensaje ?? null,
       p_limite: filasAPedir,
       p_temperatura: temperatura,
       p_score_min: scoreMinimo,
-      p_similitud_min: SIMILITUD_MINIMA,
+      p_similitud_min_msg: SIMILITUD_MINIMA_MENSAJE,
+      p_similitud_min_perfil: SIMILITUD_MINIMA_PERFIL,
     });
 
     if (error) return { datos: { error: error.message } };
@@ -2641,6 +2730,7 @@ async function ejecutarHerramientaAgente(
       producto_servicio: string | null;
       menciones: number;
       motivo: string;
+      evidencia_fecha: string | null;
       similitud: number;
       relevancia: number;
       fuentes: string[];
@@ -2660,9 +2750,15 @@ async function ejecutarHerramientaAgente(
           temperatura: f.temperatura,
           score_interes: f.score_interes,
           motivo: f.motivo,
-          // Se expone para que el modelo pueda avisar cuándo el match es
-          // por parecido de significado y no por coincidencia literal.
-          match_semantico: f.fuentes?.includes("semantica") ?? false,
+          evidencia_fecha: f.evidencia_fecha,
+          // Distingue las coincidencias RESPALDADAS POR UN MENSAJE REAL de
+          // las que solo salen del análisis del lead. Es la diferencia entre
+          // "este contacto escribió esto" (verificable) y "el resumen de este
+          // contacto se parece" (que sobre resúmenes casi idénticos entre sí
+          // es una señal floja). El prompt le pide al modelo que no presente
+          // las segundas como si el contacto hubiera dicho algo.
+          respaldado_por_mensaje:
+            f.fuentes?.some((x) => x === "mensaje_semantico" || x === "conversacion") ?? false,
         })),
         total_encontrados: encontrados.length,
         mostrados: filas.length,
@@ -2681,7 +2777,7 @@ async function ejecutarHerramientaAgente(
               f.nombre,
               f.telefono,
               f.temperatura ?? "—",
-              (f.motivo ?? "").replace(/\*\*/g, "").slice(0, 90) || "—",
+              (f.motivo ?? "").replace(/\*\*/g, "").trim() || "—",
             ]),
             totalDisponible: filas.length,
           }
@@ -2905,7 +3001,9 @@ CÓMO RESPONDER PREGUNTAS SOBRE SUS DATOS
 
 BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 - buscar_contactos entiende el significado, no solo las palabras: si te piden "los que compran zapatillas", pasale eso tal cual, no lo traduzcas a palabras clave sueltas.
-- Cuando el resultado venga con match_semantico en true, quiere decir que ese contacto coincide por parecido de sentido y no porque haya dicho esa palabra exacta. Si lo mencionás, decilo en criollo ("por lo que venía hablando"), nunca hables de embeddings ni de búsqueda semántica.
+- Cada resultado trae un "motivo". Cuando respaldado_por_mensaje es true, ese motivo es un MENSAJE REAL que escribió el contacto y podés citarlo con confianza. Cuando es false, la coincidencia sale del análisis del contacto y es una señal más floja: en ese caso NO digas que el contacto dijo o mencionó algo, decí que por su perfil podría encajar.
+- Si NINGÚN resultado tiene respaldado_por_mensaje en true, no presentes la lista como si hubieran hablado del tema: decí con franqueza que no encontraste a nadie que lo haya mencionado, y ofrecé los que podrían encajar por perfil como una segunda opción.
+- Nunca hables de embeddings, vectores ni "búsqueda semántica". En criollo: "por lo que venía hablando".
 - La plataforma cobra por mensaje enviado. Si el usuario da un presupuesto en CANTIDAD DE MENSAJES o CRÉDITOS (1 crédito = 1 mensaje), pasalo en presupuesto_mensajes. Si lo da en DÓLARES, pasalo en presupuesto_usd.
 - Si el presupuesto viene en pesos o en cualquier otra moneda, NO lo conviertas ni lo estimes: todavía no hay tipo de cambio en la plataforma. Decilo con franqueza y preguntale a cuántos mensajes equivale o cuánto es en dólares, y con esa respuesta hacé la búsqueda.
 - Cuando recortaste por presupuesto, aclaralo: cuántos entran y cuántos quedaron afuera.

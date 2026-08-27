@@ -26,6 +26,26 @@ export const MODELO_EMBEDDING = "text-embedding-3-small";
 export const DIMENSIONES_EMBEDDING = 1536;
 
 /**
+ * Los embeddings de MENSAJES se guardan truncados a 512 dimensiones, en una
+ * columna halfvec en vez de vector.
+ *
+ * text-embedding-3-small está entrenado con Matryoshka Representation
+ * Learning: la información se concentra en las primeras dimensiones, así que
+ * quedarse con las primeras 512 conserva casi toda la calidad. Para textos
+ * cortos como estos (21 caracteres promedio) la pérdida es despreciable.
+ *
+ * Importa porque el volumen es otro: hay un embedding por CONTACTO en los
+ * perfiles, pero uno por MENSAJE acá. Entre truncar y usar halfvec, el costo
+ * pasa de ~6 KB a ~1 KB por mensaje — a escala real son ~30 MB en vez de
+ * ~180 MB.
+ *
+ * La consulta se trunca igual que los mensajes guardados, así que ambos
+ * lados viven en el mismo espacio. No hace falta renormalizar: la distancia
+ * coseno es invariante a la escala del vector.
+ */
+export const DIMENSIONES_EMBEDDING_MSG = 512;
+
+/**
  * Tope de leads a embeber por búsqueda. Existe para que una cuenta con
  * muchos contactos sin procesar no convierta la primera búsqueda en una
  * espera larga: se procesan de a tandas, y las búsquedas siguientes van
@@ -68,18 +88,105 @@ export async function generarEmbeddings(
   return ordenados;
 }
 
-/** Genera el embedding de una consulta suelta (la que escribe el usuario). */
+/**
+ * Genera el embedding de la consulta del usuario en sus dos formas: completa
+ * (para comparar contra perfiles de lead) y truncada a 512 (para comparar
+ * contra mensajes). Es UNA sola llamada a OpenAI: el costo se cobra por
+ * tokens de entrada, así que pedir 1536 y recortar no cuesta más que pedir
+ * 512, y evita la segunda request.
+ */
 export async function generarEmbeddingConsulta(
   openai: OpenAI,
   consulta: string,
-): Promise<string | null> {
+): Promise<{ perfil: string; mensaje: string } | null> {
   const texto = consulta.trim();
   if (!texto) return null;
 
   const [vector] = await generarEmbeddings(openai, [texto]);
   if (!vector || vector.length !== DIMENSIONES_EMBEDDING) return null;
 
-  return aLiteralVector(vector);
+  return {
+    perfil: aLiteralVector(vector),
+    mensaje: aLiteralVector(vector.slice(0, DIMENSIONES_EMBEDDING_MSG)),
+  };
+}
+
+interface MensajePendiente {
+  mensaje_id: string;
+  telefono: string;
+  contenido: string;
+  fecha: string | null;
+}
+
+/**
+ * Tope de mensajes a embeber por búsqueda. Más alto que el de leads porque
+ * son muchos más (cientos por contacto) y entran todos en una sola llamada
+ * a la API. Las búsquedas siguientes van completando lo que falte.
+ */
+const MAX_MENSAJES_POR_TANDA = 300;
+
+/**
+ * Pone al día los embeddings de mensajes del tenant. Igual que la de leads,
+ * nunca lanza: si la capa semántica no está disponible, la búsqueda sigue
+ * funcionando con texto completo.
+ */
+export async function sincronizarEmbeddingsMensajes(
+  openai: OpenAI,
+  supabase: SupabaseClient,
+  tenantId: string,
+  limite: number = MAX_MENSAJES_POR_TANDA,
+): Promise<{ generados: number; pendientes: number; error?: string }> {
+  try {
+    const { data, error } = await supabase.rpc("yamas_send_mensajes_embeddings_pendientes", {
+      p_tenant_id: tenantId,
+      p_limite: limite,
+    });
+
+    if (error) {
+      console.error("[embeddings] No se pudieron leer los mensajes pendientes:", error.message);
+      return { generados: 0, pendientes: 0, error: error.message };
+    }
+
+    const pendientes = (data ?? []) as MensajePendiente[];
+    if (pendientes.length === 0) return { generados: 0, pendientes: 0 };
+
+    const vectores = await generarEmbeddings(
+      openai,
+      pendientes.map((p) => p.contenido),
+    );
+
+    const filas = pendientes
+      .map((p, i) => {
+        const vector = vectores[i];
+        if (!vector || vector.length !== DIMENSIONES_EMBEDDING) return null;
+        return {
+          mensaje_id: p.mensaje_id,
+          embedding: aLiteralVector(vector.slice(0, DIMENSIONES_EMBEDDING_MSG)),
+          modelo: MODELO_EMBEDDING,
+        };
+      })
+      .filter((f): f is { mensaje_id: string; embedding: string; modelo: string } => f !== null);
+
+    if (filas.length === 0) return { generados: 0, pendientes: pendientes.length };
+
+    // Una sola escritura para toda la tanda. Con cientos de mensajes por
+    // sincronización, una request por fila contra el pooler no escala.
+    const { data: insertados, error: errorGuardado } = await supabase.rpc(
+      "yamas_send_guardar_mensajes_embeddings",
+      { p_tenant_id: tenantId, p_filas: filas },
+    );
+
+    if (errorGuardado) {
+      console.error("[embeddings] Error guardando embeddings de mensajes:", errorGuardado.message);
+      return { generados: 0, pendientes: pendientes.length, error: errorGuardado.message };
+    }
+
+    return { generados: Number(insertados ?? 0), pendientes: pendientes.length };
+  } catch (e) {
+    const mensaje = e instanceof Error ? e.message : "error desconocido";
+    console.error("[embeddings] Falló la sincronización de mensajes:", mensaje);
+    return { generados: 0, pendientes: 0, error: mensaje };
+  }
 }
 
 /**

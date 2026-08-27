@@ -293,6 +293,7 @@ export type IAFlowStep =
   | "campana_esperando_fecha"
   | "campana_esperando_confirmacion"
   // importar_contactos
+  | "importar_ofrecido"
   | "importar_esperando_confirmacion"
   // editar_recurso (renombrar audiencia/campaña, cambiar temperatura)
   | "editar_esperando_seleccion"

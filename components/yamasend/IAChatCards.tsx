@@ -493,16 +493,28 @@ function TablaDatosCard({ titulo, columnas, filas, totalDisponible }: TablaDatos
           <tbody className="divide-y divide-ys-border-softest">
             {filas.map((fila, i) => (
               <tr key={i}>
-                {fila.map((celda, j) => (
-                  <td
-                    key={j}
-                    className={`px-4 py-2.5 whitespace-nowrap ${
-                      j === 0 ? "text-ys-text font-medium" : "text-ys-dim font-mono text-xs"
-                    }`}
-                  >
-                    {celda}
-                  </td>
-                ))}
+                {fila.map((celda, j) => {
+                  // Las columnas cortas (nombre, teléfono, temperatura) se
+                  // mantienen en una línea. Las de texto libre —como el
+                  // "Por qué" de la búsqueda de contactos, que trae el
+                  // mensaje textual del contacto— se dejan envolver con un
+                  // ancho máximo: antes salían cortadas a mitad de palabra y
+                  // no se llegaba a leer la explicación. El contenedor
+                  // conserva igual su scroll horizontal.
+                  const esTextoLargo = typeof celda === "string" && celda.length > 40;
+                  return (
+                    <td
+                      key={j}
+                      className={`px-4 py-2.5 align-top ${
+                        esTextoLargo
+                          ? "min-w-[16rem] max-w-[26rem] whitespace-normal break-words"
+                          : "whitespace-nowrap"
+                      } ${j === 0 ? "text-ys-text font-medium" : "text-ys-dim font-mono text-xs"}`}
+                    >
+                      {celda}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
