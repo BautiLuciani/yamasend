@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ContactList, Template } from "@/lib/types";
+import type { ContactList, SugerenciaHorario, Template } from "@/lib/types";
 
 type Paso = 1 | 2 | 3 | 4;
 
@@ -12,6 +12,12 @@ interface CampaignWizardModalProps {
   costPerMsg: number;
   onClose: () => void;
   onFetchInsight: () => Promise<{ insight: string | null; error: string | null }>;
+  /**
+   * Trae la mejor franja horaria según el historial real de la cuenta.
+   * Devuelve null cuando todavía no hay evidencia suficiente — en ese caso
+   * no se muestra nada, en vez de sugerir un horario sin respaldo.
+   */
+  onFetchSugerenciaHorario?: () => Promise<SugerenciaHorario | null>;
   onConfirm: (data: {
     nombre: string;
     listaId: string;
@@ -49,6 +55,7 @@ export default function CampaignWizardModal({
   costPerMsg,
   onClose,
   onFetchInsight,
+  onFetchSugerenciaHorario,
   onConfirm,
   initial,
 }: CampaignWizardModalProps) {
@@ -67,6 +74,9 @@ export default function CampaignWizardModal({
   const [insight, setInsight] = useState<string | null>(null);
   const [insightCargando, setInsightCargando] = useState(false);
   const insightPedidoRef = useRef(false);
+  const [sugerenciaHorario, setSugerenciaHorario] = useState<SugerenciaHorario | null>(null);
+  const [sugerenciaAplicada, setSugerenciaAplicada] = useState(false);
+  const sugerenciaPedidaRef = useRef(false);
 
   async function cargarInsight() {
     if (insightPedidoRef.current) return;
@@ -77,12 +87,42 @@ export default function CampaignWizardModal({
     setInsightCargando(false);
   }
 
+  async function cargarSugerenciaHorario() {
+    if (sugerenciaPedidaRef.current || !onFetchSugerenciaHorario) return;
+    sugerenciaPedidaRef.current = true;
+    const result = await onFetchSugerenciaHorario();
+    setSugerenciaHorario(result);
+  }
+
   useEffect(() => {
     if (open && paso === 3) {
       cargarInsight();
+      cargarSugerenciaHorario();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, paso]);
+
+  /**
+   * Pasa la fecha del selector a la franja recomendada, conservando el día
+   * que el usuario ya haya elegido. Si esa hora de hoy ya pasó, mueve al día
+   * siguiente: programar en el pasado haría que el scheduler la dispare
+   * apenas corra, que no es lo que el usuario pidió.
+   */
+  function aplicarHorarioSugerido() {
+    if (!sugerenciaHorario) return;
+
+    const base = fechaProgramada ? new Date(fechaProgramada) : new Date();
+    base.setHours(sugerenciaHorario.horaInicio, 0, 0, 0);
+    if (base.getTime() <= Date.now()) {
+      base.setDate(base.getDate() + 1);
+    }
+
+    const pad = (n: number) => String(n).padStart(2, "0");
+    setFechaProgramada(
+      `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`,
+    );
+    setSugerenciaAplicada(true);
+  }
 
   function resetState() {
     setPaso(initial?.paso ?? 1);
@@ -99,6 +139,9 @@ export default function CampaignWizardModal({
     setExito(false);
     setInsight(null);
     insightPedidoRef.current = false;
+    setSugerenciaHorario(null);
+    setSugerenciaAplicada(false);
+    sugerenciaPedidaRef.current = false;
   }
 
   if (!open) return null;
@@ -461,9 +504,46 @@ export default function CampaignWizardModal({
                       type="datetime-local"
                       value={fechaProgramada}
                       min={defaultFechaProgramada().slice(0, 10) + "T00:00"}
-                      onChange={(e) => setFechaProgramada(e.target.value)}
+                      onChange={(e) => {
+                        setFechaProgramada(e.target.value);
+                        setSugerenciaAplicada(false);
+                      }}
                       className="border border-ys-border rounded-[10px] px-3.5 py-[11px] text-[13.5px] font-semibold text-ys-text outline-none transition-colors focus:border-ys-green"
                     />
+
+                    {/* Solo aparece con evidencia real detrás: la acción
+                        devuelve null mientras no haya envíos suficientes. */}
+                    {sugerenciaHorario && (
+                      <div className="mt-1 border border-ys-green/40 bg-ys-green-bg rounded-[12px] px-3.5 py-3 flex items-start gap-2.5">
+                        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="mt-0.5 flex-none">
+                          <circle cx="8" cy="8" r="6.25" stroke="#067647" strokeWidth="1.5" />
+                          <path d="M8 4.75V8l2.25 1.4" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" />
+                        </svg>
+                        <div className="flex-1 flex flex-col gap-1.5">
+                          <div className="text-[12.5px] leading-[1.5] text-ys-green-text font-semibold">
+                            Tus contactos responden más entre las{" "}
+                            <strong>
+                              {String(sugerenciaHorario.horaInicio).padStart(2, "0")}:00 y las{" "}
+                              {String(sugerenciaHorario.horaFin).padStart(2, "0")}:00
+                            </strong>{" "}
+                            ({Math.round(sugerenciaHorario.tasaRespuesta * 100)}% de respuesta sobre{" "}
+                            {sugerenciaHorario.enviados} envíos en esa franja).
+                          </div>
+                          {sugerenciaAplicada ? (
+                            <div className="text-[12px] font-bold text-ys-green-text">
+                              Listo, programada en esa franja.
+                            </div>
+                          ) : (
+                            <button
+                              onClick={aplicarHorarioSugerido}
+                              className="self-start text-[12px] font-bold text-ys-green-text underline underline-offset-2 cursor-pointer"
+                            >
+                              Usar ese horario
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

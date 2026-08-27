@@ -29,6 +29,7 @@ import TemplateCreateModal from "./TemplateCreateModal";
 import TemplateDetailModal from "./TemplateDetailModal";
 import Campanas from "./Campanas";
 import CampaignWizardModal from "./CampaignWizardModal";
+import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
 import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
@@ -1543,6 +1544,7 @@ export default function AppShell({
           const result = await getCampaignInsightAction();
           return { insight: result.insight, error: result.error };
         }}
+        onFetchSugerenciaHorario={getSugerenciaHorarioAction}
         onConfirm={async ({ nombre, listaId, templateId, contactosIds, momento, fechaProgramada }) => {
           const saveResult = await saveCampaignAction(
             nombre,

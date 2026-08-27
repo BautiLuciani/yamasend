@@ -22,6 +22,7 @@ import {
   getTemplatesForTenant,
   getCampaignsForTenant,
 } from "@/lib/actions/campaigns";
+import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
 import {
   generarEmbeddingConsulta,
   sincronizarEmbeddingsLeads,
@@ -1772,8 +1773,21 @@ export async function seleccionarMomentoCampanaAction(
   }
 
   if (momento === "programar") {
+    // Misma proactividad que el wizard manual: si hay evidencia real, se
+    // ofrece la franja en la que más responden en vez de dejar al usuario
+    // eligiendo a ciegas. Si no hay datos suficientes, la acción devuelve
+    // null y el paso queda exactamente como estaba antes.
+    const sugerencia = await getSugerenciaHorarioAction();
+    const texto = sugerencia
+      ? `Elegí la fecha y hora de envío. Un dato: tus contactos responden más entre las ${String(
+          sugerencia.horaInicio,
+        ).padStart(2, "0")}:00 y las ${String(sugerencia.horaFin).padStart(2, "0")}:00 (${Math.round(
+          sugerencia.tasaRespuesta * 100,
+        )}% de respuesta sobre ${sugerencia.enviados} envíos en esa franja).`
+      : "Elegí la fecha y hora de envío.";
+
     return {
-      text: "Elegí la fecha y hora de envío.",
+      text: texto,
       payload: { kind: "elegir_fecha_campana" },
       flowState: {
         kind: "crear_campana",
@@ -2900,7 +2914,11 @@ async function ejecutarHerramientaAgente(
 
   if (nombre === "mejor_horario_envio") {
     const { data, error } = await supabase
-      .rpc("analytics_mejor_horario_envio", { p_tenant_id: tenantId, p_minimo_muestras: 20 })
+      .rpc("analytics_mejor_horario_envio", {
+        p_tenant_id: tenantId,
+        p_minimo_muestras: 20,
+        p_minimo_por_hora: 5,
+      })
       .maybeSingle();
     if (error) return { datos: { error: error.message } };
     return { datos: data ?? {} };

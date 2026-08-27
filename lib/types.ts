@@ -486,3 +486,22 @@ export interface DashboardStats {
   leadsCalificados: number;
   leadsCalificadosDelta: number | null;
 }
+
+/**
+ * Mejor franja horaria para enviar campañas, calculada sobre el historial
+ * real de envíos y respuestas de la cuenta. Solo se construye cuando hay
+ * evidencia suficiente: si no la hay, las acciones devuelven null en vez de
+ * una sugerencia débil.
+ */
+export interface SugerenciaHorario {
+  /** Hora de inicio de la franja, 0-23, en hora de Argentina. */
+  horaInicio: number;
+  /** Hora de fin de la franja (siempre horaInicio + 1). */
+  horaFin: number;
+  /** Cuántos mensajes se enviaron en esa franja (respaldo de la sugerencia). */
+  enviados: number;
+  /** Tasa de respuesta observada en esa franja, 0-1. */
+  tasaRespuesta: number;
+  /** Total de mensajes analizados en toda la cuenta. */
+  totalAnalizados: number;
+}
