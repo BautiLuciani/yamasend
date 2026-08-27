@@ -336,6 +336,22 @@ export interface IAFlowState {
       telefono: string;
       temperatura: "caliente" | "tibio" | "frio";
     }[];
+    // Último resultado de buscar_contactos disponible en esta conversación.
+    // Mismo propósito que ultimaImportacion: los resultados de herramientas
+    // NO viajan en el historial (el modelo solo ve texto), así que sin esto
+    // un "armá una audiencia con ese contacto" obligaba al modelo a acordarse
+    // de un id que ya no tiene delante — y terminaba mandando ids inventados
+    // o ninguno. Guardado acá, la referencia se resuelve contra la base sin
+    // depender del criterio del modelo. Persiste aunque el flujo esté idle.
+    ultimaBusqueda?: {
+      consulta: string;
+      contactos: {
+        contactoId: string;
+        nombre: string;
+        telefono: string;
+        temperatura: string | null;
+      }[];
+    };
   };
 }
 

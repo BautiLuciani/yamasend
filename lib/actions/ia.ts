@@ -354,6 +354,81 @@ function detectarFiltroTemperatura(
   return null;
 }
 
+/**
+ * Resuelve "armá una audiencia con ese contacto / con esos / con los que me
+ * mostraste" usando los resultados de la última búsqueda guardados en el
+ * draft, en vez de depender de que el modelo recuerde los ids.
+ *
+ * Por qué existe: los resultados de las herramientas no viajan en el
+ * historial — el modelo solo ve el texto de los turnos anteriores. Cuando el
+ * usuario decía "quiero armar una audiencia con ese contacto", el modelo no
+ * tenía el id delante y terminaba llamando a la herramienta sin ids (o con
+ * ids inventados), que respondía con un error y el usuario veía "hubo un
+ * problema al crear la audiencia".
+ *
+ * Pide DOS condiciones para activarse, así no se come pedidos que no
+ * corresponden: que el mensaje hable de armar una audiencia, y que use un
+ * demostrativo o una referencia a lo que se acaba de mostrar. Un "creá una
+ * audiencia con los calientes" sin referencia sigue de largo al agente.
+ */
+// Se testean contra el texto ya normalizado (sin acentos): en JavaScript
+// \b es ASCII, así que "creá" no matchearía \bcrea\b — el acento cuenta
+// como carácter no-palabra y rompe el límite. Los otros detectores del
+// archivo normalizan por el mismo motivo.
+const REGEX_ARMAR_AUDIENCIA =
+  /\b(arm(a|ar|ame|emos)|cre(a|ar|ame|emos)|hac(e|er|eme|emos)|gener(a|ar)|nueva|nuevo|mete|pone)\b[^.]{0,40}\b(audiencia|lista|grupo)\b|\b(audiencia|lista|grupo)\b[^.]{0,20}\b(nueva|nuevo)\b/i;
+const REGEX_REFERENCIA_RESULTADOS =
+  /\b(ese|esa|eso|esos|esas|este|esta|estos|estas|dicho|mismo|misma)\b|\bmostrast|\bmostrado|\bencontrast|\baparec|\bresultados?\b|\bde (arriba|ahi)\b/i;
+// Verbos que NO son crear: si el pedido es borrar o renombrar algo existente,
+// esta rama no tiene que meterse — eso va por abrir_flujo / editar_recurso.
+const REGEX_NO_ES_CREACION = /\b(borr|elimin|renombr|cambi|edit|modific|actualiz)/i;
+
+function intentaAudienciaDesdeUltimaBusqueda(
+  texto: string,
+  flowState: IAFlowState,
+): IAResponse | null {
+  const busqueda = flowState.draft.ultimaBusqueda;
+  if (!busqueda || busqueda.contactos.length === 0) return null;
+
+  const t = texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  if (REGEX_NO_ES_CREACION.test(t)) return null;
+  if (!REGEX_ARMAR_AUDIENCIA.test(t)) return null;
+  if (!REGEX_REFERENCIA_RESULTADOS.test(t)) return null;
+
+  // Si además nombran una temperatura, se filtra sobre los resultados.
+  const filtroTemp = detectarFiltroTemperatura(texto);
+  const seleccionados = filtroTemp
+    ? busqueda.contactos.filter((c) => c.temperatura === filtroTemp)
+    : busqueda.contactos;
+
+  if (seleccionados.length === 0) return null;
+
+  const cuantos =
+    seleccionados.length === 1
+      ? `${seleccionados[0].nombre}`
+      : `los ${seleccionados.length} contactos de la búsqueda`;
+
+  return {
+    text: `Dale, armemos una audiencia con ${cuantos}. ¿Cómo querés que se llame?`,
+    flowState: {
+      kind: "crear_audiencia",
+      step: "audiencia_esperando_nombre",
+      draft: {
+        contactosIds: seleccionados.map((c) => c.contactoId),
+        contactosIdsResueltos: true,
+        consultaUsada: busqueda.consulta,
+        // Se conserva para que el usuario pueda encadenar otro pedido sobre
+        // la misma búsqueda después de terminar este flujo.
+        ultimaBusqueda: busqueda,
+      },
+    },
+  };
+}
+
 function intentaAudienciaDesdeUltimaImportacion(
   texto: string,
   flowState: IAFlowState,
@@ -817,6 +892,9 @@ export async function sendIAMessageAction(
   if (!flowState.kind) {
     const respuestaImportacion = intentaAudienciaDesdeUltimaImportacion(texto, flowState);
     if (respuestaImportacion) return respuestaImportacion;
+
+    const respuestaBusqueda = intentaAudienciaDesdeUltimaBusqueda(texto, flowState);
+    if (respuestaBusqueda) return respuestaBusqueda;
   }
 
   // ---- Atajo determinístico para pedidos de edición explícitos ---------
@@ -2506,6 +2584,11 @@ interface ResultadoHerramienta {
   // al usuario. Lo usan las herramientas de ACCIÓN, que entregan el control
   // a la máquina de estados con su UI de confirmación.
   accion?: IAResponse;
+  // Datos que la herramienta quiere dejar disponibles para el PRÓXIMO turno.
+  // Se mezclan en el draft del flowState que se devuelve. Existe porque los
+  // resultados de herramientas no viajan en el historial: sin esto, una
+  // referencia como "con ese contacto" no tiene contra qué resolverse.
+  memoria?: IAFlowState["draft"];
 }
 
 function fechaCorta(v: string | null | undefined): string {
@@ -2782,6 +2865,24 @@ async function ejecutarHerramientaAgente(
             totalDisponible: filas.length,
           }
         : undefined,
+      // Se guardan los contactos encontrados para que en el turno siguiente
+      // "armá una audiencia con esos" se resuelva contra la base, sin
+      // depender de que el modelo recuerde ids que ya no tiene delante.
+      memoria: filas.some((f) => f.contacto_id)
+        ? {
+            ultimaBusqueda: {
+              consulta,
+              contactos: filas
+                .filter((f) => f.contacto_id)
+                .map((f) => ({
+                  contactoId: f.contacto_id as string,
+                  nombre: f.nombre,
+                  telefono: f.telefono,
+                  temperatura: f.temperatura,
+                })),
+            },
+          }
+        : undefined,
     };
   }
 
@@ -3011,6 +3112,7 @@ BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
 - MUY IMPORTANTE: los resultados de las herramientas NO se guardan entre mensajes. Solo ves el texto de la conversación previa, no los datos que consultaste antes. Entonces, si el usuario dice "creá una audiencia con esos" refiriéndose a contactos de un mensaje anterior, PRIMERO volvé a consultarlos ahora (con listar_contactos o buscar_contactos) y recién después creá la audiencia. Si el grupo se puede describir por temperatura, es más simple y confiable usar el parámetro filtro_temperatura.
+- Nunca llames a crear_audiencia_con_estos_contactos con ids que "te acordás" de un mensaje anterior: no sobreviven y la llamada va a fallar. Si el usuario se refiere a un contacto que apareció en una búsqueda previa, volvé a correr buscar_contactos con la MISMA consulta en este turno, tomá el contacto_id del resultado nuevo, y recién ahí armá la audiencia.
 - Si una herramienta te devuelve un error, leelo y corregí en el mismo turno (por ejemplo, volviendo a consultar los datos). No le traslades el error al usuario si podés resolverlo vos.
 - NUNCA digas que abriste un asistente, que creaste algo o que hiciste una acción si la herramienta correspondiente no te devolvió un resultado exitoso. Si falló, decí que no pudiste y ofrecé reintentar — nunca narres una acción que no ocurrió.
 - Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos, usá abrir_flujo.
@@ -3032,6 +3134,10 @@ REGLAS ESTRICTAS
   ];
 
   let ultimaTabla: ResultadoHerramienta["tabla"];
+  // Memoria que dejan las herramientas para el turno siguiente (ver
+  // ResultadoHerramienta.memoria). Se acumula acá y se adjunta al flowState
+  // que se devuelve, aunque el flujo quede idle.
+  let memoriaHerramientas: IAFlowState["draft"] = {};
 
   for (let i = 0; i < MAX_ITERACIONES_AGENTE; i++) {
     const completion = await openai.chat.completions.create({
@@ -3055,7 +3161,7 @@ REGLAS ESTRICTAS
       return {
         text: texto,
         payload: ultimaTabla ? { kind: "tabla_datos", ...ultimaTabla } : undefined,
-        flowState: IA_FLOW_IDLE,
+        flowState: { ...IA_FLOW_IDLE, draft: memoriaHerramientas },
       };
     }
 
@@ -3084,6 +3190,9 @@ REGLAS ESTRICTAS
       if (resultado.accion) return resultado.accion;
 
       if (resultado.tabla) ultimaTabla = resultado.tabla;
+      if (resultado.memoria) {
+        memoriaHerramientas = { ...memoriaHerramientas, ...resultado.memoria };
+      }
 
       messages.push({
         role: "tool",
