@@ -2772,20 +2772,24 @@ async function ejecutarHerramientaAgente(
     if (error) return { datos: { error: error.message } };
     const filas = (data ?? []) as {
       nombre: string; status: string; enviado_at: string; contactos_count: number;
-      mensajes_ok: number; respondidos: number; tasa_respuesta: number; costo_usd: number | null;
+      mensajes_ok: number; leidos: number; respondidos: number; tasa_respuesta: number; costo_usd: number | null;
     }[];
     return {
       datos: filas,
       tabla: filas.length
         ? {
             titulo: "Tus campañas",
-            columnas: ["Campaña", "Enviada", "Mensajes", "Respuestas"],
-            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
-              f.nombre,
-              fechaCorta(f.enviado_at),
-              String(f.mensajes_ok ?? 0),
-              `${f.respondidos ?? 0} (${pct(f.tasa_respuesta)})`,
-            ]),
+            columnas: ["Campaña", "Enviada", "Mensajes", "Leídos"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => {
+              const enviados = Number(f.mensajes_ok ?? 0);
+              const leidos = Number(f.leidos ?? 0);
+              return [
+                f.nombre,
+                fechaCorta(f.enviado_at),
+                String(enviados),
+                `${leidos} (${pct(enviados > 0 ? leidos / enviados : 0)})`,
+              ];
+            }),
             totalDisponible: filas.length,
           }
         : undefined,
