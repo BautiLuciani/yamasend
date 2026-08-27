@@ -22,6 +22,10 @@ import {
   getTemplatesForTenant,
   getCampaignsForTenant,
 } from "@/lib/actions/campaigns";
+import {
+  generarEmbeddingConsulta,
+  sincronizarEmbeddingsLeads,
+} from "@/lib/embeddings";
 import type {
   ChatPayload,
   Contact,
@@ -2028,7 +2032,8 @@ export async function iniciarAudienciaDesdeImportacionAction(
 // Flujo: buscar_contactos — INACTIVO desde la migración al agente de datos.
 //
 // El agente cubre ahora la búsqueda por tema con su herramienta
-// buscar_en_conversaciones (misma RPC buscar_mensajes_historico por debajo),
+// buscar_contactos (que usa yamas_send_buscar_contactos_hibrido, la cual
+// conserva adentro la misma rama de texto completo que usaba esta),
 // así que esta función ya no se llama desde el dispatcher. Se conserva
 // porque devuelve el payload "resultados_busqueda_contactos", que trae el
 // botón "Crear audiencia con estos contactos" — una UX que el agente
@@ -2169,6 +2174,23 @@ export async function iniciarAudienciaDesdeResultadosBusquedaAction(
 const MAX_ITERACIONES_AGENTE = 5;
 const MAX_FILAS_TABLA = 12;
 
+/**
+ * Similitud de coseno mínima para que un contacto entre por la rama
+ * semántica de la búsqueda. Es el parámetro más sensible de toda la
+ * función: una búsqueda vectorial SIEMPRE tiene un vecino más cercano, así
+ * que sin umbral cualquier consulta "encontraría" a todos los contactos de
+ * la cuenta ordenados por parecido, y el agente los reportaría como
+ * coincidencias reales.
+ *
+ * 0.30 está calibrado para text-embedding-3-small sobre textos cortos en
+ * español: contactos realmente relacionados con la consulta suelen quedar
+ * por encima de 0.40, y los no relacionados bastante por debajo de 0.25. Si
+ * en producción aparecen falsos positivos, subirlo; si búsquedas legítimas
+ * vuelven vacías, bajarlo. Las ramas de texto completo no dependen de este
+ * valor, así que tocarlo no puede romper la búsqueda literal.
+ */
+const SIMILITUD_MINIMA = 0.3;
+
 const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
@@ -2200,7 +2222,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "listar_contactos",
       description:
-        "Lista los contactos/leads de la cuenta, opcionalmente filtrados por temperatura (caliente/tibio/frio). Usar para 'pasame los contactos fríos', 'cuáles son mis leads calientes', 'cuántos contactos tengo', 'quién está hace más tiempo sin responder'. NO usar para buscar por tema de conversación (para eso está buscar_en_conversaciones).",
+        "Lista los contactos/leads de la cuenta, opcionalmente filtrados por temperatura (caliente/tibio/frio). Usar para 'pasame los contactos fríos', 'cuáles son mis leads calientes', 'cuántos contactos tengo', 'quién está hace más tiempo sin responder'. NO usar para buscar por tema, interés o necesidad (para eso está buscar_contactos).",
       parameters: {
         type: "object",
         properties: {
@@ -2266,13 +2288,38 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
-      name: "buscar_en_conversaciones",
+      name: "buscar_contactos",
       description:
-        "Busca un TEMA o PALABRA CLAVE dentro del historial real de conversaciones de WhatsApp con los contactos, y devuelve qué contactos hablaron de eso. Usar SOLO para temas de conversación ('quiénes preguntaron por departamentos', 'quién habló de Coca-Cola'). NO usar para filtrar por atributos del contacto como temperatura — para eso está listar_contactos.",
+        "Busca contactos por TEMA, INTERÉS o NECESIDAD, descrito en lenguaje natural. Combina búsqueda semántica sobre el análisis de cada contacto con búsqueda de texto sobre el historial real de WhatsApp, así que entiende sinónimos y descripciones aproximadas: 'los que compran zapatillas' también encuentra a quien habló de calzado deportivo o de unas Nike. Usar para 'quiénes preguntaron por departamentos', 'contactos interesados en X', 'armame un grupo con los que compran Y'. NO usar cuando el pedido es solo por temperatura sin ningún tema ('pasame los fríos') — para eso está listar_contactos.",
       parameters: {
         type: "object",
         properties: {
-          consulta: { type: "string", description: "El tema o palabra clave a buscar en los mensajes." },
+          consulta: {
+            type: "string",
+            description:
+              "Qué se busca, en lenguaje natural y con las palabras del usuario. Poné el interés o la necesidad, no la temperatura ni el presupuesto (esos van en sus propios parámetros). Ej: 'compran zapatillas', 'buscan departamento de 3 ambientes'.",
+          },
+          temperatura: {
+            type: "string",
+            enum: ["caliente", "tibio", "frio"],
+            description: "Filtro opcional adicional por temperatura del lead. Omitir si el usuario no la mencionó.",
+          },
+          score_minimo: {
+            type: "integer",
+            description:
+              "Filtro opcional: score de interés mínimo (0-100). Usalo solo si el usuario pidió explícitamente los de más interés.",
+          },
+          presupuesto_mensajes: {
+            type: "integer",
+            description:
+              "Cantidad máxima de contactos que el usuario puede costear, cuando dio un presupuesto en MENSAJES o CRÉDITOS (1 crédito = 1 mensaje). Se devuelven los mejor rankeados hasta ese tope. Si el presupuesto vino en dinero, usá presupuesto_usd en su lugar.",
+          },
+          presupuesto_usd: {
+            type: "number",
+            description:
+              "Presupuesto en DÓLARES. Se convierte a cantidad de contactos dividiendo por el costo por mensaje de la plataforma. No lo uses para montos en pesos ni en otra moneda.",
+          },
+          limite: { type: "integer", description: "Máximo de contactos a devolver (1-100). Por defecto 15." },
         },
         required: ["consulta"],
       },
@@ -2316,7 +2363,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "crear_audiencia_con_estos_contactos",
       description:
-        "Abre el flujo de creación de audiencia con contactos concretos. Hay dos formas de indicar los contactos, y conviene usar la que corresponda:\n- filtro_temperatura: la MÁS confiable. Resuelve los contactos en el momento contra la base (ej: el usuario pide una audiencia con 'los calientes' o 'los fríos'). Usala siempre que el grupo se pueda describir por temperatura.\n- contacto_ids: solo si los ids salen de un resultado de listar_contactos o buscar_en_conversaciones de ESTE MISMO turno. Los ids NO sobreviven entre mensajes: si el usuario se refiere a contactos de un mensaje anterior, volvé a consultarlos con la herramienta correspondiente antes de usar esta.",
+        "Abre el flujo de creación de audiencia con contactos concretos. Hay dos formas de indicar los contactos, y conviene usar la que corresponda:\n- filtro_temperatura: la MÁS confiable. Resuelve los contactos en el momento contra la base (ej: el usuario pide una audiencia con 'los calientes' o 'los fríos'). Usala siempre que el grupo se pueda describir por temperatura.\n- contacto_ids: solo si los ids salen de un resultado de listar_contactos o buscar_contactos de ESTE MISMO turno. Los ids NO sobreviven entre mensajes: si el usuario se refiere a contactos de un mensaje anterior, volvé a consultarlos con la herramienta correspondiente antes de usar esta.",
       parameters: {
         type: "object",
         properties: {
@@ -2513,23 +2560,129 @@ async function ejecutarHerramientaAgente(
     };
   }
 
-  if (nombre === "buscar_en_conversaciones") {
+  if (nombre === "buscar_contactos") {
     const consulta = typeof args.consulta === "string" ? args.consulta : "";
     if (!consulta.trim()) return { datos: { error: "consulta vacía" } };
-    const { data, error } = await supabase.rpc("buscar_mensajes_historico", {
+
+    // 1. Poner al día los embeddings que falten. Es incremental (solo los
+    //    leads cuyo análisis cambió) y nunca lanza: si OpenAI no responde,
+    //    la búsqueda sigue igual apoyada en las ramas de texto completo,
+    //    que es exactamente lo que hacía antes de existir la semántica.
+    let embeddingConsulta: string | null = null;
+    try {
+      const openai = getOpenAI();
+      await sincronizarEmbeddingsLeads(openai, supabase, tenantId);
+      embeddingConsulta = await generarEmbeddingConsulta(openai, consulta);
+    } catch (e) {
+      console.error("[IA] Capa semántica no disponible, sigo con texto completo:", e);
+    }
+
+    const temperatura =
+      typeof args.temperatura === "string" && ["caliente", "tibio", "frio"].includes(args.temperatura)
+        ? args.temperatura
+        : null;
+    const scoreMinimo =
+      typeof args.score_minimo === "number" && Number.isFinite(args.score_minimo)
+        ? Math.max(0, Math.min(100, Math.round(args.score_minimo)))
+        : null;
+    const limitePedido =
+      typeof args.limite === "number" && Number.isFinite(args.limite)
+        ? Math.max(1, Math.min(100, Math.round(args.limite)))
+        : 15;
+
+    // 2. Corte por presupuesto. Se calcula en CANTIDAD DE MENSAJES porque
+    //    es la unidad que el usuario va a comprar (1 crédito = 1 mensaje).
+    //    El camino en dólares queda como respaldo, dividiendo por el costo
+    //    por mensaje que ya usa el wizard de campañas.
+    const cupoPorCreditos =
+      typeof args.presupuesto_mensajes === "number" && args.presupuesto_mensajes > 0
+        ? Math.floor(args.presupuesto_mensajes)
+        : null;
+    const cupoPorDolares =
+      typeof args.presupuesto_usd === "number" && args.presupuesto_usd > 0
+        ? Math.floor(args.presupuesto_usd / COST_PER_MSG)
+        : null;
+    const cupoPresupuesto =
+      cupoPorCreditos != null && cupoPorDolares != null
+        ? Math.min(cupoPorCreditos, cupoPorDolares)
+        : (cupoPorCreditos ?? cupoPorDolares);
+
+    if (cupoPresupuesto != null && cupoPresupuesto < 1) {
+      return {
+        datos: {
+          error: `Ese presupuesto no alcanza ni para un mensaje. Cada envío cuesta USD ${COST_PER_MSG.toFixed(4)}.`,
+        },
+      };
+    }
+
+    // Cuando hay corte por presupuesto se pide bastante de más a la base:
+    // el recorte se aplica acá, y así se puede decir con precisión cuántos
+    // contactos quedaron afuera por plata en vez de solo cuántos entraron.
+    const filasAPedir = cupoPresupuesto != null ? 100 : limitePedido;
+
+    const { data, error } = await supabase.rpc("yamas_send_buscar_contactos_hibrido", {
       p_tenant_id: tenantId,
       p_consulta: consulta,
-      p_limite: 15,
+      p_embedding: embeddingConsulta,
+      p_limite: filasAPedir,
+      p_temperatura: temperatura,
+      p_score_min: scoreMinimo,
+      p_similitud_min: SIMILITUD_MINIMA,
     });
+
     if (error) return { datos: { error: error.message } };
-    const filas = (data ?? []) as { nombre: string; telefono: string; menciones: number; fragmento: string }[];
+
+    const encontrados = (data ?? []) as {
+      contacto_id: string | null;
+      nombre: string;
+      telefono: string;
+      temperatura: string | null;
+      score_interes: number | null;
+      producto_servicio: string | null;
+      menciones: number;
+      motivo: string;
+      similitud: number;
+      relevancia: number;
+      fuentes: string[];
+    }[];
+
+    const tope = Math.min(limitePedido, cupoPresupuesto ?? limitePedido);
+    const filas = encontrados.slice(0, tope);
+    const recortadosPorPresupuesto =
+      cupoPresupuesto != null ? Math.max(0, encontrados.length - tope) : 0;
+
     return {
-      datos: filas,
+      datos: {
+        contactos: filas.map((f) => ({
+          contacto_id: f.contacto_id,
+          nombre: f.nombre,
+          telefono: f.telefono,
+          temperatura: f.temperatura,
+          score_interes: f.score_interes,
+          motivo: f.motivo,
+          // Se expone para que el modelo pueda avisar cuándo el match es
+          // por parecido de significado y no por coincidencia literal.
+          match_semantico: f.fuentes?.includes("semantica") ?? false,
+        })),
+        total_encontrados: encontrados.length,
+        mostrados: filas.length,
+        recortados_por_presupuesto: recortadosPorPresupuesto,
+        cupo_presupuesto: cupoPresupuesto,
+        busqueda_semantica_activa: embeddingConsulta != null,
+      },
       tabla: filas.length
         ? {
-            titulo: `Contactos que hablaron de "${consulta}"`,
-            columnas: ["Nombre", "Teléfono", "Menciones"],
-            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [f.nombre, f.telefono, String(f.menciones)]),
+            titulo:
+              cupoPresupuesto != null
+                ? `Mejores ${filas.length} para "${consulta}" (tu presupuesto)`
+                : `Contactos que coinciden con "${consulta}"`,
+            columnas: ["Nombre", "Teléfono", "Temperatura", "Por qué"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.nombre,
+              f.telefono,
+              f.temperatura ?? "—",
+              (f.motivo ?? "").replace(/\*\*/g, "").slice(0, 90) || "—",
+            ]),
             totalDisponible: filas.length,
           }
         : undefined,
@@ -2750,9 +2903,16 @@ CÓMO RESPONDER PREGUNTAS SOBRE SUS DATOS
 - Después de recibir los datos, RESPONDÉ LA PREGUNTA CONCRETA que te hicieron. No vuelques todos los datos que trajiste si solo preguntaron un número.
 - Si la herramienta devuelve una lista vacía, decilo con naturalidad — no inventes.
 
+BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
+- buscar_contactos entiende el significado, no solo las palabras: si te piden "los que compran zapatillas", pasale eso tal cual, no lo traduzcas a palabras clave sueltas.
+- Cuando el resultado venga con match_semantico en true, quiere decir que ese contacto coincide por parecido de sentido y no porque haya dicho esa palabra exacta. Si lo mencionás, decilo en criollo ("por lo que venía hablando"), nunca hables de embeddings ni de búsqueda semántica.
+- La plataforma cobra por mensaje enviado. Si el usuario da un presupuesto en CANTIDAD DE MENSAJES o CRÉDITOS (1 crédito = 1 mensaje), pasalo en presupuesto_mensajes. Si lo da en DÓLARES, pasalo en presupuesto_usd.
+- Si el presupuesto viene en pesos o en cualquier otra moneda, NO lo conviertas ni lo estimes: todavía no hay tipo de cambio en la plataforma. Decilo con franqueza y preguntale a cuántos mensajes equivale o cuánto es en dólares, y con esa respuesta hacé la búsqueda.
+- Cuando recortaste por presupuesto, aclaralo: cuántos entran y cuántos quedaron afuera.
+
 ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
-- MUY IMPORTANTE: los resultados de las herramientas NO se guardan entre mensajes. Solo ves el texto de la conversación previa, no los datos que consultaste antes. Entonces, si el usuario dice "creá una audiencia con esos" refiriéndose a contactos de un mensaje anterior, PRIMERO volvé a consultarlos ahora (con listar_contactos o buscar_en_conversaciones) y recién después creá la audiencia. Si el grupo se puede describir por temperatura, es más simple y confiable usar el parámetro filtro_temperatura.
+- MUY IMPORTANTE: los resultados de las herramientas NO se guardan entre mensajes. Solo ves el texto de la conversación previa, no los datos que consultaste antes. Entonces, si el usuario dice "creá una audiencia con esos" refiriéndose a contactos de un mensaje anterior, PRIMERO volvé a consultarlos ahora (con listar_contactos o buscar_contactos) y recién después creá la audiencia. Si el grupo se puede describir por temperatura, es más simple y confiable usar el parámetro filtro_temperatura.
 - Si una herramienta te devuelve un error, leelo y corregí en el mismo turno (por ejemplo, volviendo a consultar los datos). No le traslades el error al usuario si podés resolverlo vos.
 - NUNCA digas que abriste un asistente, que creaste algo o que hiciste una acción si la herramienta correspondiente no te devolvió un resultado exitoso. Si falló, decí que no pudiste y ofrecé reintentar — nunca narres una acción que no ocurrió.
 - Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos, usá abrir_flujo.
