@@ -17,7 +17,11 @@ import {
   renameListAction,
   renameCampaignAction,
 } from "@/lib/actions/write";
-import { getListsForTenant, getTemplatesForTenant } from "@/lib/actions/campaigns";
+import {
+  getListsForTenant,
+  getTemplatesForTenant,
+  getCampaignsForTenant,
+} from "@/lib/actions/campaigns";
 import type {
   ChatPayload,
   Contact,
@@ -2811,27 +2815,14 @@ async function iniciarFlujoEditarRecurso(
       detalle: `${l.contactosIds.length} contacto${l.contactosIds.length === 1 ? "" : "s"}`,
     }));
   } else if (tipo === "campana") {
-    const { data, error } = await supabase.rpc("listar_campanas", {
-      p_tenant_id: tenantId,
-      p_desde: null,
-      p_hasta: null,
-      p_orden_por: "fecha",
-      p_direccion: "desc",
-      // La tarjeta tiene buscador propio, así que traemos un rango amplio
-      // para que el filtro sea útil y no se corte en las primeras 50.
-      p_limite: 100,
-    });
-    if (error) {
-      console.error("[IA] Error listando campañas para editar:", error);
-      return {
-        text: "No pude traer tus campañas ahora. Probá de nuevo en un momento.",
-        flowState: IA_FLOW_IDLE,
-        error: error.message,
-      };
-    }
-    items = ((data ?? []) as { campana_id: string; nombre: string; status: string }[]).map((c) => ({
-      id: c.campana_id,
-      nombre: c.nombre ?? "Sin nombre",
+    // Usamos getCampaignsForTenant (la misma función que alimenta la
+    // sección Campañas del panel) en vez de la RPC listar_campanas. Es el
+    // análogo exacto de getListsForTenant, que es el camino que ya funciona
+    // para audiencias — menos piezas intermedias, y probado en producción.
+    const campanas = await getCampaignsForTenant(tenantId);
+    items = campanas.map((c) => ({
+      id: c.id,
+      nombre: c.nombre || "Sin nombre",
       detalle: c.status ?? undefined,
     }));
   } else {
