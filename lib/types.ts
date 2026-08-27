@@ -224,10 +224,6 @@ export type ChatPayload =
       }[];
     }
   | {
-      kind: "follow_ups";
-      opciones: string[];
-    }
-  | {
       kind: "respuesta_analitica";
       // Título corto de la métrica respondida (ej: "Mejor campaña del mes").
       titulo: string;
@@ -244,6 +240,17 @@ export type ChatPayload =
       kind: "elegir_temperatura";
       contactoNombre: string;
       temperaturaActual?: string;
+    }
+  | {
+      kind: "elegir_campo_campana";
+      // Qué se puede cambiar de la campaña elegida. Las opciones no son fijas:
+      // una campaña ya enviada solo admite cambio de nombre, así que la tarjeta
+      // muestra únicamente lo que realmente se puede hacer.
+      campanaNombre: string;
+      campanaStatus: string;
+      campos: { campo: "nombre" | "template" | "audiencia" | "fecha"; etiqueta: string; detalle?: string }[];
+      // Explicación de por qué faltan opciones, cuando la campaña ya salió.
+      nota?: string;
     }
   | {
       kind: "tabla_datos";
@@ -295,9 +302,14 @@ export type IAFlowStep =
   // importar_contactos
   | "importar_ofrecido"
   | "importar_esperando_confirmacion"
-  // editar_recurso (renombrar audiencia/campaña, cambiar temperatura)
+  // editar_recurso (renombrar audiencia/campaña, cambiar temperatura,
+  // y cambiar template/audiencia/fecha de una campaña)
   | "editar_esperando_seleccion"
-  | "editar_esperando_valor";
+  | "editar_esperando_campo"
+  | "editar_esperando_valor"
+  | "editar_esperando_template"
+  | "editar_esperando_audiencia"
+  | "editar_esperando_fecha";
 
 export interface IAFlowState {
   kind: IAFlowKind | null;
@@ -325,6 +337,14 @@ export interface IAFlowState {
     editarTipo?: "audiencia" | "campana" | "contacto";
     editarId?: string;
     editarNombreActual?: string;
+    // Qué campo de la campaña se está editando. Solo aplica cuando
+    // editarTipo === "campana": una campaña puede cambiar nombre, template,
+    // audiencia o fecha programada, mientras que audiencias solo cambian
+    // de nombre y contactos solo de temperatura.
+    editarCampo?: "nombre" | "template" | "audiencia" | "fecha";
+    // Estado de la campaña que se está editando, para poder explicar por qué
+    // ciertos cambios no se permiten sin volver a consultarlo.
+    editarCampanaStatus?: string;
     // Último resultado de importación de contactos disponible en esta
     // conversación, para que el usuario pueda pedir por texto libre "armá
     // una audiencia con los calientes que acabás de importar" sin tener que

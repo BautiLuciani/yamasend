@@ -73,6 +73,7 @@ import {
   sendIAMessageAction,
   seleccionarRecursoEditarAction,
   aplicarTemperaturaAction,
+  seleccionarCampoCampanaAction,
   confirmarSeleccionContactosAction,
   confirmarCreacionAudienciaAction,
   seleccionarCategoriaTemplateAction,
@@ -975,9 +976,20 @@ export default function AppShell({
     addMsg(text, "user");
     setIaSending(true);
     try {
+      // Los renombres de audiencia y campaña se aplican por texto libre
+      // dentro del flujo de edición, no desde una tarjeta, así que este es
+      // el único punto donde podemos detectar que algo cambió en la base.
+      const estabaEditando =
+        iaFlowState.kind === "editar_recurso" &&
+        iaFlowState.step === "editar_esperando_valor";
       const res = await sendIAMessageAction(text, buildHistory(), iaFlowState);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // El flujo vuelve a idle sólo cuando el cambio se aplicó: si el paso
+      // sigue activo es que faltaba un dato, y no hay nada que refrescar.
+      if (estabaEditando && !res.error && res.flowState.kind === null) {
+        router.refresh();
+      }
     } catch {
       addMsg(
         "Tuve un problema para procesar tu pedido. Probá de nuevo en unos segundos.",
@@ -1089,9 +1101,11 @@ export default function AppShell({
   async function handleIAElegirAudienciaCampana(audienciaId: string) {
     setIaSending(true);
     try {
+      const editando = iaFlowState.kind === "editar_recurso";
       const res = await seleccionarAudienciaCampanaAction(iaFlowState, audienciaId);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      if (editando && !res.error) router.refresh();
     } finally {
       setIaSending(false);
     }
@@ -1100,9 +1114,13 @@ export default function AppShell({
   async function handleIAElegirTemplateCampana(templateId: string) {
     setIaSending(true);
     try {
+      const editando = iaFlowState.kind === "editar_recurso";
       const res = await seleccionarTemplateCampanaAction(iaFlowState, templateId);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // Si venía del flujo de edición, la campaña cambió en la base:
+      // refrescamos para que la sección Campañas no muestre el dato viejo.
+      if (editando && !res.error) router.refresh();
     } finally {
       setIaSending(false);
     }
@@ -1122,9 +1140,11 @@ export default function AppShell({
   async function handleIAElegirFechaCampana(fechaIso: string) {
     setIaSending(true);
     try {
+      const editando = iaFlowState.kind === "editar_recurso";
       const res = await seleccionarFechaCampanaAction(iaFlowState, fechaIso);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      if (editando && !res.error) router.refresh();
     } finally {
       setIaSending(false);
     }
@@ -1169,6 +1189,19 @@ export default function AppShell({
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
       // La temperatura cambió: refrescamos para que Contactos lo refleje.
       if (!res.error) router.refresh();
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAElegirCampoCampana(
+    campo: "nombre" | "template" | "audiencia" | "fecha",
+  ) {
+    setIaSending(true);
+    try {
+      const res = await seleccionarCampoCampanaAction(iaFlowState, campo);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
     } finally {
       setIaSending(false);
     }
@@ -1372,6 +1405,7 @@ export default function AppShell({
           onCrearAudienciaDesdeImportacion={handleIACrearAudienciaDesdeImportacion}
           onElegirRecursoEditar={handleIAElegirRecursoEditar}
           onElegirTemperatura={handleIAElegirTemperatura}
+          onElegirCampoCampana={handleIAElegirCampoCampana}
           onNuevaConversacion={handleIANuevaConversacion}
           onSeleccionarConversacion={handleIASeleccionarConversacion}
           onBorrarConversacion={handleIABorrarConversacion}

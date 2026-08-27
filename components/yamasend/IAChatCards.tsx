@@ -249,6 +249,7 @@ export function renderChatCard(
     onCrearAudienciaDesdeImportacion: (contactosIds: string[]) => void;
     onElegirRecursoEditar: (id: string, nombre: string) => void;
     onElegirTemperatura: (temperatura: "caliente" | "tibio" | "frio") => void;
+    onElegirCampoCampana: (campo: "nombre" | "template" | "audiencia" | "fecha") => void;
   },
   isLatest: boolean,
 ) {
@@ -440,6 +441,17 @@ export function renderChatCard(
   if (payload.kind === "respuesta_analitica") {
     return <RespuestaAnaliticaCard titulo={payload.titulo} filas={payload.filas} />;
   }
+  if (payload.kind === "elegir_campo_campana") {
+    return (
+      <ElegirCampoCampanaCard
+        campanaNombre={payload.campanaNombre}
+        campos={payload.campos}
+        nota={payload.nota}
+        onElegir={handlers.onElegirCampoCampana}
+        disabled={!isLatest}
+      />
+    );
+  }
   if (payload.kind === "tabla_datos") {
     return (
       <TablaDatosCard
@@ -450,6 +462,12 @@ export function renderChatCard(
       />
     );
   }
+  // Guard de exhaustividad: si se agrega un payload nuevo a ChatPayload y no
+  // se le da render acá, esto deja de compilar. Antes el `return null` final
+  // se lo tragaba en silencio y el usuario veía un mensaje sin su tarjeta,
+  // sin ningún error visible ni en build ni en runtime.
+  const _exhaustive: never = payload;
+  void _exhaustive;
   return null;
 }
 
@@ -1591,6 +1609,56 @@ function ElegirRecursoEditarCard({ tipo, items, onElegir, disabled }: ElegirRecu
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_campo_campana
+// -------------------------------------------------------------------------
+interface ElegirCampoCampanaCardProps {
+  campanaNombre: string;
+  campos: { campo: "nombre" | "template" | "audiencia" | "fecha"; etiqueta: string; detalle?: string }[];
+  nota?: string;
+  onElegir: (campo: "nombre" | "template" | "audiencia" | "fecha") => void;
+  disabled: boolean;
+}
+
+function ElegirCampoCampanaCard({
+  campanaNombre,
+  campos,
+  nota,
+  onElegir,
+  disabled,
+}: ElegirCampoCampanaCardProps) {
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl overflow-hidden">
+      <div className="px-4 py-2.5 bg-ys-green-bg border-b border-ys-border-softest">
+        <span className="text-xs font-bold text-ys-green-text">
+          Editar &ldquo;{campanaNombre}&rdquo;
+        </span>
+      </div>
+      <div className="divide-y divide-ys-border-softest">
+        {campos.map((c) => (
+          <button
+            key={c.campo}
+            type="button"
+            onClick={() => onElegir(c.campo)}
+            disabled={disabled}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <span className="text-sm font-medium text-ys-text">{c.etiqueta}</span>
+            {c.detalle && (
+              <span className="text-xs text-ys-dim truncate max-w-[55%] text-right">{c.detalle}</span>
+            )}
+          </button>
+        ))}
+      </div>
+      {nota && (
+        <div className="px-4 py-3 bg-ys-el1 border-t border-ys-border-softest">
+          <p className="text-xs text-ys-dim leading-relaxed">{nota}</p>
+        </div>
+      )}
     </div>
   );
 }

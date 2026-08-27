@@ -30,6 +30,7 @@ interface IAProps {
   onCrearAudienciaDesdeImportacion: (contactosIds: string[]) => void;
   onElegirRecursoEditar: (id: string, nombre: string) => void;
   onElegirTemperatura: (temperatura: "caliente" | "tibio" | "frio") => void;
+  onElegirCampoCampana: (campo: "nombre" | "template" | "audiencia" | "fecha") => void;
   onNuevaConversacion: () => void;
   onSeleccionarConversacion: (conversacionId: string) => void;
   onBorrarConversacion: (conversacionId: string) => Promise<{ error: string | null }>;
@@ -88,6 +89,7 @@ export default function IA({
   onCrearAudienciaDesdeImportacion,
   onElegirRecursoEditar,
   onElegirTemperatura,
+  onElegirCampoCampana,
   onNuevaConversacion,
   onSeleccionarConversacion,
   onBorrarConversacion,
@@ -389,6 +391,7 @@ export default function IA({
                       onCrearAudienciaDesdeImportacion,
             onElegirRecursoEditar,
             onElegirTemperatura,
+            onElegirCampoCampana,
                     },
                     m.id === lastBotMessageId,
                   )}

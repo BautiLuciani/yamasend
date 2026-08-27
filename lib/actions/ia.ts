@@ -16,6 +16,9 @@ import {
   sendCampaignAction,
   renameListAction,
   renameCampaignAction,
+  updateCampaignTemplateAction,
+  updateCampaignAudienceAction,
+  rescheduleCampaignAction,
 } from "@/lib/actions/write";
 import {
   getListsForTenant,
@@ -751,19 +754,38 @@ function detectarPedidoEdicion(texto: string): "audiencia" | "campana" | "contac
 
   // Prefijos en vez de palabras completas: así "cambiarle", "cambiarla",
   // "renombrarla" o "ponele" matchean igual que "cambiar" o "renombrar".
-  const verboEdicion = /\b(cambi|modific|edit|renombr|actualiz|pon)/.test(t);
+  const verboEdicion = /\b(cambi|modific|edit|renombr|actualiz|pon|reprogram|reagend)/.test(t);
   if (!verboEdicion) return null;
 
   // La temperatura solo aplica a contactos, así que alcanza con nombrarla.
   if (/temperatura/.test(t)) return "contacto";
 
-  // Para audiencias y campañas, el pedido tiene que ser sobre el nombre
-  // (es lo único que sabemos editar hoy en esos recursos).
-  const mencionaNombre = /nombre|titulo|llamar|llama/.test(t);
-  if (!mencionaNombre) return null;
+  // Para campañas se puede editar nombre, template, audiencia y fecha, así
+  // que cualquiera de esos cuatro campos habilita el flujo. Antes se exigía
+  // que el pedido mencionara el nombre, y "cambiá el template de la campaña"
+  // caía al agente, que abría el flujo de edición y terminaba preguntando
+  // por un nombre nuevo — el usuario pedía una cosa y recibía otra.
+  // "renombrá la audiencia" ya dice qué se cambia en el propio verbo, así
+  // que no tiene sentido exigir además la palabra "nombre" — antes ese
+  // pedido no matcheaba y caía al agente.
+  const mencionaNombre = /nombre|titulo|llamar|llama/.test(t) || /\brenombr/.test(t);
+  // Reprogramar habla de la fecha aunque no la nombre.
+  const pideReprogramar = /\b(reprogram|reagend)/.test(t);
+  const mencionaCampoCampana =
+    /template|plantilla|audiencia|lista|grupo|fecha|horario|programacion|programada/.test(t) ||
+    pideReprogramar;
 
-  if (/campan/.test(t)) return "campana";
-  if (/audiencia|lista|grupo/.test(t)) return "audiencia";
+  if (/campan/.test(t)) {
+    if (mencionaNombre || mencionaCampoCampana) return "campana";
+    return null;
+  }
+
+  // Reprogramar sin decir "campaña" igual se refiere a una campaña: es lo
+  // único que se programa en el producto.
+  if (pideReprogramar && /fecha|envio|horario/.test(t)) return "campana";
+
+  // Las audiencias solo cambian de nombre.
+  if (mencionaNombre && /audiencia|lista|grupo/.test(t)) return "audiencia";
 
   return null;
 }
@@ -1702,6 +1724,13 @@ export async function seleccionarAudienciaCampanaAction(
   flowState: IAFlowState,
   audienciaId: string,
 ): Promise<IAResponse> {
+  // La misma tarjeta se usa para crear una campaña y para cambiarle la
+  // audiencia a una existente. Si venimos del flujo de edición, aplicamos el
+  // cambio y terminamos, en vez de seguir armando una campaña nueva.
+  if (flowState.kind === "editar_recurso" && flowState.draft.editarTipo === "campana") {
+    return aplicarEdicionCampana(flowState, { audienciaId });
+  }
+
   if (flowState.kind !== "crear_campana" || !flowState.draft.nombre) {
     return {
       text: "Se perdió el contexto de la campaña que estabas creando. Empecemos de nuevo.",
@@ -1761,6 +1790,10 @@ export async function seleccionarTemplateCampanaAction(
   flowState: IAFlowState,
   templateId: string,
 ): Promise<IAResponse> {
+  if (flowState.kind === "editar_recurso" && flowState.draft.editarTipo === "campana") {
+    return aplicarEdicionCampana(flowState, { templateId });
+  }
+
   if (
     flowState.kind !== "crear_campana" ||
     !flowState.draft.nombre ||
@@ -1859,6 +1892,10 @@ export async function seleccionarFechaCampanaAction(
   flowState: IAFlowState,
   fechaProgramadaIso: string,
 ): Promise<IAResponse> {
+  if (flowState.kind === "editar_recurso" && flowState.draft.editarTipo === "campana") {
+    return aplicarEdicionCampana(flowState, { fechaProgramada: fechaProgramadaIso });
+  }
+
   if (
     flowState.kind !== "crear_campana" ||
     !flowState.draft.nombre ||
@@ -2618,7 +2655,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "abrir_flujo",
       description:
-        "Abre uno de los asistentes guiados de la plataforma. Para CREAR algo nuevo: 'crear_audiencia' (podés pasar un criterio en lenguaje natural), 'crear_template', 'crear_campana', 'importar_contactos'. Para MODIFICAR algo que ya existe: 'editar_audiencia' o 'editar_campana' (renombrar), 'editar_contacto' (cambiar temperatura). Usá los 'editar_*' cuando el usuario quiera cambiar algo existente, aunque no aclare cuál — el asistente le muestra la lista para que elija.",
+        "Abre uno de los asistentes guiados de la plataforma. Para CREAR algo nuevo: 'crear_audiencia' (podés pasar un criterio en lenguaje natural), 'crear_template', 'crear_campana', 'importar_contactos'. Para MODIFICAR algo que ya existe: 'editar_audiencia' (renombrar), 'editar_campana' (cambiar nombre, template, audiencia o fecha de envío), 'editar_contacto' (cambiar temperatura). Usá los 'editar_*' cuando el usuario quiera cambiar algo existente, aunque no aclare cuál — el asistente le muestra la lista para que elija. Solo se pueden cambiar template, audiencia y fecha de campañas en borrador o programadas; si ya se envió, el asistente se lo explica al usuario.",
       parameters: {
         type: "object",
         properties: {
@@ -2628,7 +2665,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
               "crear_audiencia", "crear_template", "crear_campana", "importar_contactos",
               "editar_audiencia", "editar_campana", "editar_contacto",
             ],
-            description: "Cuál asistente abrir. Los 'editar_*' son para modificar algo que YA EXISTE: editar_audiencia y editar_campana sirven para renombrarlas, editar_contacto para cambiarle la temperatura (caliente/tibio/frío). En esos casos se le muestra al usuario la lista para que elija cuál, así que NO hace falta que sepas de antemano a cuál se refiere.",
+            description: "Cuál asistente abrir. Los 'editar_*' son para modificar algo que YA EXISTE: editar_audiencia sirve para renombrarla, editar_campana para cambiarle el nombre, el template, la audiencia o la fecha de envío, y editar_contacto para cambiarle la temperatura (caliente/tibio/frío). En esos casos se le muestra al usuario la lista para que elija cuál, así que NO hace falta que sepas de antemano a cuál se refiere.",
           },
           criterio: {
             type: "string",
@@ -3406,11 +3443,224 @@ export async function seleccionarRecursoEditarAction(
     };
   }
 
-  const etiqueta = flowState.draft.editarTipo === "audiencia" ? "la audiencia" : "la campaña";
+  // Las campañas tienen cuatro campos editables, pero no siempre los cuatro:
+  // una campaña ya enviada solo admite cambiar el nombre. En vez de ofrecer
+  // opciones que después van a fallar, se muestran únicamente las que el
+  // estado permite, y se explica por qué faltan las otras.
+  if (flowState.draft.editarTipo === "campana") {
+    const tenantId = await resolverTenantId();
+    const supabase = await createClient();
+    const { data: campana } = tenantId
+      ? await supabase
+          .from("yamas_send_campanas")
+          .select("status, template_nombre, lista_nombre, fecha_programada")
+          .eq("id", recursoId)
+          .eq("tenant_id", tenantId)
+          .maybeSingle()
+      : { data: null };
+
+    const status = (campana?.status ?? "").toLowerCase();
+    const editable = status === "borrador" || status === "programada";
+
+    const draftCampana = { ...draft, editarCampanaStatus: campana?.status ?? undefined };
+
+    const campos: {
+      campo: "nombre" | "template" | "audiencia" | "fecha";
+      etiqueta: string;
+      detalle?: string;
+    }[] = [{ campo: "nombre", etiqueta: "Nombre", detalle: recursoNombre }];
+
+    if (editable) {
+      campos.push(
+        {
+          campo: "template",
+          etiqueta: "Template",
+          detalle: campana?.template_nombre ?? "sin template",
+        },
+        {
+          campo: "audiencia",
+          etiqueta: "Audiencia",
+          detalle: campana?.lista_nombre ?? "sin audiencia",
+        },
+        {
+          campo: "fecha",
+          etiqueta: "Fecha de envío",
+          detalle: campana?.fecha_programada
+            ? new Date(campana.fecha_programada).toLocaleString("es-AR", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "sin programar",
+        },
+      );
+    }
+
+    return {
+      text: editable
+        ? `¿Qué querés cambiar de "${recursoNombre}"?`
+        : `"${recursoNombre}" ya se envió, así que solo se puede cambiar el nombre.`,
+      payload: {
+        kind: "elegir_campo_campana",
+        campanaNombre: recursoNombre,
+        campanaStatus: campana?.status ?? "desconocido",
+        campos,
+        nota: editable
+          ? undefined
+          : "El template y la audiencia no se pueden cambiar porque los mensajes ya salieron. Si querés mandar algo distinto, duplicá la campaña y editá la copia.",
+      },
+      flowState: { kind: "editar_recurso", step: "editar_esperando_campo", draft: draftCampana },
+    };
+  }
+
+  const etiqueta = "la audiencia";
   return {
     text: `¿Con qué nombre querés reemplazar "${recursoNombre}"? Escribime el nombre nuevo para ${etiqueta}.`,
-    flowState: { kind: "editar_recurso", step: "editar_esperando_valor", draft },
+    flowState: {
+      kind: "editar_recurso",
+      step: "editar_esperando_valor",
+      draft: { ...draft, editarCampo: "nombre" },
+    },
   };
+}
+
+/**
+ * Se llama cuando el usuario elige QUÉ campo de la campaña quiere cambiar.
+ * Según el campo, pide texto libre (nombre) o muestra el selector
+ * correspondiente reutilizando las mismas tarjetas del asistente de creación.
+ */
+export async function seleccionarCampoCampanaAction(
+  flowState: IAFlowState,
+  campo: "nombre" | "template" | "audiencia" | "fecha",
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "editar_recurso" ||
+    flowState.draft.editarTipo !== "campana" ||
+    !flowState.draft.editarId
+  ) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas editando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const draft = { ...flowState.draft, editarCampo: campo };
+  const nombreActual = flowState.draft.editarNombreActual ?? "la campaña";
+
+  if (campo === "nombre") {
+    return {
+      text: `¿Con qué nombre querés reemplazar "${nombreActual}"?`,
+      flowState: { kind: "editar_recurso", step: "editar_esperando_valor", draft },
+    };
+  }
+
+  // Los tres campos restantes solo se pueden tocar si la campaña no salió.
+  // Se revalida acá aunque la tarjeta ya haya filtrado las opciones, porque
+  // el estado pudo cambiar entre que se pintó la tarjeta y que el usuario
+  // hizo clic (por ejemplo, si el scheduler disparó la campaña mientras tanto).
+  const status = (flowState.draft.editarCampanaStatus ?? "").toLowerCase();
+  if (status !== "borrador" && status !== "programada") {
+    return {
+      text: `"${nombreActual}" ya no está en un estado editable, así que no puedo cambiar eso. Podés duplicarla y editar la copia.`,
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (campo === "template") {
+    const payload = await payloadElegirTemplateCampana();
+    return {
+      text: "Elegí el template nuevo — solo se muestran los aprobados por Meta.",
+      payload,
+      flowState: { kind: "editar_recurso", step: "editar_esperando_template", draft },
+    };
+  }
+
+  if (campo === "audiencia") {
+    const payload = await payloadElegirAudienciaCampana();
+    return {
+      text: "Elegí la audiencia nueva.",
+      payload,
+      flowState: { kind: "editar_recurso", step: "editar_esperando_audiencia", draft },
+    };
+  }
+
+  return {
+    text: "Elegí la fecha y hora nuevas para el envío.",
+    payload: { kind: "elegir_fecha_campana" },
+    flowState: { kind: "editar_recurso", step: "editar_esperando_fecha", draft },
+  };
+}
+
+/**
+ * Aplica un cambio sobre una campaña existente y cierra el flujo de edición.
+ *
+ * Es el punto único por donde pasan los tres cambios profundos (template,
+ * audiencia, fecha). Las server actions revalidan el estado de la campaña por
+ * su cuenta, así que si algo cambió entre que se pintó la tarjeta y el clic,
+ * el error vuelve acá con un motivo explicable en vez de romper.
+ */
+async function aplicarEdicionCampana(
+  flowState: IAFlowState,
+  cambio: { templateId?: string; audienciaId?: string; fechaProgramada?: string },
+): Promise<IAResponse> {
+  const campanaId = flowState.draft.editarId;
+  const nombre = flowState.draft.editarNombreActual ?? "la campaña";
+
+  if (!campanaId) {
+    return {
+      text: "Se perdió el contexto de la campaña que estabas editando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  let resultado: { error: string | null; motivo?: string };
+  let confirmacion: string;
+
+  if (cambio.templateId) {
+    resultado = await updateCampaignTemplateAction(campanaId, cambio.templateId);
+    const tenantId = await resolverTenantId();
+    const templates = tenantId ? await getTemplatesForTenant(tenantId) : [];
+    const nombreTemplate = templates.find((t) => t.id === cambio.templateId)?.nombre ?? "el nuevo template";
+    confirmacion = `Listo, "${nombre}" ahora usa el template "${nombreTemplate}".`;
+  } else if (cambio.audienciaId) {
+    resultado = await updateCampaignAudienceAction(campanaId, cambio.audienciaId);
+    const tenantId = await resolverTenantId();
+    const lists = tenantId ? await getListsForTenant(tenantId) : [];
+    const audiencia = lists.find((l) => l.id === cambio.audienciaId);
+    confirmacion = audiencia
+      ? `Listo, "${nombre}" ahora apunta a "${audiencia.nombre}" (${audiencia.contactosIds.length} contactos).`
+      : `Listo, actualicé la audiencia de "${nombre}".`;
+  } else if (cambio.fechaProgramada) {
+    resultado = await rescheduleCampaignAction(campanaId, cambio.fechaProgramada);
+    const cuando = new Date(cambio.fechaProgramada).toLocaleString("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    confirmacion = `Listo, "${nombre}" queda programada para el ${cuando}.`;
+  } else {
+    return {
+      text: "No entendí qué querías cambiar. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  if (resultado.error) {
+    // motivo trae la explicación pensada para el usuario (campaña ya enviada,
+    // template sin aprobar, audiencia vacía). Si no hay motivo, es un error
+    // técnico y mostramos algo genérico sin filtrar detalles internos.
+    return {
+      text: resultado.motivo ?? "No pude aplicar el cambio. Probá de nuevo en un momento.",
+      flowState: IA_FLOW_IDLE,
+      error: resultado.error,
+    };
+  }
+
+  return { text: `${confirmacion} ¿Algo más?`, flowState: IA_FLOW_IDLE };
 }
 
 /** Aplica el cambio de temperatura elegido desde la tarjeta. */
@@ -3455,6 +3705,30 @@ async function handleEditarRecursoStep(
   if (step === "editar_esperando_seleccion") {
     return {
       text: "Elegí una opción de la tarjeta de arriba para seguir.",
+      flowState,
+    };
+  }
+
+  if (step === "editar_esperando_campo") {
+    return {
+      text: "Elegí de la tarjeta de arriba qué querés cambiar.",
+      flowState,
+    };
+  }
+
+  if (
+    step === "editar_esperando_template" ||
+    step === "editar_esperando_audiencia" ||
+    step === "editar_esperando_fecha"
+  ) {
+    const que =
+      step === "editar_esperando_template"
+        ? "el template"
+        : step === "editar_esperando_audiencia"
+          ? "la audiencia"
+          : "la fecha";
+    return {
+      text: `Elegí ${que} desde la tarjeta de arriba para aplicar el cambio.`,
       flowState,
     };
   }

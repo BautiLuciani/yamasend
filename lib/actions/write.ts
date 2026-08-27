@@ -954,3 +954,231 @@ export async function renameCampaignAction(
 
   return { error: null };
 }
+
+/**
+ * Estados en los que una campaña todavía se puede modificar en profundidad
+ * (template, audiencia, fecha).
+ *
+ * Una campaña que ya salió — o que está saliendo — no se toca: los mensajes
+ * ya se generaron contra un template y una lista concretos, así que cambiarlos
+ * después dejaría la campaña describiendo algo distinto de lo que realmente
+ * se envió. El nombre sí se puede cambiar siempre, porque es solo una
+ * etiqueta y no altera lo que se mandó.
+ */
+const ESTADOS_CAMPANA_EDITABLE = ["borrador", "programada"] as const;
+
+export interface CampaignEditResult {
+  error: string | null;
+  /** Mensaje explicativo para mostrarle al usuario cuando el cambio no se permite. */
+  motivo?: string;
+}
+
+/**
+ * Resuelve el tenant y trae la campaña, validando que sea del usuario y que
+ * su estado permita el tipo de cambio pedido. Centralizado acá para que las
+ * tres ediciones (template, audiencia, fecha) no repitan la validación —
+ * y sobre todo para que ninguna se la saltee por olvido.
+ */
+async function cargarCampanaEditable(campanaId: string): Promise<
+  | { ok: false; error: string; motivo?: string }
+  | {
+      ok: true;
+      tenantId: string;
+      campana: { id: string; nombre: string; status: string };
+      supabase: Awaited<ReturnType<typeof createClient>>;
+    }
+> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { ok: false, error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { ok: false, error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { data: campana, error } = await supabase
+    .from("yamas_send_campanas")
+    .select("id, nombre, status")
+    .eq("id", campanaId)
+    .eq("tenant_id", cliente.tenant_id)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!campana) return { ok: false, error: "No encontré esa campaña." };
+
+  const status = (campana.status ?? "").toLowerCase();
+  if (!ESTADOS_CAMPANA_EDITABLE.includes(status as (typeof ESTADOS_CAMPANA_EDITABLE)[number])) {
+    return {
+      ok: false,
+      error: "campana_no_editable",
+      motivo:
+        status === "enviado" || status === "enviando"
+          ? `La campaña "${campana.nombre}" ya se envió, así que no se puede cambiar su template ni su audiencia. Si querés mandar algo distinto, lo mejor es duplicarla y editar la copia.`
+          : `La campaña "${campana.nombre}" está en estado "${campana.status}", así que no se puede modificar. Solo se pueden editar campañas en borrador o programadas.`,
+    };
+  }
+
+  return {
+    ok: true,
+    tenantId: cliente.tenant_id,
+    campana: { id: campana.id, nombre: campana.nombre, status: campana.status },
+    supabase,
+  };
+}
+
+/** Cambia el template de una campaña que todavía no salió. */
+export async function updateCampaignTemplateAction(
+  campanaId: string,
+  templateId: string,
+): Promise<CampaignEditResult> {
+  const ctx = await cargarCampanaEditable(campanaId);
+  if (!ctx.ok) return { error: ctx.error, motivo: ctx.motivo };
+
+  const { supabase, tenantId, campana } = ctx;
+
+  // Solo templates verificados por Meta: mandar una campaña con un template
+  // en borrador o rechazado falla del lado de Meta, no acá.
+  const { data: template } = await supabase
+    .from("yamas_send_templates")
+    .select("id, nombre, status")
+    .eq("id", templateId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (!template) return { error: "No encontré ese template." };
+  if (template.status !== "verificado") {
+    return {
+      error: "template_no_aprobado",
+      motivo: `El template "${template.nombre}" todavía no está aprobado por Meta, así que no se puede usar en una campaña.`,
+    };
+  }
+
+  const { error } = await supabase
+    .from("yamas_send_campanas")
+    .update({ template_id: templateId, template_nombre: template.nombre })
+    .eq("id", campanaId)
+    .eq("tenant_id", tenantId);
+
+  if (error) return { error: error.message };
+
+  logActivity(
+    tenantId,
+    "campana_editada",
+    `Campaña "${campana.nombre}" ahora usa el template "${template.nombre}"`,
+    { campana_id: campanaId, template_id: templateId },
+  );
+
+  return { error: null };
+}
+
+/**
+ * Cambia la audiencia de una campaña que todavía no salió.
+ *
+ * La tabla desnormaliza lista_nombre, contactos_ids y contactos_count, así
+ * que los tres se actualizan juntos: si solo se cambiara lista_id, la
+ * campaña seguiría apuntando a los contactos de la audiencia anterior y el
+ * envío saldría a la gente equivocada.
+ */
+export async function updateCampaignAudienceAction(
+  campanaId: string,
+  listaId: string,
+): Promise<CampaignEditResult> {
+  const ctx = await cargarCampanaEditable(campanaId);
+  if (!ctx.ok) return { error: ctx.error, motivo: ctx.motivo };
+
+  const { supabase, tenantId, campana } = ctx;
+
+  const { data: lista } = await supabase
+    .from("yamas_send_listas")
+    .select("id, nombre, contactos_ids")
+    .eq("id", listaId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  if (!lista) return { error: "No encontré esa audiencia." };
+
+  const contactosIds = (lista.contactos_ids ?? []) as string[];
+
+  if (contactosIds.length === 0) {
+    return {
+      error: "audiencia_vacia",
+      motivo: `La audiencia "${lista.nombre}" no tiene contactos, así que la campaña no tendría a quién enviarle.`,
+    };
+  }
+
+  const { error } = await supabase
+    .from("yamas_send_campanas")
+    .update({
+      lista_id: listaId,
+      lista_nombre: lista.nombre,
+      contactos_ids: contactosIds,
+      contactos_count: contactosIds.length,
+    })
+    .eq("id", campanaId)
+    .eq("tenant_id", tenantId);
+
+  if (error) return { error: error.message };
+
+  logActivity(
+    tenantId,
+    "campana_editada",
+    `Campaña "${campana.nombre}" ahora apunta a la audiencia "${lista.nombre}"`,
+    { campana_id: campanaId, lista_id: listaId, contactos_count: contactosIds.length },
+  );
+
+  return { error: null };
+}
+
+/**
+ * Reprograma una campaña que todavía no salió.
+ *
+ * Si la campaña estaba en borrador, pasa a "programada": elegir una fecha es
+ * justamente lo que la convierte en programada.
+ */
+export async function rescheduleCampaignAction(
+  campanaId: string,
+  fechaProgramada: string,
+): Promise<CampaignEditResult> {
+  const ctx = await cargarCampanaEditable(campanaId);
+  if (!ctx.ok) return { error: ctx.error, motivo: ctx.motivo };
+
+  const { supabase, tenantId, campana } = ctx;
+
+  const fecha = new Date(fechaProgramada);
+  if (Number.isNaN(fecha.getTime())) {
+    return { error: "fecha_invalida", motivo: "Esa fecha no es válida." };
+  }
+  if (fecha.getTime() <= Date.now()) {
+    return {
+      error: "fecha_pasada",
+      motivo: "Esa fecha ya pasó. Elegí un momento futuro para programar la campaña.",
+    };
+  }
+
+  const { error } = await supabase
+    .from("yamas_send_campanas")
+    .update({ fecha_programada: fecha.toISOString(), status: "programada" })
+    .eq("id", campanaId)
+    .eq("tenant_id", tenantId);
+
+  if (error) return { error: error.message };
+
+  logActivity(
+    tenantId,
+    "campana_editada",
+    `Campaña "${campana.nombre}" reprogramada`,
+    { campana_id: campanaId, fecha_programada: fecha.toISOString() },
+  );
+
+  return { error: null };
+}
