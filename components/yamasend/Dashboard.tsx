@@ -80,6 +80,7 @@ const ACTIVITY_STYLES: Record<
   contactos_importados: { bg: "bg-[#e8f1fd]", stroke: "#2563eb" },
   grupo_creado: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
   grupo_editado: { bg: "bg-ys-el2", stroke: "#5d6560" },
+  campana_editada: { bg: "bg-ys-el2", stroke: "#5d6560" },
   grupo_eliminado: { bg: "bg-ys-warn-bg", stroke: "#b42318" },
   template_creado: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
   template_estado: { bg: "bg-ys-el2", stroke: "#5d6560" },

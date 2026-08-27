@@ -235,6 +235,17 @@ export type ChatPayload =
       filas: { etiqueta: string; valor: string }[];
     }
   | {
+      kind: "elegir_recurso_editar";
+      // Lista de recursos existentes para que el usuario elija cuál editar.
+      tipo: "audiencia" | "campana" | "contacto";
+      items: { id: string; nombre: string; detalle?: string }[];
+    }
+  | {
+      kind: "elegir_temperatura";
+      contactoNombre: string;
+      temperaturaActual?: string;
+    }
+  | {
       kind: "tabla_datos";
       // Tabla genérica que el agente de IA adjunta cuando consultó datos
       // reales y vale la pena mostrarlos además del texto. A diferencia de
@@ -261,7 +272,8 @@ export type IAFlowKind =
   | "crear_audiencia"
   | "crear_template"
   | "crear_campana"
-  | "importar_contactos";
+  | "importar_contactos"
+  | "editar_recurso";
 
 export type IAFlowStep =
   // crear_audiencia
@@ -281,7 +293,10 @@ export type IAFlowStep =
   | "campana_esperando_fecha"
   | "campana_esperando_confirmacion"
   // importar_contactos
-  | "importar_esperando_confirmacion";
+  | "importar_esperando_confirmacion"
+  // editar_recurso (renombrar audiencia/campaña, cambiar temperatura)
+  | "editar_esperando_seleccion"
+  | "editar_esperando_valor";
 
 export interface IAFlowState {
   kind: IAFlowKind | null;
@@ -302,6 +317,13 @@ export interface IAFlowState {
     fechaProgramada?: string | null;
     diasAnalisis?: number;
     limiteContactos?: number;
+    // --- Flujo editar_recurso ---
+    // Qué tipo de recurso se está editando y cuál se eligió. El flujo es
+    // el mismo para los tres casos: listar -> seleccionar -> pedir valor
+    // nuevo -> aplicar.
+    editarTipo?: "audiencia" | "campana" | "contacto";
+    editarId?: string;
+    editarNombreActual?: string;
     // Último resultado de importación de contactos disponible en esta
     // conversación, para que el usuario pueda pedir por texto libre "armá
     // una audiencia con los calientes que acabás de importar" sin tener que
@@ -413,6 +435,7 @@ export type ActivityTipo =
   | "campana_duplicada"
   | "campana_eliminada"
   | "campana_completada"
+  | "campana_editada"
   | "ia_analisis"
   | "whatsapp_conectado"
   | "whatsapp_desconectado";

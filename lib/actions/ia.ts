@@ -6,6 +6,7 @@ import {
   syncAndAnalyzeAction,
   generarTemplateConIAAction,
   isWahaConectadaAction,
+  setTemperaturaManualAction,
 } from "@/lib/actions/sync";
 import {
   saveListAction,
@@ -13,6 +14,8 @@ import {
   sendTemplateToMetaAction,
   saveCampaignAction,
   sendCampaignAction,
+  renameListAction,
+  renameCampaignAction,
 } from "@/lib/actions/write";
 import { getListsForTenant, getTemplatesForTenant } from "@/lib/actions/campaigns";
 import type {
@@ -731,6 +734,11 @@ export async function sendIAMessageAction(
   // ---- Flujo activo: importar_contactos --------------------------------
   if (flowState.kind === "importar_contactos") {
     return handleImportarContactosStep(texto, flowState);
+  }
+
+  // ---- Flujo activo: editar_recurso ------------------------------------
+  if (flowState.kind === "editar_recurso") {
+    return handleEditarRecursoStep(texto, flowState);
   }
 
   // ---- Sin flujo activo, pero con una importación reciente disponible ---
@@ -1488,13 +1496,34 @@ export async function seleccionarAudienciaCampanaAction(
     };
   }
 
+  const draftActualizado = { ...flowState.draft, audienciaId };
+
+  // Si el template ya estaba elegido (típicamente porque el usuario volvió
+  // acá para CAMBIAR la audiencia a mitad del flujo), no lo volvemos a
+  // pedir: saltamos al siguiente dato que falte. Antes se re-preguntaba
+  // siempre y se perdía la selección previa.
+  if (draftActualizado.templateId) {
+    if (draftActualizado.momento) {
+      return mostrarConfirmacionCampana(draftActualizado);
+    }
+    return {
+      text: `Listo, se la mandamos a "${audiencia.nombre}" (${audiencia.contactosIds.length} contactos). ¿Cuándo la enviamos?`,
+      payload: { kind: "elegir_momento_campana" },
+      flowState: {
+        kind: "crear_campana",
+        step: "campana_esperando_momento",
+        draft: draftActualizado,
+      },
+    };
+  }
+
   return {
     text: `"${audiencia.nombre}" (${audiencia.contactosIds.length} contactos). Ahora elegí qué template querés enviar — solo se muestran los ya aprobados por Meta.`,
     payload: await payloadElegirTemplateCampana(),
     flowState: {
       kind: "crear_campana",
       step: "campana_esperando_template",
-      draft: { ...flowState.draft, audienciaId },
+      draft: draftActualizado,
     },
   };
 }
@@ -1530,13 +1559,21 @@ export async function seleccionarTemplateCampanaAction(
     };
   }
 
+  const draftActualizado = { ...flowState.draft, templateId };
+
+  // Si el momento de envío ya estaba definido (el usuario volvió acá solo
+  // para cambiar el template), no lo volvemos a preguntar.
+  if (draftActualizado.momento) {
+    return mostrarConfirmacionCampana(draftActualizado);
+  }
+
   return {
     text: `"${template.nombre}", listo. ¿Cuándo la enviamos?`,
     payload: { kind: "elegir_momento_campana" },
     flowState: {
       kind: "crear_campana",
       step: "campana_esperando_momento",
-      draft: { ...flowState.draft, templateId },
+      draft: draftActualizado,
     },
   };
 }
@@ -2259,14 +2296,17 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "abrir_flujo",
       description:
-        "Abre uno de los asistentes guiados de la plataforma cuando el usuario pide hacer esa acción pero no hay contactos concretos ya identificados. 'crear_audiencia' para armar una lista (podés pasar un criterio en lenguaje natural), 'crear_template' para redactar un mensaje y mandarlo a aprobar a Meta, 'crear_campana' para armar un envío, 'importar_contactos' para sincronizar los contactos de WhatsApp.",
+        "Abre uno de los asistentes guiados de la plataforma. Para CREAR algo nuevo: 'crear_audiencia' (podés pasar un criterio en lenguaje natural), 'crear_template', 'crear_campana', 'importar_contactos'. Para MODIFICAR algo que ya existe: 'editar_audiencia' o 'editar_campana' (renombrar), 'editar_contacto' (cambiar temperatura). Usá los 'editar_*' cuando el usuario quiera cambiar algo existente, aunque no aclare cuál — el asistente le muestra la lista para que elija.",
       parameters: {
         type: "object",
         properties: {
           flujo: {
             type: "string",
-            enum: ["crear_audiencia", "crear_template", "crear_campana", "importar_contactos"],
-            description: "Cuál asistente abrir.",
+            enum: [
+              "crear_audiencia", "crear_template", "crear_campana", "importar_contactos",
+              "editar_audiencia", "editar_campana", "editar_contacto",
+            ],
+            description: "Cuál asistente abrir. Los 'editar_*' son para modificar algo que YA EXISTE: editar_audiencia y editar_campana sirven para renombrarlas, editar_contacto para cambiarle la temperatura (caliente/tibio/frío). En esos casos se le muestra al usuario la lista para que elija cuál, así que NO hace falta que sepas de antemano a cuál se refiere.",
           },
           criterio: {
             type: "string",
@@ -2582,6 +2622,15 @@ async function ejecutarHerramientaAgente(
     if (flujo === "importar_contactos") {
       return { datos: { ok: true }, accion: await iniciarFlujoImportarContactos() };
     }
+    if (flujo === "editar_audiencia") {
+      return { datos: { ok: true }, accion: await iniciarFlujoEditarRecurso("audiencia") };
+    }
+    if (flujo === "editar_campana") {
+      return { datos: { ok: true }, accion: await iniciarFlujoEditarRecurso("campana") };
+    }
+    if (flujo === "editar_contacto") {
+      return { datos: { ok: true }, accion: await iniciarFlujoEditarRecurso("contacto") };
+    }
     return { datos: { error: `Flujo desconocido: ${flujo}` } };
   }
 
@@ -2636,6 +2685,7 @@ ACCIONES QUE PODÉS EJECUTAR
 - MUY IMPORTANTE: los resultados de las herramientas NO se guardan entre mensajes. Solo ves el texto de la conversación previa, no los datos que consultaste antes. Entonces, si el usuario dice "creá una audiencia con esos" refiriéndose a contactos de un mensaje anterior, PRIMERO volvé a consultarlos ahora (con listar_contactos o buscar_en_conversaciones) y recién después creá la audiencia. Si el grupo se puede describir por temperatura, es más simple y confiable usar el parámetro filtro_temperatura.
 - Si una herramienta te devuelve un error, leelo y corregí en el mismo turno (por ejemplo, volviendo a consultar los datos). No le traslades el error al usuario si podés resolverlo vos.
 - Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos, usá abrir_flujo.
+- Si pide MODIFICAR algo que ya existe (renombrar una audiencia o campaña, cambiarle la temperatura a un contacto), usá abrir_flujo con editar_audiencia / editar_campana / editar_contacto. No hace falta que sepas cuál: el asistente le muestra la lista para que elija. Nunca le digas que no podés hacer estos cambios.
 - Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
 - Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes de abrir un flujo.
 
@@ -2716,6 +2766,217 @@ REGLAS ESTRICTAS
 
   return {
     text: "Se me complicó procesar eso. ¿Me lo repetís de otra forma?",
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+// =======================================================================
+// Flujo: editar_recurso
+//
+// Cubre la edición de cosas que YA EXISTEN (a diferencia de los flujos
+// crear_*, que arman algo nuevo): renombrar una audiencia, renombrar una
+// campaña, o cambiar la temperatura de un contacto.
+//
+// El patrón es el mismo para los tres: listar los recursos en una tarjeta
+// para que el usuario elija cuál -> pedirle el valor nuevo -> aplicar.
+// Elegir desde tarjeta en vez de por texto evita tener que adivinar a qué
+// audiencia/contacto se refiere cuando hay nombres parecidos.
+// =======================================================================
+
+/** Arma la tarjeta de selección con los recursos existentes del tipo pedido. */
+async function iniciarFlujoEditarRecurso(
+  tipo: "audiencia" | "campana" | "contacto",
+): Promise<IAResponse> {
+  const tenantId = await resolverTenantId();
+  if (!tenantId) {
+    return {
+      text: "No pude identificar tu cuenta. Probá recargar la página.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const supabase = await createClient();
+  let items: { id: string; nombre: string; detalle?: string }[] = [];
+
+  if (tipo === "audiencia") {
+    const lists = await getListsForTenant(tenantId);
+    items = lists.map((l) => ({
+      id: l.id,
+      nombre: l.nombre,
+      detalle: `${l.contactosIds.length} contacto${l.contactosIds.length === 1 ? "" : "s"}`,
+    }));
+  } else if (tipo === "campana") {
+    const { data } = await supabase
+      .from("yamas_send_campanas")
+      .select("id, nombre, status")
+      .eq("tenant_id", tenantId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    items = (data ?? []).map((c) => ({
+      id: c.id as string,
+      nombre: (c.nombre as string) ?? "Sin nombre",
+      detalle: (c.status as string) ?? undefined,
+    }));
+  } else {
+    const { data } = await supabase
+      .from("yamas_send_leads")
+      .select("id, nombre, telefono, temperatura_efectiva, temperatura")
+      .eq("tenant_id", tenantId)
+      .eq("activo", true)
+      .order("ultimo_mensaje_at", { ascending: false, nullsFirst: false })
+      .limit(50);
+    items = (data ?? []).map((c) => ({
+      id: c.id as string,
+      nombre: (c.nombre as string) || (c.telefono as string) || "Sin nombre",
+      detalle: ((c.temperatura_efectiva ?? c.temperatura) as string) ?? undefined,
+    }));
+  }
+
+  const etiqueta = tipo === "audiencia" ? "audiencia" : tipo === "campana" ? "campaña" : "contacto";
+
+  if (items.length === 0) {
+    return {
+      text: `Todavía no tenés ninguna ${etiqueta} para editar.`,
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text: `Elegí qué ${etiqueta} querés modificar.`,
+    payload: { kind: "elegir_recurso_editar", tipo, items },
+    flowState: {
+      kind: "editar_recurso",
+      step: "editar_esperando_seleccion",
+      draft: { editarTipo: tipo },
+    },
+  };
+}
+
+/**
+ * Se llama cuando el usuario elige un recurso desde la tarjeta. Según el
+ * tipo, pide el nombre nuevo (texto libre) o muestra el selector de
+ * temperatura.
+ */
+export async function seleccionarRecursoEditarAction(
+  flowState: IAFlowState,
+  recursoId: string,
+  recursoNombre: string,
+): Promise<IAResponse> {
+  if (flowState.kind !== "editar_recurso" || !flowState.draft.editarTipo) {
+    return {
+      text: "Se perdió el contexto de lo que estabas editando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const draft = {
+    ...flowState.draft,
+    editarId: recursoId,
+    editarNombreActual: recursoNombre,
+  };
+
+  if (flowState.draft.editarTipo === "contacto") {
+    return {
+      text: `Elegí la nueva temperatura para "${recursoNombre}".`,
+      payload: { kind: "elegir_temperatura", contactoNombre: recursoNombre },
+      flowState: { kind: "editar_recurso", step: "editar_esperando_valor", draft },
+    };
+  }
+
+  const etiqueta = flowState.draft.editarTipo === "audiencia" ? "la audiencia" : "la campaña";
+  return {
+    text: `¿Con qué nombre querés reemplazar "${recursoNombre}"? Escribime el nombre nuevo para ${etiqueta}.`,
+    flowState: { kind: "editar_recurso", step: "editar_esperando_valor", draft },
+  };
+}
+
+/** Aplica el cambio de temperatura elegido desde la tarjeta. */
+export async function aplicarTemperaturaAction(
+  flowState: IAFlowState,
+  temperatura: "caliente" | "tibio" | "frio",
+): Promise<IAResponse> {
+  if (
+    flowState.kind !== "editar_recurso" ||
+    flowState.draft.editarTipo !== "contacto" ||
+    !flowState.draft.editarId
+  ) {
+    return {
+      text: "Se perdió el contexto del contacto que estabas editando. Empecemos de nuevo.",
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  const { error } = await setTemperaturaManualAction(flowState.draft.editarId, temperatura);
+
+  if (error) {
+    return {
+      text: "No pude actualizar la temperatura. Probá de nuevo en un momento.",
+      flowState: IA_FLOW_IDLE,
+      error,
+    };
+  }
+
+  return {
+    text: `Listo, "${flowState.draft.editarNombreActual}" ahora figura como ${temperatura}. ¿Algo más?`,
+    flowState: IA_FLOW_IDLE,
+  };
+}
+
+/** Maneja el input de texto libre dentro del flujo de edición. */
+async function handleEditarRecursoStep(
+  texto: string,
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  const { step, draft } = flowState;
+
+  if (step === "editar_esperando_seleccion") {
+    return {
+      text: "Elegí una opción de la tarjeta de arriba para seguir.",
+      flowState,
+    };
+  }
+
+  if (step === "editar_esperando_valor") {
+    if (draft.editarTipo === "contacto") {
+      return {
+        text: "Elegí la temperatura desde la tarjeta de arriba (caliente, tibio o frío).",
+        flowState,
+      };
+    }
+
+    const nombreNuevo = texto.trim().slice(0, 120);
+    if (!nombreNuevo) {
+      return { text: "Escribime el nombre nuevo.", flowState };
+    }
+    if (!draft.editarId) {
+      return {
+        text: "Se perdió el contexto de lo que estabas editando. Empecemos de nuevo.",
+        flowState: IA_FLOW_IDLE,
+      };
+    }
+
+    const { error } =
+      draft.editarTipo === "audiencia"
+        ? await renameListAction(draft.editarId, nombreNuevo)
+        : await renameCampaignAction(draft.editarId, nombreNuevo);
+
+    if (error) {
+      return {
+        text: "No pude guardar el nombre nuevo. Probá de nuevo en un momento.",
+        flowState: IA_FLOW_IDLE,
+        error,
+      };
+    }
+
+    const etiqueta = draft.editarTipo === "audiencia" ? "La audiencia" : "La campaña";
+    return {
+      text: `Listo, ${etiqueta.toLowerCase()} "${draft.editarNombreActual}" ahora se llama "${nombreNuevo}". ¿Algo más?`,
+      flowState: IA_FLOW_IDLE,
+    };
+  }
+
+  return {
+    text: "Se ve que algo se desconfiguró. Empecemos de nuevo: ¿qué necesitás?",
     flowState: IA_FLOW_IDLE,
   };
 }

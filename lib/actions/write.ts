@@ -912,3 +912,45 @@ export async function getCampaignInsightAction(): Promise<CampaignInsightResult>
     };
   }
 }
+
+/**
+ * Renombra una campaña existente. Mismo patrón que renameListAction:
+ * validamos que la campaña pertenezca al tenant del usuario logueado antes
+ * de tocarla, aunque RLS ya lo garantice.
+ */
+export async function renameCampaignAction(
+  campanaId: string,
+  nombre: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "No hay sesión activa." };
+
+  const { data: cliente } = await supabase
+    .from("yamas_inmo_clientes")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .maybeSingle();
+
+  if (!cliente?.tenant_id) {
+    return { error: "No se pudo resolver el tenant del usuario." };
+  }
+
+  const { error } = await supabase
+    .from("yamas_send_campanas")
+    .update({ nombre })
+    .eq("id", campanaId)
+    .eq("tenant_id", cliente.tenant_id);
+
+  if (error) return { error: error.message };
+
+  logActivity(cliente.tenant_id, "campana_editada", `Campaña renombrada a "${nombre}"`, {
+    campana_id: campanaId,
+  });
+
+  return { error: null };
+}

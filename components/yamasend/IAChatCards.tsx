@@ -247,6 +247,8 @@ export function renderChatCard(
     onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
     onCrearAudienciaDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
     onCrearAudienciaDesdeImportacion: (contactosIds: string[]) => void;
+    onElegirRecursoEditar: (id: string, nombre: string) => void;
+    onElegirTemperatura: (temperatura: "caliente" | "tibio" | "frio") => void;
   },
   isLatest: boolean,
 ) {
@@ -412,6 +414,25 @@ export function renderChatCard(
         consulta={payload.consulta}
         resultados={payload.resultados}
         onCrearGrupo={(ids) => handlers.onCrearAudienciaDesdeBusqueda(payload.consulta, ids)}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "elegir_recurso_editar") {
+    return (
+      <ElegirRecursoEditarCard
+        tipo={payload.tipo}
+        items={payload.items}
+        onElegir={handlers.onElegirRecursoEditar}
+        disabled={!isLatest}
+      />
+    );
+  }
+  if (payload.kind === "elegir_temperatura") {
+    return (
+      <ElegirTemperaturaCard
+        contactoNombre={payload.contactoNombre}
+        onElegir={handlers.onElegirTemperatura}
         disabled={!isLatest}
       />
     );
@@ -1477,6 +1498,87 @@ export function ResultadosBusquedaContactosCard({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_recurso_editar
+// Lista los recursos existentes (audiencias, campañas o contactos) para que
+// el usuario elija cuál modificar. Se elige por click en vez de por texto
+// para no tener que adivinar a cuál se refiere cuando hay nombres parecidos.
+// -------------------------------------------------------------------------
+interface ElegirRecursoEditarCardProps {
+  tipo: "audiencia" | "campana" | "contacto";
+  items: { id: string; nombre: string; detalle?: string }[];
+  onElegir: (id: string, nombre: string) => void;
+  disabled: boolean;
+}
+
+function ElegirRecursoEditarCard({ tipo, items, onElegir, disabled }: ElegirRecursoEditarCardProps) {
+  const titulo =
+    tipo === "audiencia" ? "Tus audiencias" : tipo === "campana" ? "Tus campañas" : "Tus contactos";
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl overflow-hidden">
+      <div className="px-4 py-2.5 bg-ys-green-bg text-xs font-bold text-ys-green-text border-b border-ys-border-softest">
+        {titulo}
+      </div>
+      <div className="max-h-72 overflow-y-auto divide-y divide-ys-border-softest">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onElegir(item.id, item.nombre)}
+            disabled={disabled}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-ys-el1 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <span className="text-sm font-medium text-ys-text truncate">{item.nombre}</span>
+            {item.detalle && (
+              <span className="text-xs text-ys-dim font-mono whitespace-nowrap">{item.detalle}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: elegir_temperatura
+// -------------------------------------------------------------------------
+interface ElegirTemperaturaCardProps {
+  contactoNombre: string;
+  onElegir: (temperatura: "caliente" | "tibio" | "frio") => void;
+  disabled: boolean;
+}
+
+const OPCIONES_TEMPERATURA: { valor: "caliente" | "tibio" | "frio"; label: string; clase: string }[] = [
+  { valor: "caliente", label: "Caliente", clase: "bg-ys-red-bg text-ys-red-text" },
+  { valor: "tibio", label: "Tibio", clase: "bg-ys-amber-bg text-ys-amber-text" },
+  { valor: "frio", label: "Frío", clase: "bg-ys-blue-bg text-ys-blue-text" },
+];
+
+function ElegirTemperaturaCard({ contactoNombre, onElegir, disabled }: ElegirTemperaturaCardProps) {
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl p-4">
+      <p className="text-xs text-ys-dim mb-3">
+        Nueva temperatura para <span className="font-medium text-ys-text">{contactoNombre}</span>
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {OPCIONES_TEMPERATURA.map((op) => (
+          <button
+            key={op.valor}
+            type="button"
+            onClick={() => onElegir(op.valor)}
+            disabled={disabled}
+            className={`px-4 py-2 rounded-xl text-sm font-medium ${op.clase} disabled:opacity-50 disabled:cursor-not-allowed transition-opacity`}
+          >
+            {op.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

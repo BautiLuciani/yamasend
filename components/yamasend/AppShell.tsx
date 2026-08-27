@@ -66,6 +66,8 @@ import {
 import { getCampaignDetailAction } from "@/lib/actions/campaigns";
 import {
   sendIAMessageAction,
+  seleccionarRecursoEditarAction,
+  aplicarTemperaturaAction,
   confirmarSeleccionContactosAction,
   confirmarCreacionAudienciaAction,
   seleccionarCategoriaTemplateAction,
@@ -1073,6 +1075,30 @@ export default function AppShell({
     setDetailCampaignId(campanaId);
   }
 
+  async function handleIAElegirRecursoEditar(id: string, nombre: string) {
+    setIaSending(true);
+    try {
+      const res = await seleccionarRecursoEditarAction(iaFlowState, id, nombre);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+    } finally {
+      setIaSending(false);
+    }
+  }
+
+  async function handleIAElegirTemperatura(temperatura: "caliente" | "tibio" | "frio") {
+    setIaSending(true);
+    try {
+      const res = await aplicarTemperaturaAction(iaFlowState, temperatura);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // La temperatura cambió: refrescamos para que Contactos lo refleje.
+      if (!res.error) router.refresh();
+    } finally {
+      setIaSending(false);
+    }
+  }
+
   async function handleIAConfirmarImportarContactos(
     diasAnalisis: number,
     limiteContactos: number,
@@ -1269,6 +1295,8 @@ export default function AppShell({
           onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
           onCrearAudienciaDesdeBusqueda={handleIACrearAudienciaDesdeBusqueda}
           onCrearAudienciaDesdeImportacion={handleIACrearAudienciaDesdeImportacion}
+          onElegirRecursoEditar={handleIAElegirRecursoEditar}
+          onElegirTemperatura={handleIAElegirTemperatura}
           onNuevaConversacion={handleIANuevaConversacion}
           onSeleccionarConversacion={handleIASeleccionarConversacion}
           onBorrarConversacion={handleIABorrarConversacion}
