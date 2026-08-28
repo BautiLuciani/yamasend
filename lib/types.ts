@@ -45,6 +45,12 @@ export interface Template {
   precio?: string;
   rechazoMotivo?: string | null;
   templateLang?: string;
+  /**
+   * Conversación de IA desde la que se envió a Meta, si salió del chat.
+   * Null cuando se envió desde el modal manual de Templates. Determina en
+   * qué chat aterriza el aviso de aprobación/rechazo.
+   */
+  iaConversacionId?: string | null;
 }
 
 export interface ContactList {

@@ -16,7 +16,7 @@ export async function getTemplatesForTenant(
 
   const { data: rows, error } = await supabase
     .from("yamas_send_templates")
-    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang")
+    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang, ia_conversacion_id")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
 
@@ -31,6 +31,7 @@ export async function getTemplatesForTenant(
     precio: "0.0618",
     rechazoMotivo: r.meta_rechazo_motivo ?? null,
     templateLang: r.template_lang ?? "es_AR",
+    iaConversacionId: r.ia_conversacion_id ?? null,
   }));
 }
 

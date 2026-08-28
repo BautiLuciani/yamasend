@@ -198,3 +198,51 @@ export async function borrarConversacionIAAction(
 
   return { error: error?.message ?? null };
 }
+
+/**
+ * Agrega un aviso externo (por ahora: Meta aprobó o rechazó un template) a
+ * una conversación que NO está abierta en pantalla.
+ *
+ * Existe porque el aviso tiene que aterrizar en el chat desde el que se
+ * envió el template, y Meta puede tardar horas: para cuando responde, el
+ * usuario probablemente esté en otro chat o en otra sección. Si la
+ * conversación estuviera abierta, el mensaje se agrega en el cliente y se
+ * persiste por el guardado normal — esta acción es solo para el otro caso.
+ *
+ * Escribe únicamente el array de mensajes: no toca flow_state, para no
+ * pisar un flujo que el usuario haya dejado a medias en esa conversación.
+ */
+export async function agregarAvisoAConversacionAction(
+  conversacionId: string,
+  texto: string,
+): Promise<{ error: string | null }> {
+  const tenantId = await resolverTenantId();
+  if (!tenantId) return { error: "No hay sesión activa." };
+
+  const supabase = await createClient();
+
+  const { data: row, error: errorLectura } = await supabase
+    .from("yamas_send_ia_conversaciones")
+    .select("mensajes")
+    .eq("tenant_id", tenantId)
+    .eq("id", conversacionId)
+    .maybeSingle();
+
+  // Si la conversación fue borrada, no es un error que valga la pena
+  // mostrarle a nadie: el aviso ya se vio como toast.
+  if (errorLectura || !row) return { error: null };
+
+  const mensajes = ((row.mensajes as ChatMessage[]) ?? []).concat({
+    id: `aviso-${Date.now()}-${Math.random()}`,
+    text: texto,
+    type: "aviso",
+  });
+
+  const { error } = await supabase
+    .from("yamas_send_ia_conversaciones")
+    .update({ mensajes, updated_at: new Date().toISOString() })
+    .eq("tenant_id", tenantId)
+    .eq("id", conversacionId);
+
+  return { error: error?.message ?? null };
+}

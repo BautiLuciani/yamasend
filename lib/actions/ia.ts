@@ -1525,6 +1525,13 @@ export async function guardarBorradorTemplateAction(
  */
 export async function confirmarEnvioTemplateAction(
   flowState: IAFlowState,
+  /**
+   * Conversación desde la que se está enviando. Se guarda junto al template
+   * para que el aviso de Meta vuelva a ESTE chat, aunque cuando responda el
+   * usuario esté en otro lado. Puede ser null si la conversación todavía no
+   * se persistió.
+   */
+  iaConversacionId?: string | null,
 ): Promise<IAResponse> {
   if (
     flowState.kind !== "crear_template" ||
@@ -1539,7 +1546,7 @@ export async function confirmarEnvioTemplateAction(
   }
 
   const { nombre, categoria, contenido } = flowState.draft;
-  const result = await sendTemplateToMetaAction(nombre, contenido, categoria);
+  const result = await sendTemplateToMetaAction(nombre, contenido, categoria, iaConversacionId);
 
   if (!result.ok) {
     return {

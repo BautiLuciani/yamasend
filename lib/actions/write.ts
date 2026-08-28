@@ -669,6 +669,14 @@ export async function sendTemplateToMetaAction(
   nombre: string,
   contenido: string,
   categoria: string,
+  /**
+   * Conversación de IA desde la que se está enviando, si es que viene de
+   * ahí. Se guarda en el template para que el aviso de Meta aterrice en ESE
+   * chat y no en el que el usuario tenga abierto cuando Meta responda —
+   * que puede ser otro, o ninguno. Va null cuando el envío sale del modal
+   * manual de Templates, que no tiene ningún chat dueño.
+   */
+  iaConversacionId?: string | null,
 ): Promise<SendTemplateResult> {
   const supabase = await createClient();
 
@@ -734,6 +742,7 @@ export async function sendTemplateToMetaAction(
         nombre_meta: nombre.trim(),
         contenido: contenido.trim(),
         categoria,
+        ia_conversacion_id: iaConversacionId ?? null,
       }),
     });
 
@@ -821,7 +830,7 @@ export async function refreshTemplatesAction(): Promise<RefreshTemplatesResult> 
 
   const { data: rows, error } = await supabase
     .from("yamas_send_templates")
-    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang")
+    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang, ia_conversacion_id")
     .eq("tenant_id", cliente.tenant_id)
     .order("created_at", { ascending: false });
 
@@ -838,6 +847,7 @@ export async function refreshTemplatesAction(): Promise<RefreshTemplatesResult> 
     precio: "0.0618",
     rechazoMotivo: r.meta_rechazo_motivo ?? null,
     templateLang: r.template_lang ?? "es_AR",
+    iaConversacionId: r.ia_conversacion_id ?? null,
   }));
 
   return { templates, error: null };

@@ -91,6 +91,7 @@ import {
   iniciarAudienciaDesdeImportacionAction,
 } from "@/lib/actions/ia";
 import {
+  agregarAvisoAConversacionAction,
   cargarConversacionIAAction,
   guardarConversacionIAAction,
   generarTituloConversacionAction,
@@ -464,6 +465,36 @@ export default function AppShell({
   // (verificado/rechazado), avisa por el chat de IA — así el flujo
   // conversacional de creación de templates cierra el círculo completo,
   // igual que ya pasaba con los creados desde el modal manual.
+  /**
+   * Entrega un aviso de cambio de estado de un template al lugar correcto.
+   *
+   * Meta puede tardar horas en responder, así que para cuando lo hace el
+   * usuario casi nunca está donde arrancó. El aviso pertenece al chat desde
+   * el que se envió el template, no al que tenga abierto de casualidad:
+   *
+   *  - Ese chat está abierto  -> se agrega en pantalla (y se persiste solo,
+   *    por el guardado con debounce de siempre).
+   *  - Ese chat existe pero no está abierto -> se escribe en el servidor
+   *    para que esté ahí cuando entre, y además va un toast para que se
+   *    entere en el momento.
+   *  - No hay chat dueño (se envió desde el modal manual de Templates) ->
+   *    solo toast, no hay conversación a la cual pertenecer.
+   */
+  function entregarAvisoTemplate(conversacionId: string | null, texto: string) {
+    if (conversacionId && conversacionId === iaConversacionIdRef.current) {
+      addMsg(texto, "aviso");
+      return;
+    }
+
+    notificar(texto);
+
+    if (conversacionId) {
+      // No se espera el resultado: es best-effort y no debe trabar el
+      // polling. Si la conversación fue borrada, la acción no hace nada.
+      void agregarAvisoAConversacionAction(conversacionId, texto);
+    }
+  }
+
   const templatesPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hayTemplatesEnviados = templates.some((t) => t.status === "enviado");
 
@@ -483,21 +514,14 @@ export default function AppShell({
           for (const t of nuevos) {
             const anterior = prev.find((p) => p.id === t.id);
             if (anterior?.status === "enviado" && t.status !== "enviado") {
-              if (t.status === "verificado") {
-                // Tipo "aviso" y no "bot": es un evento externo, no un turno
-                // de la conversación. Si contara como turno, llegar justo
-                // mientras el usuario tiene abierta una tarjeta de acción le
-                // deshabilitaría el botón y lo cortaría a mitad de flujo.
-                addMsg(
-                  `Tu template "${t.nombre}" fue aprobado por Meta. Ya podés usarlo en una campaña.`,
-                  "aviso",
-                );
-              } else if (t.status === "rechazado") {
-                addMsg(
-                  `Meta rechazó el template "${t.nombre}"${t.rechazoMotivo ? `: ${t.rechazoMotivo}` : "."}`,
-                  "aviso",
-                );
-              }
+              const texto =
+                t.status === "verificado"
+                  ? `Tu template "${t.nombre}" fue aprobado por Meta. Ya podés usarlo en una campaña.`
+                  : t.status === "rechazado"
+                    ? `Meta rechazó el template "${t.nombre}"${t.rechazoMotivo ? `: ${t.rechazoMotivo}` : "."}`
+                    : null;
+
+              if (texto) entregarAvisoTemplate(t.iaConversacionId ?? null, texto);
             }
           }
           return nuevos;
@@ -931,7 +955,9 @@ export default function AppShell({
 
   async function handleSendToMeta() {
     setStatus("approving");
-    const result = await sendTemplateToMetaAction(newTplName, newTplContent, newTplCategoria);
+    // Sin conversación: el envío sale del modal manual de Templates, así que
+    // no hay ningún chat dueño del aviso — va a ir por toast.
+    const result = await sendTemplateToMetaAction(newTplName, newTplContent, newTplCategoria, null);
 
     if (!result.ok) {
       setStatus("rejected");
@@ -1092,7 +1118,7 @@ export default function AppShell({
   async function handleIAEnviarAMeta() {
     setIaSending(true);
     try {
-      const res = await confirmarEnvioTemplateAction(iaFlowState);
+      const res = await confirmarEnvioTemplateAction(iaFlowState, iaConversacionIdRef.current);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
       // El template se mandó a Meta (o falló al intentarlo) — refrescamos
