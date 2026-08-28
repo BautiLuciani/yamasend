@@ -155,16 +155,34 @@ export default function CampaignDetailModal({
                 </svg>
               </div>
               <div className="flex-1 min-w-0 flex flex-col gap-[5px]">
-                <div className="text-xl font-extrabold tracking-[-0.02em] text-ys-text truncate">
-                  {detail.nombre}
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0 text-xl font-extrabold tracking-[-0.02em] text-ys-text truncate">
+                    {detail.nombre}
+                  </div>
+                  <button
+                    onClick={onClose}
+                    className="sm:hidden flex-shrink-0 w-8 h-8 -mt-1 -mr-1 rounded-lg flex items-center justify-center text-ys-dimmer hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer text-xl leading-none"
+                  >
+                    ×
+                  </button>
                 </div>
                 <div className="text-[13px] text-[#6b736e] font-semibold">
                   {detail.listaNombre ?? "—"} · {formatFechaHora(detail.enviadoAt ?? detail.fechaProgramada ?? detail.createdAt)}
                 </div>
+                {badge && (
+                  <span
+                    className={`sm:hidden self-start inline-flex items-center gap-1.5 text-[11.5px] font-bold rounded-full px-2.5 py-1 mt-0.5 ${badge.text} ${badge.bg}`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${badge.dotOutline ? `border-[1.5px] ${badge.dot}` : badge.dot} ${badge.pulse ? "animate-pulse" : ""}`}
+                    />
+                    {badge.label}
+                  </span>
+                )}
               </div>
               {badge && (
                 <span
-                  className={`flex-none inline-flex items-center gap-1.5 text-[11.5px] font-bold rounded-full px-2.5 py-1 ${badge.text} ${badge.bg}`}
+                  className={`hidden sm:inline-flex flex-none items-center gap-1.5 text-[11.5px] font-bold rounded-full px-2.5 py-1 ${badge.text} ${badge.bg}`}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${badge.dotOutline ? `border-[1.5px] ${badge.dot}` : badge.dot} ${badge.pulse ? "animate-pulse" : ""}`}
@@ -174,7 +192,7 @@ export default function CampaignDetailModal({
               )}
               <button
                 onClick={onClose}
-                className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-ys-dimmer hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer text-xl leading-none"
+                className="hidden sm:flex flex-shrink-0 w-8 h-8 rounded-lg items-center justify-center text-ys-dimmer hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer text-xl leading-none"
               >
                 ×
               </button>
@@ -182,24 +200,24 @@ export default function CampaignDetailModal({
 
             {conMetricas && (
               <>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="border border-[#e8ebe9] rounded-[14px] px-4 py-3.5 flex flex-col gap-[3px]">
-                    <div className="font-mono text-[19px] text-ys-text tracking-[-0.02em]">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="border border-[#e8ebe9] rounded-[14px] px-3.5 sm:px-4 py-3.5 flex flex-col gap-[3px] min-w-0">
+                    <div className="font-mono text-[17px] sm:text-[19px] text-ys-text tracking-[-0.02em] truncate">
                       {detail.contactosCount.toLocaleString("es-AR")}
                     </div>
-                    <div className="text-[11.5px] text-[#8a908c] font-semibold">Destinatarios</div>
+                    <div className="text-[11px] sm:text-[11.5px] text-[#8a908c] font-semibold truncate">Destinatarios</div>
                   </div>
-                  <div className="border border-[#e8ebe9] rounded-[14px] px-4 py-3.5 flex flex-col gap-[3px]">
-                    <div className="font-mono text-[19px] text-ys-text tracking-[-0.02em]">
+                  <div className="border border-[#e8ebe9] rounded-[14px] px-3.5 sm:px-4 py-3.5 flex flex-col gap-[3px] min-w-0">
+                    <div className="font-mono text-[17px] sm:text-[19px] text-ys-text tracking-[-0.02em] truncate">
                       {detail.mensajesOk.toLocaleString("es-AR")}
                     </div>
-                    <div className="text-[11.5px] text-[#8a908c] font-semibold">Enviados</div>
+                    <div className="text-[11px] sm:text-[11.5px] text-[#8a908c] font-semibold truncate">Enviados</div>
                   </div>
-                  <div className="border border-[#e8ebe9] rounded-[14px] px-4 py-3.5 flex flex-col gap-[3px]">
-                    <div className="font-mono text-[19px] text-ys-text tracking-[-0.02em]">
+                  <div className="border border-[#e8ebe9] rounded-[14px] px-3.5 sm:px-4 py-3.5 flex flex-col gap-[3px] col-span-2 sm:col-span-1 min-w-0">
+                    <div className="font-mono text-[17px] sm:text-[19px] text-ys-text tracking-[-0.02em] truncate">
                       {detail.mensajesLeidos.toLocaleString("es-AR")}
                     </div>
-                    <div className="text-[11.5px] text-[#067647] font-bold">
+                    <div className="text-[11px] sm:text-[11.5px] text-[#067647] font-bold truncate">
                       {pct(detail.mensajesLeidos, detail.mensajesOk)} leídos
                     </div>
                   </div>
