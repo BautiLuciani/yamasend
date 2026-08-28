@@ -111,7 +111,15 @@ export interface AppUser {
   reglasEvitar: string;
 }
 
-export type ChatMsgType = "user" | "bot" | "error";
+/**
+ * "aviso" es para eventos EXTERNOS y asincrónicos (por ahora, que Meta
+ * aprobó o rechazó un template): cosas que le pasan a la cuenta, no turnos
+ * de la conversación. Se distingue de "bot" porque las tarjetas de acción
+ * se deshabilitan cuando dejan de ser el último mensaje "bot" — si un aviso
+ * contara como turno, llegar justo mientras el usuario tiene una tarjeta
+ * abierta le mataría el botón y lo dejaría a mitad de camino.
+ */
+export type ChatMsgType = "user" | "bot" | "error" | "aviso";
 
 /**
  * Payload opcional que acompaña un mensaje del bot y le dice a IA.tsx qué

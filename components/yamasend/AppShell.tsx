@@ -484,11 +484,18 @@ export default function AppShell({
             const anterior = prev.find((p) => p.id === t.id);
             if (anterior?.status === "enviado" && t.status !== "enviado") {
               if (t.status === "verificado") {
-                addMsg(`✅ Tu template "${t.nombre}" fue aprobado por Meta. Ya podés usarlo en una campaña.`);
+                // Tipo "aviso" y no "bot": es un evento externo, no un turno
+                // de la conversación. Si contara como turno, llegar justo
+                // mientras el usuario tiene abierta una tarjeta de acción le
+                // deshabilitaría el botón y lo cortaría a mitad de flujo.
+                addMsg(
+                  `Tu template "${t.nombre}" fue aprobado por Meta. Ya podés usarlo en una campaña.`,
+                  "aviso",
+                );
               } else if (t.status === "rechazado") {
                 addMsg(
                   `Meta rechazó el template "${t.nombre}"${t.rechazoMotivo ? `: ${t.rechazoMotivo}` : "."}`,
-                  "error",
+                  "aviso",
                 );
               }
             }
@@ -962,6 +969,9 @@ export default function AppShell({
   // Historial corto (solo texto, sin payloads) que se le manda al
   // clasificador de intención del orquestador — no hace falta mandar la
   // conversación entera, con los últimos turnos alcanza para dar contexto.
+  // Los avisos externos quedan afuera por el filtro de tipos: que Meta haya
+  // aprobado un template no es algo que el usuario dijo, y meterlo en el
+  // historial confundiría al clasificador sobre qué se está pidiendo.
   function buildHistory(): IAHistoryTurn[] {
     return messages
       .filter((m) => m.type === "user" || m.type === "bot")

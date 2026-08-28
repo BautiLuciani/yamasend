@@ -154,6 +154,11 @@ export default function IA({
     setValue("");
   }
 
+  // Los avisos externos (aprobación/rechazo de Meta) quedan EXCLUIDOS a
+  // propósito: son eventos que le pasan a la cuenta, no turnos de la
+  // conversación. Si contaran, un aviso que llega justo mientras el usuario
+  // tiene abierta una tarjeta de acción le deshabilitaría el botón y lo
+  // dejaría trabado a mitad de flujo.
   const lastBotMessageId = [...messages].reverse().find((m) => m.type === "bot")?.id;
 
   // Solo se cuenta como "conversación iniciada" cuando hay algo más que el
@@ -347,6 +352,22 @@ export default function IA({
                 style={{ animation: "ys-msg .24s cubic-bezier(.4,0,.2,1) both" }}
               >
                 {m.text}
+              </div>
+            ) : m.type === "aviso" ? (
+              /* Aviso externo (Meta aprobó o rechazó un template). Se muestra
+                 como una nota al margen y no como un turno de la IA, porque
+                 es algo que le pasó a la cuenta mientras el usuario hacía
+                 otra cosa. */
+              <div
+                key={m.id}
+                className="self-center max-w-[92%] flex items-start gap-2 bg-ys-el2 border border-ys-border-softest rounded-[12px] px-3.5 py-2.5"
+                style={{ animation: "ys-msg .24s cubic-bezier(.4,0,.2,1) both" }}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="mt-[3px] flex-none">
+                  <circle cx="8" cy="8" r="6.5" stroke="#7b837e" strokeWidth="1.5" />
+                  <path d="M8 4.6v4.2M8 11.2v.2" stroke="#7b837e" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+                <div className="text-[13px] leading-[1.5] font-semibold text-ys-dim">{m.text}</div>
               </div>
             ) : (
               <div key={m.id} className="flex flex-col gap-3" style={{ animation: "ys-msg .24s cubic-bezier(.4,0,.2,1) both" }}>
