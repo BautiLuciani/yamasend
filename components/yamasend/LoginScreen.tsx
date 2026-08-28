@@ -4,6 +4,8 @@ import { useState } from "react";
 import Image from "next/image";
 import type { PlanKey } from "@/lib/types";
 
+const RECORDAR_EMAIL_KEY = "yamasend_recordar_email";
+
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<string | null>; // devuelve error o null
   onRegister: (data: {
@@ -61,13 +63,25 @@ export default function LoginScreen({
   );
 
   // login state
-  const [liEmail, setLiEmail] = useState("");
+  const [liEmail, setLiEmail] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : window.localStorage.getItem(RECORDAR_EMAIL_KEY) ?? "",
+  );
   const [liPw, setLiPw] = useState("");
   const [liShowPw, setLiShowPw] = useState(false);
   const [liErr, setLiErr] = useState("");
   const [liLoading, setLiLoading] = useState(false);
   const [liFocused, setLiFocused] = useState<"email" | "pw" | null>(null);
-  const [liRecordar, setLiRecordar] = useState(false);
+  // Si hay un email guardado de una sesión anterior (checkbox "Recordarme"
+  // tildado la última vez), se usa como estado inicial de estos campos.
+  // Solo se guarda el email, nunca la contraseña (no es seguro persistir
+  // contraseñas en el cliente).
+  const [liRecordar, setLiRecordar] = useState(() =>
+    typeof window === "undefined"
+      ? false
+      : Boolean(window.localStorage.getItem(RECORDAR_EMAIL_KEY)),
+  );
 
   // register state
   const [regNombre, setRegNombre] = useState("");
@@ -105,6 +119,11 @@ export default function LoginScreen({
     if (err) {
       setLiErr(err);
     } else {
+      if (liRecordar) {
+        window.localStorage.setItem(RECORDAR_EMAIL_KEY, liEmail);
+      } else {
+        window.localStorage.removeItem(RECORDAR_EMAIL_KEY);
+      }
       setSuccess({ title: `¡Bienvenido!`, sub: "Cargando tu panel..." });
     }
   }
