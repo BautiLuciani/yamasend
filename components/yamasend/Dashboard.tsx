@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getRecentActivityAction } from "@/lib/actions/activity";
-import { getCampaignInsightAction } from "@/lib/actions/write";
 import { getDashboardStatsAction } from "@/lib/actions/stats";
 import type {
   ActivityLogEntry,
@@ -18,6 +17,14 @@ interface DashboardProps {
   userName: string;
   tenantId: string;
   campaigns: Campaign[];
+  // Insight de IA cacheado por día (yamas_send_insights_cache), resuelto y
+  // compartido por AppShell: viene ya calculado en vez de que el Dashboard
+  // dispare su propio fetch, porque este componente se desmonta/remonta
+  // cada vez que el usuario cambia de sección y vuelve al dashboard, y no
+  // queremos mostrar "Analizando tus campañas…" de nuevo si el insight de
+  // hoy ya se había mostrado antes en esta misma sesión.
+  insight: string | null;
+  insightLoading: boolean;
   onViewAllCampaigns: () => void;
   onNewCampaign: () => void;
 }
@@ -188,7 +195,15 @@ function EstadoBadge({ estado, textClass, bgClass }: { estado: string; textClass
   );
 }
 
-export default function Dashboard({ userName, tenantId, campaigns, onViewAllCampaigns, onNewCampaign }: DashboardProps) {
+export default function Dashboard({
+  userName,
+  tenantId,
+  campaigns,
+  insight,
+  insightLoading,
+  onViewAllCampaigns,
+  onNewCampaign,
+}: DashboardProps) {
   const [periodo, setPeriodo] = useState<DashboardPeriodo>("7d");
   const [actividad, setActividad] = useState<ActivityLogEntry[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -238,28 +253,6 @@ export default function Dashboard({ userName, tenantId, campaigns, onViewAllCamp
     getRecentActivityAction(5).then((result) => {
       if (!cancelado && !result.error) {
         setActividad(result.activity);
-      }
-    });
-
-    return () => {
-      cancelado = true;
-    };
-  }, []);
-
-  // Insight de IA sobre campañas: reutiliza getCampaignInsightAction, la
-  // misma Server Action que ya usa el wizard de "Nueva campaña" — cacheada
-  // en yamas_send_insights_cache (1 por tenant por día), así que esta
-  // llamada no dispara un nuevo análisis salvo que no haya cache vigente.
-  const [insight, setInsight] = useState<string | null>(null);
-  const [insightLoading, setInsightLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelado = false;
-
-    getCampaignInsightAction().then((result) => {
-      if (!cancelado) {
-        setInsight(result.insight);
-        setInsightLoading(false);
       }
     });
 

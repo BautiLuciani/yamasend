@@ -73,14 +73,19 @@ export default function CampaignWizardModal({
   const [exito, setExito] = useState(false);
   const [insight, setInsight] = useState<string | null>(null);
   const [insightCargando, setInsightCargando] = useState(false);
-  const insightPedidoRef = useRef(false);
+  // Guarda la fecha (toDateString) del último pedido exitoso, en vez de un
+  // simple boolean: así, si el wizard queda abierto o se reabre al día
+  // siguiente, sí vuelve a pedir el insight (que para entonces ya cambió),
+  // pero dentro del mismo día nunca repite el fetch ni el loading.
+  const insightPedidoFechaRef = useRef<string | null>(null);
   const [sugerenciaHorario, setSugerenciaHorario] = useState<SugerenciaHorario | null>(null);
   const [sugerenciaAplicada, setSugerenciaAplicada] = useState(false);
   const sugerenciaPedidaRef = useRef(false);
 
   async function cargarInsight() {
-    if (insightPedidoRef.current) return;
-    insightPedidoRef.current = true;
+    const hoy = new Date().toDateString();
+    if (insightPedidoFechaRef.current === hoy) return;
+    insightPedidoFechaRef.current = hoy;
     setInsightCargando(true);
     const result = await onFetchInsight();
     setInsight(result.insight);
@@ -137,8 +142,11 @@ export default function CampaignWizardModal({
     setEnviando(false);
     setErrorEnvio(null);
     setExito(false);
-    setInsight(null);
-    insightPedidoRef.current = false;
+    // Nota: insight e insightPedidoFechaRef NO se resetean acá a propósito.
+    // El insight de IA es independiente del formulario (viene cacheado por
+    // tenant/día vía AppShell) y si el usuario cierra y reabre el wizard el
+    // mismo día, no tiene sentido volver a mostrar "Analizando tus
+    // campañas..." para terminar mostrando el mismo texto de vuelta.
     setSugerenciaHorario(null);
     setSugerenciaAplicada(false);
     sugerenciaPedidaRef.current = false;

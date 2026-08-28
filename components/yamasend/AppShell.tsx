@@ -61,6 +61,7 @@ import {
   sendCampaignAction,
   getCampaignInsightAction,
   deleteCampaignAction,
+  type CampaignInsightResult,
 } from "@/lib/actions/write";
 import {
   syncAndAnalyzeAction,
@@ -161,6 +162,68 @@ export default function AppShell({
   useEffect(() => {
     setCampaigns(campaignsProp);
   }, [campaignsProp]);
+
+  // Cache del insight de IA compartido por Dashboard, CampaignWizardModal y
+  // CampaignDetailModal: los tres consumían getCampaignInsightAction() por
+  // su cuenta, cada uno con su propio estado de loading. Como el insight ya
+  // está cacheado en yamas_send_insights_cache (1 por tenant por día), el
+  // fetch en sí era barato, pero cada componente igual mostraba su propio
+  // "Analizando tus campañas…" al montarse/reabrirse, aunque el resultado
+  // fuera idéntico al que ya se había mostrado ese mismo día. Centralizando
+  // acá, la petición real sólo se dispara una vez por día por sesión; las
+  // siguientes veces que cualquier componente pide el insight, lo recibe
+  // directo del cache sin pasar por loading.
+  const insightCacheRef = useRef<{ fecha: string; insight: string | null } | null>(null);
+  const insightEnCursoRef = useRef<Promise<CampaignInsightResult> | null>(null);
+
+  const obtenerInsightCacheado = useCallback(async (): Promise<CampaignInsightResult> => {
+    const hoy = new Date().toDateString();
+
+    if (insightCacheRef.current?.fecha === hoy) {
+      return { insight: insightCacheRef.current.insight, error: null };
+    }
+
+    // Si ya hay un fetch en vuelo (ej: Dashboard y el wizard piden el
+    // insight casi al mismo tiempo), todos esperan la misma promesa en vez
+    // de disparar múltiples requests en paralelo.
+    if (insightEnCursoRef.current) {
+      return insightEnCursoRef.current;
+    }
+
+    const promesa = getCampaignInsightAction().then((result) => {
+      insightCacheRef.current = { fecha: hoy, insight: result.insight };
+      insightEnCursoRef.current = null;
+      return result;
+    });
+
+    insightEnCursoRef.current = promesa;
+    return promesa;
+  }, []);
+
+  // Insight ya resuelto para el Dashboard: a diferencia del wizard y el
+  // detalle de campaña (que se abren a demanda y donde un loading breve al
+  // abrir es esperable), el Dashboard se desmonta y remonta cada vez que el
+  // usuario cambia de sección y vuelve — por eso necesita el valor ya
+  // resuelto en el nivel del AppShell (que sí persiste toda la sesión) en
+  // vez de re-disparar su propio loading en cada montaje.
+  const [dashboardInsight, setDashboardInsight] = useState<string | null>(null);
+  const [dashboardInsightLoading, setDashboardInsightLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelado = false;
+
+    obtenerInsightCacheado().then((result) => {
+      if (!cancelado) {
+        setDashboardInsight(result.insight);
+        setDashboardInsightLoading(false);
+      }
+    });
+
+    return () => {
+      cancelado = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cliente de Supabase compartido para Realtime, autenticado explícitamente
   // con el access_token de la sesión. Realtime autentica el WebSocket por
@@ -1372,6 +1435,8 @@ export default function AppShell({
             userName={user.contactoNombre}
             tenantId={user.tenantId}
             campaigns={campaigns}
+            insight={dashboardInsight}
+            insightLoading={dashboardInsightLoading}
             onViewAllCampaigns={() => setActiveSection("campanas")}
             onNewCampaign={() => {
               setWizardInitial(null);
@@ -1684,10 +1749,7 @@ export default function AppShell({
         costPerMsg={COST_PER_MSG}
         initial={wizardInitial ?? undefined}
         onClose={() => setWizardOpen(false)}
-        onFetchInsight={async () => {
-          const result = await getCampaignInsightAction();
-          return { insight: result.insight, error: result.error };
-        }}
+        onFetchInsight={obtenerInsightCacheado}
         onFetchSugerenciaHorario={getSugerenciaHorarioAction}
         onConfirm={async ({ nombre, listaId, templateId, contactosIds, momento, fechaProgramada }) => {
           const saveResult = await saveCampaignAction(
@@ -1738,10 +1800,7 @@ export default function AppShell({
         tenantId={user.tenantId}
         onClose={() => setDetailCampaignId(null)}
         onFetchDetail={getCampaignDetailAction}
-        onFetchInsight={async () => {
-          const result = await getCampaignInsightAction();
-          return { insight: result.insight, error: result.error };
-        }}
+        onFetchInsight={obtenerInsightCacheado}
         onDuplicate={(detail) => {
           setDetailCampaignId(null);
           const listaExiste = !!detail.listaId && lists.some((l) => l.id === detail.listaId);
