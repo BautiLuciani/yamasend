@@ -45,10 +45,30 @@ export default function Toast({ toast, onCerrar }: ToastProps) {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[200] max-w-[calc(100vw-2rem)] pointer-events-none"
+      className={
+        // MOBILE: arriba, justo debajo del header fijo (58px). Abajo no
+        // sirve: ahí conviven la barra de escritura del chat y la barra de
+        // acciones de selección (fixed bottom-3, con flex-wrap, así que su
+        // alto es variable). Arriba es la única zona libre garantizada.
+        //
+        // DESKTOP: se mantiene abajo y centrado, sin cambios.
+        //
+        // z-[9500] queda por encima de todo lo que existe hoy: los modales
+        // usan z-[100], el drawer de perfil z-[8000]/[8001] y los modales de
+        // logout/perfil z-[9000]. Un aviso que aparece detrás de un modal es
+        // un aviso que no se ve.
+        "fixed z-[9500] pointer-events-none " +
+        "left-3 right-3 top-[68px] flex justify-center " +
+        "md:left-1/2 md:right-auto md:top-auto md:bottom-5 md:-translate-x-1/2 " +
+        "md:max-w-[520px]"
+      }
+      style={{
+        // Respeta el notch/isla en iOS cuando el aviso va arriba.
+        paddingTop: "env(safe-area-inset-top, 0px)",
+      }}
     >
       <div
-        className={`pointer-events-auto flex items-start gap-2.5 rounded-[14px] px-4 py-3 shadow-[0_8px_24px_rgba(16,24,20,0.18)] border ${
+        className={`pointer-events-auto w-full md:w-auto flex items-start gap-2.5 rounded-[14px] px-4 py-3 shadow-[0_8px_24px_rgba(16,24,20,0.18)] border ${
           esError
             ? "bg-ys-orange-bg border-ys-warn-bg text-ys-orange"
             : "bg-ys-dark border-transparent text-white"
@@ -65,7 +85,9 @@ export default function Toast({ toast, onCerrar }: ToastProps) {
             <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         )}
-        <div className="text-[13px] font-semibold leading-[1.45]">{toast.texto}</div>
+        <div className="min-w-0 flex-1 text-[13px] font-semibold leading-[1.45] break-words">
+          {toast.texto}
+        </div>
         <button
           onClick={onCerrar}
           aria-label="Cerrar aviso"
