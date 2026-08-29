@@ -553,6 +553,21 @@ export interface Membership {
   creditosUsados: number;
 }
 
+/**
+ * Secciones de la consola de empresa. Separada de AppSection a propósito:
+ * son navegaciones distintas y no quiero que un typo permita rutear una
+ * sección de empleado dentro del shell de empresa.
+ * "empleados" es la única con escritura (permisos y créditos); el resto es
+ * informativo.
+ */
+export type EmpresaSection =
+  | "dashboard"
+  | "empleados"
+  | "contactos"
+  | "audiencias"
+  | "templates"
+  | "campanas";
+
 /** Secciones de navegación del sidebar / drawer mobile (diseño Claude Design). */
 export type AppSection =
   | "dashboard"

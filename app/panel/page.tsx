@@ -12,8 +12,13 @@ import {
 import { getCurrentMembership } from "@/lib/auth/permisos";
 import { createClient } from "@/lib/supabase/server";
 import AppShell from "@/components/yamasend/AppShell";
+import EmpresaShell from "@/components/yamasend/EmpresaShell";
 import PendingApprovalScreen from "@/components/yamasend/PendingApprovalScreen";
 import { logoutAction } from "@/lib/actions/auth";
+import {
+  getEmpresaDashboardAction,
+  getEmpresaEmpleadosAction,
+} from "@/lib/actions/empresa";
 
 /**
  * Punto de entrada del panel. Ruteo por rol:
@@ -39,11 +44,24 @@ export default async function PanelPage() {
     if (!empresa) {
       redirect("/login");
     }
-    // TODO(fase 2): EmpresaShell con Dashboard, Contactos, Audiencias,
-    // Templates, Campañas y Configuración. Las funciones de lectura ya están
-    // creadas en Supabase (yamas_send_empresa_*). Hasta que exista el shell,
-    // una cuenta empresa no tiene a dónde entrar.
-    redirect("/login");
+
+    // Solo el dashboard y los empleados se cargan en el servidor: son los
+    // datos de la vista inicial. Los listados (contactos, audiencias,
+    // templates, campañas) se piden bajo demanda desde el shell, porque los
+    // contactos de un equipo entero pueden ser miles.
+    const [stats, empleados] = await Promise.all([
+      getEmpresaDashboardAction(),
+      getEmpresaEmpleadosAction(),
+    ]);
+
+    return (
+      <EmpresaShell
+        empresa={empresa}
+        stats={stats}
+        empleados={empleados}
+        onLogout={logoutAction}
+      />
+    );
   }
 
   if (membership.estado !== "activo") {
