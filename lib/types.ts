@@ -107,6 +107,16 @@ export interface AppUser {
   plan: PlanKey;
   trialEnd: string; // ISO date
   credito?: number;
+  /**
+   * Autorización del empleado. Se resuelve server-side desde
+   * yamas_send_miembros y se baja al cliente solo para esconder botones:
+   * el gate real vive en assertPermiso() dentro de cada server action.
+   */
+  rol: UserRole;
+  estado: MemberEstado;
+  permisos: Permisos;
+  orgId: string | null;
+  orgNombre: string | null;
   nombreEmpresa: string;
   rubro: string;
   descripcionNegocio: string;
@@ -115,6 +125,42 @@ export interface AppUser {
   zonaCobertura: string;
   diferenciales: string;
   reglasEvitar: string;
+}
+
+/**
+ * Cuenta empresa. Es deliberadamente distinta de AppUser y no la extiende:
+ * una empresa no tiene tenantId, ni plan, ni WhatsApp, y no debería poder
+ * pasarse por accidente a un componente que espera un empleado.
+ */
+export interface EmpresaUser {
+  miembroId: string;
+  orgId: string;
+  orgNombre: string;
+  contactoNombre: string;
+  contactoEmail: string;
+  rol: UserRole; // "empresa" o "admin"
+  creditosPool: number;
+}
+
+/** Fila de la grilla de empleados (viene de yamas_send_empresa_empleados). */
+export interface EmpleadoResumen {
+  miembroId: string;
+  tenantId: string;
+  nombre: string;
+  estado: MemberEstado;
+  permisos: Permisos;
+  creditosAsignados: number;
+  creditosUsados: number;
+  creditosSaldo: number;
+  contactosCount: number;
+  audienciasCount: number;
+  templatesCount: number;
+  campanasCount: number;
+  campanasEnviadas: number;
+  mensajesOk: number;
+  mensajesError: number;
+  mensajesLeidos: number;
+  ultimaActividadAt: string | null;
 }
 
 /**
@@ -428,6 +474,84 @@ export type KpiFilterKey =
   | "caliente"
   | "tibio"
   | "frio";
+
+/* ───────────────────────── Roles y permisos ─────────────────────────
+ *
+ * Modelo de autorización multi-tenant. Tres roles globales (no roles
+ * custom por empresa: eso genera explosión de roles y vuelve impredecible
+ * el chequeo). La granularidad la dan los permisos por área funcional.
+ *
+ *   admin    → nosotros. Ve y puede todo.
+ *   empresa  → consola de gestión de una organización. SOLO LECTURA sobre
+ *              los recursos de sus empleados, salvo la administración de
+ *              permisos y créditos. No tiene WhatsApp ni tenant propio.
+ *   empleado → la app tal como existe hoy. Puede estar suelto (sin empresa)
+ *              o colgando de una organización.
+ */
+export type UserRole = "admin" | "empresa" | "empleado";
+
+/**
+ * "pendiente" = se registró con un link de invitación pero la empresa
+ * todavía no le dio el OK. Puede loguearse, pero no opera.
+ */
+export type MemberEstado = "pendiente" | "activo" | "suspendido";
+
+/**
+ * Permisos por área funcional (permission bundles). Cada uno mapea a una
+ * capacidad concreta del producto, no a un endpoint: así la empresa razona
+ * sobre "puede mandar campañas" y no sobre 12 flags atómicos.
+ */
+export type PermisoKey =
+  | "crear_audiencias"
+  | "importar_contactos"
+  | "crear_templates"
+  | "enviar_templates_meta"
+  | "crear_campanas"
+  | "enviar_campanas"
+  | "comprar_creditos"
+  | "usar_ia";
+
+export type Permisos = Record<PermisoKey, boolean>;
+
+export const PERMISO_KEYS: PermisoKey[] = [
+  "crear_audiencias",
+  "importar_contactos",
+  "crear_templates",
+  "enviar_templates_meta",
+  "crear_campanas",
+  "enviar_campanas",
+  "comprar_creditos",
+  "usar_ia",
+];
+
+/**
+ * Permisos por defecto del empleado independiente: todo habilitado, que es
+ * exactamente cómo se comporta la app hoy. Se usa como fallback para cuentas
+ * anteriores al sistema de roles, para que nadie quede bloqueado.
+ */
+export const PERMISOS_COMPLETOS: Permisos = {
+  crear_audiencias: true,
+  importar_contactos: true,
+  crear_templates: true,
+  enviar_templates_meta: true,
+  crear_campanas: true,
+  enviar_campanas: true,
+  comprar_creditos: true,
+  usar_ia: true,
+};
+
+/** Membresía del usuario logueado: quién es y qué puede hacer. */
+export interface Membership {
+  miembroId: string;
+  orgId: string | null;
+  orgNombre: string | null;
+  tenantId: string | null; // null para empresa/admin (no tienen WhatsApp)
+  rol: UserRole;
+  estado: MemberEstado;
+  permisos: Permisos;
+  creditosAsignados: number;
+  creditosUsados: number;
+}
 
 /** Secciones de navegación del sidebar / drawer mobile (diseño Claude Design). */
 export type AppSection =

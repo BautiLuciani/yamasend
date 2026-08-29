@@ -1,9 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
-import type { AppUser, Contact, PlanKey } from "@/lib/types";
+import { getCurrentMembership } from "@/lib/auth/permisos";
+import type { AppUser, Contact, EmpresaUser, PlanKey } from "@/lib/types";
 
 /**
- * Devuelve los datos de sesión + fila de yamas_inmo_clientes del usuario logueado.
- * null si no hay sesión activa, o si el usuario de Auth no tiene fila asociada todavía.
+ * Devuelve los datos del EMPLEADO logueado (sesión + membresía + fila de
+ * yamas_inmo_clientes).
+ *
+ * Devuelve null si no hay sesión, si el usuario no es empleado (una cuenta
+ * empresa no tiene tenant ni fila de cliente), o si todavía no tiene fila
+ * asociada. El caller —/panel— usa getCurrentMembership() primero para saber
+ * a qué shell mandarlo, así que ese null nunca es ambiguo.
  */
 export async function getCurrentAppUser(): Promise<AppUser | null> {
   const supabase = await createClient();
@@ -13,6 +19,9 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
   } = await supabase.auth.getUser();
 
   if (!user) return null;
+
+  const membership = await getCurrentMembership();
+  if (!membership || membership.rol === "empresa") return null;
 
   const { data: row, error } = await supabase
     .from("yamas_inmo_clientes")
@@ -25,6 +34,11 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
   if (error || !row) return null;
 
   return {
+    rol: membership.rol,
+    estado: membership.estado,
+    permisos: membership.permisos,
+    orgId: membership.orgId,
+    orgNombre: membership.orgNombre,
     id: row.tenant_id ?? user.id,
     tenantId: row.tenant_id ?? user.id,
     contactoNombre: row.contacto_nombre ?? "Usuario",
@@ -41,6 +55,45 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
     zonaCobertura: row.zona_cobertura ?? "",
     diferenciales: row.diferenciales ?? "",
     reglasEvitar: row.reglas_evitar ?? "",
+  };
+}
+
+/**
+ * Devuelve los datos de la cuenta EMPRESA logueada.
+ * null si no hay sesión o si el usuario no tiene rol empresa/admin.
+ *
+ * Ojo: no lee yamas_inmo_clientes. Una empresa no tiene fila ahí —es una
+ * consola de gestión sin WhatsApp— y ese es justamente el motivo por el que
+ * queda bloqueada de todas las tablas base por RLS.
+ */
+export async function getCurrentEmpresaUser(): Promise<EmpresaUser | null> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const membership = await getCurrentMembership();
+  if (!membership) return null;
+  if (membership.rol !== "empresa" && membership.rol !== "admin") return null;
+  if (!membership.orgId) return null;
+
+  const { data: org } = await supabase
+    .from("yamas_send_organizaciones")
+    .select("nombre, contacto_nombre, contacto_email, creditos_pool")
+    .eq("id", membership.orgId)
+    .maybeSingle();
+
+  return {
+    miembroId: membership.miembroId,
+    orgId: membership.orgId,
+    orgNombre: org?.nombre ?? membership.orgNombre ?? "Mi empresa",
+    contactoNombre: org?.contacto_nombre ?? "Empresa",
+    contactoEmail: org?.contacto_email ?? user.email ?? "",
+    rol: membership.rol,
+    creditosPool: org?.creditos_pool ?? 0,
   };
 }
 

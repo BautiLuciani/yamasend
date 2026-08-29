@@ -8,9 +8,11 @@ import type { PlanKey } from "@/lib/types";
 export default function LoginGate({
   initialTab,
   redirectTo = "/panel",
+  inviteToken = null,
 }: {
   initialTab?: "login" | "register";
   redirectTo?: string;
+  inviteToken?: string | null;
 }) {
   const router = useRouter();
 
@@ -27,6 +29,7 @@ export default function LoginGate({
     whatsapp: string;
     password: string;
     plan: PlanKey;
+    inviteToken?: string | null;
   }) {
     const { error } = await registerAction(data);
     if (error) return error;
@@ -39,6 +42,7 @@ export default function LoginGate({
       onLogin={handleLogin}
       onRegister={handleRegister}
       initialTab={initialTab}
+      inviteToken={inviteToken}
       onTabChange={(next) => {
         // Actualiza solo la URL visible, sin disparar navegación de Next
         // (que activaría el Suspense/loading.tsx de /login o /register

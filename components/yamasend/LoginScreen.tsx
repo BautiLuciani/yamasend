@@ -14,9 +14,16 @@ interface LoginScreenProps {
     whatsapp: string;
     password: string;
     plan: PlanKey;
+    inviteToken?: string | null;
   }) => Promise<string | null>;
   initialTab?: "login" | "register";
   onTabChange?: (tab: "login" | "register") => void;
+  /**
+   * Token del link de invitación (/register?invite=...). Solo se reenvía al
+   * registro; el rol y los permisos los resuelve la RPC en el servidor a
+   * partir del token, nunca este componente.
+   */
+  inviteToken?: string | null;
 }
 
 const PLANS: { key: PlanKey; nombre: string; precio: string; features: string[] }[] = [
@@ -51,6 +58,7 @@ export default function LoginScreen({
   onRegister,
   initialTab = "login",
   onTabChange,
+  inviteToken = null,
 }: LoginScreenProps) {
   const [tab, setTabState] = useState<"login" | "register">(initialTab);
   const setTab = (next: "login" | "register") => {
@@ -149,6 +157,7 @@ export default function LoginScreen({
       whatsapp: regWa,
       password: regPw,
       plan: regPlan,
+      inviteToken,
     });
     setRegLoading(false);
     if (err) {

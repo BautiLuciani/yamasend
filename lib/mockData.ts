@@ -1,3 +1,4 @@
+import { PERMISOS_COMPLETOS } from "./types";
 import type {
   AppUser,
   Campaign,
@@ -15,6 +16,11 @@ export const mockUser: AppUser = {
   plan: "starter",
   trialEnd: "2026-04-13",
   credito: 0,
+  rol: "empleado",
+  estado: "activo",
+  permisos: PERMISOS_COMPLETOS,
+  orgId: null,
+  orgNombre: null,
   nombreEmpresa: "",
   rubro: "",
   descripcionNegocio: "",

@@ -40,6 +40,12 @@ export async function registerAction(data: {
   whatsapp: string;
   password: string;
   plan: PlanKey;
+  /**
+   * Token de un link de invitación (/register?invite=...). Si viene, el
+   * usuario queda vinculado a esa organización en estado "pendiente" hasta
+   * que la empresa lo apruebe. Si no viene, es un empleado independiente.
+   */
+  inviteToken?: string | null;
 }): Promise<AuthResult> {
   const supabase = await createClient();
 
@@ -83,6 +89,44 @@ export async function registerAction(data: {
         "La cuenta se creó pero hubo un error guardando los datos: " +
         insertError.message,
     };
+  }
+
+  // Alta de la membresía (rol + permisos). La RPC decide el rol internamente:
+  // nunca se lo mandamos como parámetro, porque si el cliente pudiera elegirlo
+  // cualquiera se registraría como "admin".
+  const { data: alta, error: rpcError } = await supabase.rpc(
+    "yamas_send_registrar_miembro",
+    {
+      p_tenant_id: waClean,
+      p_nombre: data.nombre,
+      p_invite_token: data.inviteToken?.trim() || null,
+    },
+  );
+
+  if (rpcError) {
+    return {
+      error:
+        "La cuenta se creó pero hubo un error configurando los permisos: " +
+        rpcError.message,
+    };
+  }
+
+  // Una invitación vencida o revocada no debe romper el registro: la cuenta
+  // ya existe y es válida. Se avisa y queda como empleado independiente, que
+  // es un estado consistente; la empresa puede reinvitarla después.
+  const resultado = alta as { ok?: boolean; error?: string } | null;
+  if (resultado && resultado.ok === false) {
+    if (resultado.error === "invitacion_invalida") {
+      return {
+        error:
+          "Tu cuenta se creó, pero el link de invitación ya venció o fue revocado. Pedile a la empresa que te mande uno nuevo.",
+      };
+    }
+    if (resultado.error !== "ya_es_miembro") {
+      return {
+        error: "La cuenta se creó pero no se pudieron configurar los permisos.",
+      };
+    }
   }
 
   return { error: null };
