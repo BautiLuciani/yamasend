@@ -2,6 +2,7 @@
 
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
+import { assertPermiso } from "@/lib/auth/permisos";
 import {
   syncAndAnalyzeAction,
   generarTemplateConIAAction,
@@ -871,6 +872,14 @@ export async function sendIAMessageAction(
   history: IAHistoryTurn[],
   flowState: IAFlowState,
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("usar_ia");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   const texto = userMessage.trim();
   if (!texto) {
     return {
@@ -1218,6 +1227,14 @@ export async function confirmarSeleccionContactosAction(
 export async function confirmarCreacionAudienciaAction(
   flowState: IAFlowState,
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   if (
     flowState.kind !== "crear_audiencia" ||
     !flowState.draft.nombre ||
@@ -1488,6 +1505,14 @@ export async function usarSugerenciaTemplateAction(
 export async function guardarBorradorTemplateAction(
   flowState: IAFlowState,
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("crear_templates");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   if (
     flowState.kind !== "crear_template" ||
     !flowState.draft.nombre ||
@@ -1533,6 +1558,14 @@ export async function confirmarEnvioTemplateAction(
    */
   iaConversacionId?: string | null,
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("enviar_templates_meta");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   if (
     flowState.kind !== "crear_template" ||
     !flowState.draft.nombre ||
@@ -1973,6 +2006,14 @@ async function mostrarConfirmacionCampana(
 export async function confirmarCreacionCampanaAction(
   flowState: IAFlowState,
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("crear_campanas");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   if (
     flowState.kind !== "crear_campana" ||
     !flowState.draft.nombre ||
@@ -2188,6 +2229,14 @@ export async function confirmarImportarContactosAction(
   diasAnalisisOverride?: number,
   limiteContactosOverride?: number,
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("importar_contactos");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   if (flowState.kind !== "importar_contactos") {
     return {
       text: "Se perdió el contexto de la importación. Empecemos de nuevo.",
@@ -2274,6 +2323,14 @@ export async function confirmarImportarContactosAction(
 export async function iniciarAudienciaDesdeImportacionAction(
   contactosIds: string[],
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   if (contactosIds.length === 0) {
     return {
       text: "No hay contactos seleccionados para agrupar.",
@@ -2393,6 +2450,14 @@ export async function iniciarAudienciaDesdeResultadosBusquedaAction(
   consulta: string,
   contactosIds: string[],
 ): Promise<IAResponse> {
+  // Gate de permisos. Se responde dentro del chat y se resetea el flujo:
+  // dejar el flowState a medias haría que el próximo mensaje del usuario
+  // cayera en un paso que ya no puede completar.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) {
+    return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
   if (contactosIds.length === 0) {
     return {
       text: "No hay contactos para agrupar en estos resultados.",

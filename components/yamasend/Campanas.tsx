@@ -6,6 +6,8 @@ import type { Campaign, CampaignStatus } from "@/lib/types";
 interface CampanasProps {
   campaigns: Campaign[];
   onNewCampaign: () => void;
+  /** false esconde los botones de alta. El gate real está en el server action. */
+  puedeCrear?: boolean;
   onOpenCampaign: (campaignId: string) => void;
 }
 
@@ -72,7 +74,7 @@ function useClickOutside(onOutside: () => void) {
   return ref;
 }
 
-export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign }: CampanasProps) {
+export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, puedeCrear = true }: CampanasProps) {
   const [query, setQuery] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<CampaignStatus | "todas">("todas");
   const [periodoFiltro, setPeriodoFiltro] = useState<Periodo>("todo");
@@ -124,15 +126,17 @@ export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign }: C
             Creá, enviá y analizá tus campañas de WhatsApp.
           </div>
         </div>
-        <button
-          onClick={onNewCampaign}
-          className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-          </svg>
-          Nueva campaña
-        </button>
+        {puedeCrear && (
+          <button
+            onClick={onNewCampaign}
+            className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+            Nueva campaña
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-3.5 flex-wrap text-[13px] text-ys-muted font-semibold">
@@ -244,15 +248,17 @@ export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign }: C
           <div className="text-sm text-ys-muted font-medium text-center max-w-[440px]">
             Elegí una audiencia, seleccioná un mensaje y empezá a comunicarte con tus contactos.
           </div>
-          <button
-            onClick={onNewCampaign}
-            className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-            </svg>
-            Nueva campaña
-          </button>
+          {puedeCrear && (
+            <button
+              onClick={onNewCampaign}
+              className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+              Nueva campaña
+            </button>
+          )}
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white border border-ys-border rounded-2xl py-16 px-6 flex flex-col items-center gap-3.5">

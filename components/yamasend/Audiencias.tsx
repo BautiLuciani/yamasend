@@ -8,6 +8,8 @@ interface AudienciasProps {
   contacts: Contact[];
   onOpenGroup: (group: ContactList) => void;
   onCreateGroup: () => void;
+  /** false esconde los botones de alta. El gate real está en el server action. */
+  puedeCrear?: boolean;
 }
 
 function initialsOf(nombre: string): string {
@@ -17,7 +19,7 @@ function initialsOf(nombre: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup }: AudienciasProps) {
+export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup, puedeCrear = true }: AudienciasProps) {
   const [query, setQuery] = useState("");
 
   const totalContactosOrganizados = useMemo(
@@ -74,12 +76,14 @@ export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup
           <div className="text-sm text-ys-muted font-medium text-center max-w-[380px]">
             Agrupá contactos para segmentar mejor tus campañas.
           </div>
-          <button
-            onClick={onCreateGroup}
-            className="mt-1.5 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-[11px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-          >
-            Crear mi primera audiencia
-          </button>
+          {puedeCrear && (
+            <button
+              onClick={onCreateGroup}
+              className="mt-1.5 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-[11px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+            >
+              Crear mi primera audiencia
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -116,20 +120,22 @@ export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <button
-                onClick={onCreateGroup}
-                className="text-center border-[1.5px] border-dashed border-[#cfe0d7] bg-[#fbfdfc] rounded-2xl px-5 py-[18px] min-h-[158px] flex flex-col items-center justify-center gap-2.5 cursor-pointer transition-all hover:border-ys-green hover:bg-ys-green-bg hover:-translate-y-0.5"
-              >
-                <div className="w-10 h-10 rounded-[13px] bg-ys-green-bg flex items-center justify-center">
-                  <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 3v10M3 8h10" stroke="#12B76A" strokeWidth="2.2" strokeLinecap="round" />
-                  </svg>
-                </div>
-                <div className="text-sm font-extrabold text-ys-green-text">Crear audiencia</div>
-                <div className="text-[12.5px] text-ys-muted font-medium text-center">
-                  Elegí contactos y armá un segmento
-                </div>
-              </button>
+              {puedeCrear && (
+                <button
+                  onClick={onCreateGroup}
+                  className="text-center border-[1.5px] border-dashed border-[#cfe0d7] bg-[#fbfdfc] rounded-2xl px-5 py-[18px] min-h-[158px] flex flex-col items-center justify-center gap-2.5 cursor-pointer transition-all hover:border-ys-green hover:bg-ys-green-bg hover:-translate-y-0.5"
+                >
+                  <div className="w-10 h-10 rounded-[13px] bg-ys-green-bg flex items-center justify-center">
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 3v10M3 8h10" stroke="#12B76A" strokeWidth="2.2" strokeLinecap="round" />
+                    </svg>
+                  </div>
+                  <div className="text-sm font-extrabold text-ys-green-text">Crear audiencia</div>
+                  <div className="text-[12.5px] text-ys-muted font-medium text-center">
+                    Elegí contactos y armá un segmento
+                  </div>
+                </button>
+              )}
               {filtered.map((l) => {
                 const preview = l.contactosIds
                   .slice(0, 3)

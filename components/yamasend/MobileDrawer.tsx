@@ -13,6 +13,8 @@ interface MobileDrawerProps {
   planLabel: string;
   onLogout: () => void;
   onOpenMyProfile: () => void;
+  /** Secciones a ocultar del nav según los permisos del usuario. */
+  hiddenSections?: AppSection[];
 }
 
 const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
@@ -90,6 +92,7 @@ export default function MobileDrawer({
   planLabel,
   onLogout,
   onOpenMyProfile,
+  hiddenSections = [],
 }: MobileDrawerProps) {
   const { t } = useLang();
   const initials = userName
@@ -136,7 +139,7 @@ export default function MobileDrawer({
         </div>
 
         <div className="flex flex-col gap-[3px]">
-          {NAV_ITEMS.map((item) => {
+          {NAV_ITEMS.filter((item) => !hiddenSections.includes(item.key)).map((item) => {
             const isActive = active === item.key;
             return (
               <button

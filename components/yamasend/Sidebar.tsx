@@ -12,6 +12,8 @@ interface SidebarProps {
   planLabel: string;
   onLogout: () => void;
   onOpenMyProfile: () => void;
+  /** Secciones a ocultar del nav según los permisos del usuario. */
+  hiddenSections?: AppSection[];
 }
 
 const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
@@ -87,6 +89,7 @@ export default function Sidebar({
   planLabel,
   onLogout,
   onOpenMyProfile,
+  hiddenSections = [],
 }: SidebarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { t } = useLang();
@@ -111,7 +114,7 @@ export default function Sidebar({
       </div>
 
       <div className="flex flex-col gap-[3px]">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.filter((item) => !hiddenSections.includes(item.key)).map((item) => {
           const isActive = active === item.key;
           return (
             <button

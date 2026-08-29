@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { assertPermiso } from "@/lib/auth/permisos";
 import type { Template } from "@/lib/types";
 import { logActivity } from "@/lib/actions/activity";
 
@@ -18,6 +19,11 @@ export async function saveListAction(
   nombre: string,
   contactosIds: string[],
 ): Promise<SaveResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) return { id: null, error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -69,6 +75,11 @@ export async function addContactsToListAction(
   listaId: string,
   contactosIds: string[],
 ): Promise<SaveResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) return { id: null, error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -118,6 +129,11 @@ export async function renameListAction(
   listaId: string,
   nombre: string,
 ): Promise<{ error: string | null }> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) return { error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -158,6 +174,11 @@ export async function removeContactsFromListAction(
   listaId: string,
   contactosIds: string[],
 ): Promise<{ error: string | null }> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) return { error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -207,6 +228,11 @@ export async function removeContactsFromListAction(
 export async function deleteListAction(
   listaId: string,
 ): Promise<{ error: string | null }> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) return { error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -281,6 +307,11 @@ export async function saveCampaignAction(
   fechaProgramada: string | null = null,
   esDuplicada: boolean = false,
 ): Promise<SaveResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_campanas");
+  if (!gate.ok) return { id: null, error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -375,6 +406,11 @@ export async function sendCampaignAction(
   ventana24h: boolean,
   total: number,
 ): Promise<SendCampaignResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("enviar_campanas");
+  if (!gate.ok) return { ok: false, error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -462,6 +498,11 @@ export async function sendCampaignAction(
 export async function deleteCampaignAction(
   campaignId: string,
 ): Promise<{ error: string | null }> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_campanas");
+  if (!gate.ok) return { error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -526,6 +567,11 @@ export async function deleteCampaignAction(
 export async function deleteTemplateDraftAction(
   templateId: string,
 ): Promise<{ error: string | null }> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_templates");
+  if (!gate.ok) return { error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -572,6 +618,11 @@ export async function saveTemplateDraftAction(
   categoria: string,
   templateId?: string | null,
 ): Promise<SaveResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_templates");
+  if (!gate.ok) return { id: null, error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -678,6 +729,11 @@ export async function sendTemplateToMetaAction(
    */
   iaConversacionId?: string | null,
 ): Promise<SendTemplateResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("enviar_templates_meta");
+  if (!gate.ok) return { ok: false, templateId: null, status: null, mensaje: gate.error ?? "", error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -932,6 +988,11 @@ export async function renameCampaignAction(
   campanaId: string,
   nombre: string,
 ): Promise<{ error: string | null }> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_campanas");
+  if (!gate.ok) return { error: gate.error };
+
   const supabase = await createClient();
 
   const {
@@ -1051,6 +1112,11 @@ export async function updateCampaignTemplateAction(
   campanaId: string,
   templateId: string,
 ): Promise<CampaignEditResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_campanas");
+  if (!gate.ok) return { error: gate.error };
+
   const ctx = await cargarCampanaEditable(campanaId);
   if (!ctx.ok) return { error: ctx.error, motivo: ctx.motivo };
 
@@ -1103,6 +1169,11 @@ export async function updateCampaignAudienceAction(
   campanaId: string,
   listaId: string,
 ): Promise<CampaignEditResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_campanas");
+  if (!gate.ok) return { error: gate.error };
+
   const ctx = await cargarCampanaEditable(campanaId);
   if (!ctx.ok) return { error: ctx.error, motivo: ctx.motivo };
 
@@ -1159,6 +1230,11 @@ export async function rescheduleCampaignAction(
   campanaId: string,
   fechaProgramada: string,
 ): Promise<CampaignEditResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_campanas");
+  if (!gate.ok) return { error: gate.error };
+
   const ctx = await cargarCampanaEditable(campanaId);
   if (!ctx.ok) return { error: ctx.error, motivo: ctx.motivo };
 

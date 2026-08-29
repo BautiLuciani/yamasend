@@ -6,6 +6,8 @@ import type { Template } from "@/lib/types";
 interface TemplatesProps {
   templates: Template[];
   onNewTemplate: () => void;
+  /** false esconde los botones de alta. El gate real está en el server action. */
+  puedeCrear?: boolean;
   onOpenTemplate: (tpl: Template) => void;
 }
 
@@ -57,7 +59,7 @@ function StatusBadge({ status }: { status: Template["status"] }) {
   );
 }
 
-export default function Templates({ templates, onNewTemplate, onOpenTemplate }: TemplatesProps) {
+export default function Templates({ templates, onNewTemplate, onOpenTemplate, puedeCrear = true }: TemplatesProps) {
   const [query, setQuery] = useState("");
   const [estado, setEstado] = useState<
     "todos" | "verificado" | "enviado" | "rechazado" | "borrador"
@@ -98,15 +100,17 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate }: 
             Creá y administrá tus mensajes de WhatsApp.
           </div>
         </div>
-        <button
-          onClick={onNewTemplate}
-          className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-          </svg>
-          Nuevo template
-        </button>
+        {puedeCrear && (
+          <button
+            onClick={onNewTemplate}
+            className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
+            Nuevo template
+          </button>
+        )}
       </div>
 
       {templates.length > 0 && (
@@ -184,15 +188,17 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate }: 
           <div className="text-sm text-ys-muted font-medium text-center max-w-[420px]">
             Los templates son los mensajes que vas a utilizar para comunicarte con tus contactos.
           </div>
-          <button
-            onClick={onNewTemplate}
-            className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-            </svg>
-            Crear template
-          </button>
+          {puedeCrear && (
+            <button
+              onClick={onNewTemplate}
+              className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+              Crear template
+            </button>
+          )}
         </div>
       )}
 

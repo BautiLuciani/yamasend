@@ -375,6 +375,10 @@ export default function AppShell({
   function getInitialSection(): AppSection {
     if (typeof window === "undefined") return "dashboard";
     const param = new URLSearchParams(window.location.search).get("section");
+    // Una sección que el usuario no tiene permitida no se puede activar por
+    // URL: sin esto, ?section=ia le abriría el chat a alguien sin el permiso
+    // aunque no le aparezca el ítem en el nav.
+    if (param === "ia" && !user.permisos.usar_ia) return "dashboard";
     return VALID_SECTIONS.includes(param as AppSection)
       ? (param as AppSection)
       : "dashboard";
@@ -1380,6 +1384,11 @@ export default function AppShell({
 
   const planLabel = PLAN_LABELS[user.plan] || user.plan;
 
+  // Secciones que el empleado no puede ver por permisos. Solo IA por ahora:
+  // el resto de las secciones son informativas y se ven siempre, lo que se
+  // restringe adentro son las acciones de alta.
+  const hiddenSections: AppSection[] = user.permisos.usar_ia ? [] : ["ia"];
+
   return (
     <div className="flex h-full bg-ys-bg overflow-x-hidden">
       <Sidebar
@@ -1389,6 +1398,7 @@ export default function AppShell({
         planLabel={planLabel}
         onLogout={handleLogout}
         onOpenMyProfile={() => setMyProfileOpen(true)}
+        hiddenSections={hiddenSections}
       />
 
       <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} />
@@ -1401,6 +1411,7 @@ export default function AppShell({
         planLabel={planLabel}
         onLogout={handleLogout}
         onOpenMyProfile={() => setMyProfileOpen(true)}
+        hiddenSections={hiddenSections}
       />
 
       <ProfileDrawer
@@ -1453,6 +1464,7 @@ export default function AppShell({
             contacts={contacts}
             onOpenGroup={(group) => setOpenGroupId(group.id)}
             onCreateGroup={() => setCreateGroupOpen(true)}
+            puedeCrear={user.permisos.crear_audiencias}
           />
         </div>
       )}
@@ -1463,6 +1475,7 @@ export default function AppShell({
             templates={templates}
             onNewTemplate={handleStartNewTpl}
             onOpenTemplate={setDetailTemplate}
+            puedeCrear={user.permisos.crear_templates}
           />
         </div>
       )}
@@ -1476,6 +1489,7 @@ export default function AppShell({
               setWizardOpen(true);
             }}
             onOpenCampaign={(campaignId) => setDetailCampaignId(campaignId)}
+            puedeCrear={user.permisos.crear_campanas}
           />
         </div>
       )}
@@ -1540,6 +1554,7 @@ export default function AppShell({
           }
         }}
         importing={false}
+        puedeImportar={user.permisos.importar_contactos}
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}

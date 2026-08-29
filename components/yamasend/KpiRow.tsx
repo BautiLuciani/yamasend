@@ -19,6 +19,8 @@ interface KpiRowProps {
   onToggleFilter: (key: KpiFilterKey) => void;
   onImportClick: () => void;
   onAnalyzeClick: () => void;
+  /** false esconde importar/analizar. El gate real está en el server action. */
+  puedeImportar?: boolean;
   importing: boolean;
 }
 
@@ -29,6 +31,7 @@ export default function KpiRow({
   onToggleFilter,
   onImportClick,
   onAnalyzeClick,
+  puedeImportar = true,
   importing,
 }: KpiRowProps) {
   const isTotalOn = activeFilters.size === 0;
@@ -41,45 +44,49 @@ export default function KpiRow({
     >
       {/* Acciones principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-        <button
-          onClick={onImportClick}
-          className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left cursor-pointer transition-colors hover:border-ys-green-border"
-        >
-          <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-green-bg flex items-center justify-center">
-            <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
-              <path d="M14 7.5c0 3-2.7 5.2-6 5.2-.7 0-1.4-.1-2-.3L2.5 13.5l.8-2.5A5 5 0 0 1 2 7.5C2 4.5 4.7 2.3 8 2.3s6 2.2 6 5.2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-            <div className="text-sm font-extrabold text-ys-text">Vincular WhatsApp</div>
-            <div className="text-[12.5px] text-ys-dim font-medium truncate">
-              Conectá tu celular para importar y analizar tus conversaciones.
+        {puedeImportar && (
+          <button
+            onClick={onImportClick}
+            className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left cursor-pointer transition-colors hover:border-ys-green-border"
+          >
+            <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-green-bg flex items-center justify-center">
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="none">
+                <path d="M14 7.5c0 3-2.7 5.2-6 5.2-.7 0-1.4-.1-2-.3L2.5 13.5l.8-2.5A5 5 0 0 1 2 7.5C2 4.5 4.7 2.3 8 2.3s6 2.2 6 5.2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
+              </svg>
             </div>
-          </div>
-          <span className="flex-none text-[13px] font-bold text-white bg-ys-green rounded-[10px] px-4 py-2.5">
-            Vincular
-          </span>
-        </button>
+            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+              <div className="text-sm font-extrabold text-ys-text">Vincular WhatsApp</div>
+              <div className="text-[12.5px] text-ys-dim font-medium truncate">
+                Conectá tu celular para importar y analizar tus conversaciones.
+              </div>
+            </div>
+            <span className="flex-none text-[13px] font-bold text-white bg-ys-green rounded-[10px] px-4 py-2.5">
+              Vincular
+            </span>
+          </button>
+        )}
 
-        <button
-          onClick={onAnalyzeClick}
-          className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left cursor-pointer transition-colors hover:border-ys-green-border"
-        >
-          <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-dark flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
-              <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#3ddb8f" strokeWidth="1.4" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-            <div className="text-sm font-extrabold text-ys-text">Analizar conversaciones</div>
-            <div className="text-[12.5px] text-ys-dim font-medium truncate">
-              Usá IA para detectar oportunidades comerciales entre tus contactos.
+        {puedeImportar && (
+          <button
+            onClick={onAnalyzeClick}
+            className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left cursor-pointer transition-colors hover:border-ys-green-border"
+          >
+            <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-dark flex items-center justify-center">
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
+                <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#3ddb8f" strokeWidth="1.4" strokeLinejoin="round" />
+              </svg>
             </div>
-          </div>
-          <span className="flex-none text-[13px] font-bold text-ys-text bg-white border border-ys-green-border rounded-[10px] px-4 py-2.5">
-            Analizar
-          </span>
-        </button>
+            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+              <div className="text-sm font-extrabold text-ys-text">Analizar conversaciones</div>
+              <div className="text-[12.5px] text-ys-dim font-medium truncate">
+                Usá IA para detectar oportunidades comerciales entre tus contactos.
+              </div>
+            </div>
+            <span className="flex-none text-[13px] font-bold text-ys-text bg-white border border-ys-green-border rounded-[10px] px-4 py-2.5">
+              Analizar
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Métricas — también funcionan como filtros (funcionalidad real) */}

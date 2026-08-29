@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { assertPermiso } from "@/lib/auth/permisos";
 import type { SyncConfig, SyncResult } from "@/lib/types";
 import { logActivity } from "@/lib/actions/activity";
 
@@ -21,6 +22,19 @@ const SYNC_ANALIZAR_WEBHOOK_URL =
 export async function syncAndAnalyzeAction(
   config: SyncConfig,
 ): Promise<SyncResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("importar_contactos");
+  if (!gate.ok) return {
+      success: false,
+      contactosProcesados: 0,
+      contactosAnalizados: 0,
+      contactosOmitidos: 0,
+      leadsIdentificados: 0,
+      erroresGuardado: 0,
+      error: gate.error ?? undefined,
+    };
+
   const supabase = await createClient();
 
   const {
@@ -163,6 +177,11 @@ export async function generarTemplateConIAAction(
   descripcion: string,
   categoria: string,
 ): Promise<GenerarTemplateIAResult> {
+  // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
+  // escondido no impide invocar el server action directamente.
+  const gate = await assertPermiso("crear_templates");
+  if (!gate.ok) return { sugerencia: null, error: gate.error };
+
   if (!descripcion.trim()) {
     return { sugerencia: null, error: "Contá qué querés comunicar para poder generar el mensaje." };
   }
