@@ -398,6 +398,40 @@ export interface SendCampaignResult {
  * campañas programadas cuya fecha_programada ya venció (en ese caso el
  * propio n8n llama a este mismo webhook directamente, sin pasar por acá).
  */
+
+/**
+ * Verifica que el empleado tenga créditos suficientes para una campaña.
+ *
+ * El saldo se lee server-side vía RPC y nunca se acepta del cliente. Devuelve
+ * ok:true cuando el gate no aplica (empleado independiente), para no romper
+ * el flujo de las cuentas que no dependen de una empresa.
+ */
+async function verificarSaldoParaEnvio(
+  destinatarios: number,
+): Promise<{ ok: boolean; error: string | null }> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("yamas_send_mi_saldo");
+
+  // Fallar abierto acá es deliberado: si la consulta de saldo se rompe, es
+  // peor bloquear a todo el mundo que dejar pasar un envío. El permiso de
+  // enviar_campanas ya se validó arriba.
+  if (error || !data) return { ok: true, error: null };
+
+  const s = data as { aplica?: boolean; saldo?: number };
+  if (!s.aplica) return { ok: true, error: null };
+
+  const saldo = s.saldo ?? 0;
+  if (saldo >= destinatarios) return { ok: true, error: null };
+
+  return {
+    ok: false,
+    error:
+      saldo === 0
+        ? "No te quedan créditos. Pedile a tu empresa que te asigne más."
+        : `Te quedan ${saldo} créditos y esta campaña necesita ${destinatarios}. Pedile más a tu empresa o achicá la audiencia.`,
+  };
+}
+
 export async function sendCampaignAction(
   campaignId: string,
   listaId: string,
@@ -410,6 +444,16 @@ export async function sendCampaignAction(
   // escondido no impide invocar el server action directamente.
   const gate = await assertPermiso("enviar_campanas");
   if (!gate.ok) return { ok: false, error: gate.error };
+
+  // Gate de créditos. Se bloquea la campaña ENTERA si el saldo no alcanza para
+  // todos los destinatarios, en vez de enviar hasta agotar: una campaña a
+  // medias es peor que ninguna, porque nadie sabe a quién le llegó y Meta
+  // cobra igual por cada mensaje que sí salió.
+  //
+  // Solo aplica a empleados de una organización: un independiente no tiene
+  // empresa que le administre cupo (lo decide yamas_send_mi_saldo).
+  const saldoCheck = await verificarSaldoParaEnvio(total);
+  if (!saldoCheck.ok) return { ok: false, error: saldoCheck.error };
 
   const supabase = await createClient();
 

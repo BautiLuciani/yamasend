@@ -46,7 +46,14 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
     ventasTel: row.ventas_tel ?? "",
     plan: (row.plan as PlanKey) ?? "starter",
     trialEnd: row.trialend ?? new Date().toISOString(),
-    credito: row.credito ? parseFloat(row.credito) : 0,
+    // Un empleado de una organización tiene su cupo administrado por la
+    // empresa; uno independiente sigue con el campo legacy de
+    // yamas_inmo_clientes, que es como funciona hoy.
+    credito: membership.orgId
+      ? Math.max(membership.creditosAsignados - membership.creditosUsados, 0)
+      : row.credito
+        ? parseFloat(row.credito)
+        : 0,
     nombreEmpresa: row.nombre_empresa ?? "",
     rubro: row.rubro ?? "",
     descripcionNegocio: row.descripcion_negocio ?? "",

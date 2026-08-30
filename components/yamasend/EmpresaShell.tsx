@@ -246,6 +246,7 @@ export default function EmpresaShell({
           <EmpresaEmpleadosSection
             empleados={empleados}
             invitaciones={invitaciones}
+            creditosPool={stats?.creditosPool ?? empresa.creditosPool}
             onVerEmpleado={verEmpleado}
             onRefrescar={refrescar}
           />

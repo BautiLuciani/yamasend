@@ -9,6 +9,7 @@ import {
 } from "@/lib/types";
 import {
   actualizarPermisosEmpleadoAction,
+  asignarCreditosAction,
   cambiarEstadoEmpleadoAction,
   quitarEmpleadoAction,
   revocarInvitacionAction,
@@ -19,6 +20,7 @@ import InvitarEmpleadoModal from "./InvitarEmpleadoModal";
 interface Props {
   empleados: EmpleadoResumen[];
   invitaciones: EmpresaInvitacion[];
+  creditosPool: number;
   onVerEmpleado: (tenantId: string) => void;
   onRefrescar: () => void;
 }
@@ -93,9 +95,12 @@ function PermisoToggle({
 export default function EmpresaEmpleadosSection({
   empleados,
   invitaciones,
+  creditosPool,
   onVerEmpleado,
   onRefrescar,
 }: Props) {
+  const [asignando, setAsignando] = useState<EmpleadoResumen | null>(null);
+  const [montoAsignar, setMontoAsignar] = useState("");
   const [invitarAbierto, setInvitarAbierto] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +155,31 @@ export default function EmpresaEmpleadosSection({
     else onRefrescar();
   }
 
+  async function confirmarAsignacion(sumar: boolean) {
+    if (!asignando) return;
+    const monto = parseInt(montoAsignar, 10);
+    if (!Number.isFinite(monto) || monto <= 0) {
+      setError("Ingresá una cantidad válida.");
+      return;
+    }
+
+    setOcupado(asignando.miembroId);
+    setError(null);
+    const res = await asignarCreditosAction(
+      asignando.miembroId,
+      sumar ? monto : -monto,
+    );
+    setOcupado(null);
+
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    setAsignando(null);
+    setMontoAsignar("");
+    onRefrescar();
+  }
+
   async function revocar(id: string) {
     setOcupado(id);
     const res = await revocarInvitacionAction(id);
@@ -182,6 +212,26 @@ export default function EmpresaEmpleadosSection({
           </svg>
           Invitar empleado
         </button>
+      </div>
+
+      <div className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-4 flex-wrap">
+        <div className="flex flex-col gap-1">
+          <span className="text-[12.5px] font-semibold text-ys-dim">
+            Créditos en el pool
+          </span>
+          <span className="text-[26px] font-extrabold font-mono tracking-[-0.02em] text-ys-text leading-none">
+            {creditosPool}
+          </span>
+        </div>
+        <div className="flex flex-col gap-1 pl-4 border-l border-ys-border-softest">
+          <span className="text-[12.5px] font-semibold text-ys-dim">Repartidos</span>
+          <span className="text-[26px] font-extrabold font-mono tracking-[-0.02em] text-ys-green-text leading-none">
+            {empleados.reduce((t, e) => t + e.creditosSaldo, 0)}
+          </span>
+        </div>
+        <span className="ml-auto text-[12.5px] font-medium text-ys-dim max-w-[280px]">
+          1 crédito = 1 mensaje enviado. Para cargar más, escribinos.
+        </span>
       </div>
 
       {error && (
@@ -345,6 +395,17 @@ export default function EmpresaEmpleadosSection({
                     </button>
                   )}
                   <button
+                    onClick={() => {
+                      setAsignando(emp);
+                      setMontoAsignar("");
+                      setError(null);
+                    }}
+                    disabled={trabajando}
+                    className="text-[13px] font-bold text-[#3f4844] bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-40"
+                  >
+                    Créditos
+                  </button>
+                  <button
                     onClick={() => onVerEmpleado(emp.tenantId)}
                     className="text-[13px] font-bold text-[#3f4844] bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
                   >
@@ -402,6 +463,63 @@ export default function EmpresaEmpleadosSection({
                 Quitar del equipo
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {asignando && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-[rgba(16,24,20,0.45)]"
+            onClick={() => setAsignando(null)}
+          />
+          <div className="relative w-full max-w-[440px] bg-white border border-ys-border rounded-2xl p-5 md:p-6 flex flex-col gap-4 shadow-[0_20px_48px_rgba(16,24,20,0.18)]">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-[17px] font-extrabold text-ys-text">
+                Créditos de {asignando.nombre}
+              </h2>
+              <p className="text-[13px] text-ys-dim font-medium">
+                Tiene {asignando.creditosSaldo} sin usar. En el pool hay {creditosPool}.
+              </p>
+            </div>
+
+            <input
+              type="number"
+              min="1"
+              value={montoAsignar}
+              onChange={(e) => setMontoAsignar(e.target.value)}
+              placeholder="Cantidad"
+              className="bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[14px] font-semibold font-mono text-ys-text outline-none focus:border-ys-green-border"
+            />
+
+            {error && (
+              <span className="text-[12.5px] font-semibold text-ys-red-text">
+                {error}
+              </span>
+            )}
+
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => confirmarAsignacion(false)}
+                disabled={ocupado === asignando.miembroId}
+                className="flex-1 text-[13.5px] font-bold text-[#3f4844] bg-white border border-ys-border rounded-[10px] px-4 py-[11px] cursor-pointer hover:bg-[#f7f9f8] disabled:opacity-40"
+              >
+                Sacar
+              </button>
+              <button
+                onClick={() => confirmarAsignacion(true)}
+                disabled={ocupado === asignando.miembroId}
+                className="flex-1 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-4 py-[11px] cursor-pointer hover:bg-ys-green-hover disabled:opacity-40"
+              >
+                Asignar
+              </button>
+            </div>
+            <button
+              onClick={() => setAsignando(null)}
+              className="text-[13px] font-semibold text-ys-dim cursor-pointer hover:underline"
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       )}

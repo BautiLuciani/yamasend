@@ -406,3 +406,51 @@ export async function revocarInvitacionAction(
   if (error) return { ok: false, error: "No se pudo revocar la invitación." };
   return traducir(data);
 }
+
+/**
+ * Reparte créditos del pool a un empleado (cantidad positiva) o se los saca
+ * y los devuelve al pool (cantidad negativa).
+ *
+ * La operación es atómica sobre pool y empleado dentro de Postgres, con
+ * FOR UPDATE en ambas filas: dos asignaciones simultáneas podrían gastar el
+ * mismo crédito del pool dos veces.
+ */
+export async function asignarCreditosAction(
+  miembroId: string,
+  cantidad: number,
+): Promise<AccionResult & { pool: number | null; saldo: number | null }> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso, pool: null, saldo: null };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_asignar_creditos",
+    { p_miembro_id: miembroId, p_cantidad: cantidad },
+  );
+  if (error)
+    return { ok: false, error: "No se pudieron asignar los créditos.", pool: null, saldo: null };
+
+  const r = data as {
+    ok?: boolean;
+    error?: string;
+    pool?: number;
+    saldo?: number;
+  } | null;
+
+  if (r?.ok) {
+    return { ok: true, error: null, pool: r.pool ?? null, saldo: r.saldo ?? null };
+  }
+
+  const mensajes: Record<string, string> = {
+    pool_insuficiente: `El pool no alcanza. Disponibles: ${r?.pool ?? 0} créditos.`,
+    saldo_insuficiente: `No podés sacarle más de ${r?.saldo ?? 0} créditos: el resto ya los usó.`,
+    cantidad_invalida: "Ingresá una cantidad distinta de cero.",
+  };
+
+  return {
+    ok: false,
+    error: mensajes[r?.error ?? ""] ?? ERRORES[r?.error ?? ""] ?? "No se pudo completar.",
+    pool: null,
+    saldo: null,
+  };
+}
