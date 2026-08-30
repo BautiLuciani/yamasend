@@ -63,7 +63,7 @@ export const getCurrentMembership = cache(
       supabase
         .from("yamas_send_miembros")
         .select(
-          "id, org_id, tenant_id, rol, estado, permisos, creditos_asignados, creditos_usados",
+          "id, org_id, tenant_id, rol, estado, permisos, creditos_asignados, creditos_usados, nombre_display",
         )
         .eq("auth_user_id", user.id)
         .maybeSingle();
@@ -106,6 +106,7 @@ export const getCurrentMembership = cache(
 
     return {
       miembroId: row.id,
+      nombreDisplay: row.nombre_display ?? null,
       orgId: row.org_id ?? null,
       orgNombre,
       tenantId: row.tenant_id ?? null,

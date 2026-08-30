@@ -9,10 +9,14 @@ export default function LoginGate({
   initialTab,
   redirectTo = "/panel",
   inviteToken = null,
+  esInvitacionEmpresa = false,
+  organizacionInvita = null,
 }: {
   initialTab?: "login" | "register";
   redirectTo?: string;
   inviteToken?: string | null;
+  esInvitacionEmpresa?: boolean;
+  organizacionInvita?: string | null;
 }) {
   const router = useRouter();
 
@@ -43,6 +47,8 @@ export default function LoginGate({
       onRegister={handleRegister}
       initialTab={initialTab}
       inviteToken={inviteToken}
+      esInvitacionEmpresa={esInvitacionEmpresa}
+      organizacionInvita={organizacionInvita}
       onTabChange={(next) => {
         // Actualiza solo la URL visible, sin disparar navegación de Next
         // (que activaría el Suspense/loading.tsx de /login o /register

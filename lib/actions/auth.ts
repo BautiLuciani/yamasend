@@ -37,6 +37,7 @@ export async function loginAction(
 export async function registerAction(data: {
   nombre: string;
   email: string;
+  /** Vacío para cuentas de empresa: no tienen WhatsApp propio. */
   whatsapp: string;
   password: string;
   plan: PlanKey;
@@ -68,7 +69,14 @@ export async function registerAction(data: {
     .toISOString()
     .split("T")[0];
 
-  const { error: insertError } = await supabase
+  // Una cuenta de empresa no tiene WhatsApp, así que no lleva fila en
+  // yamas_inmo_clientes. Ese hueco es lo que la deja bloqueada de todas las
+  // tablas base por RLS, que es exactamente lo que queremos.
+  const esEmpresa = waClean.length === 0;
+
+  const { error: insertError } = esEmpresa
+    ? { error: null }
+    : await supabase
     .from("yamas_inmo_clientes")
     .insert({
       ID: waClean,
@@ -97,7 +105,7 @@ export async function registerAction(data: {
   const { data: alta, error: rpcError } = await supabase.rpc(
     "yamas_send_registrar_miembro",
     {
-      p_tenant_id: waClean,
+      p_tenant_id: esEmpresa ? null : waClean,
       p_nombre: data.nombre,
       p_invite_token: data.inviteToken?.trim() || null,
     },
@@ -135,4 +143,54 @@ export async function registerAction(data: {
 export async function logoutAction(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
+}
+
+
+export interface InfoInvitacion {
+  valida: boolean;
+  rol: "empresa" | "empleado" | null;
+  email: string | null;
+  organizacion: string | null;
+}
+
+/**
+ * Resuelve qué tipo de invitación es un token, para que /register sepa si
+ * pedir el número de WhatsApp (empleado) o no (empresa, que es una consola
+ * de gestión sin WhatsApp propio).
+ *
+ * Corre sin sesión, porque quien se va a registrar todavía no la tiene. La
+ * función de Postgres expone solo el rol, el email y el nombre de la
+ * organización: nunca los permisos ni el token en sí.
+ */
+export async function getInfoInvitacionAction(
+  token: string,
+): Promise<InfoInvitacion> {
+  const vacio: InfoInvitacion = {
+    valida: false,
+    rol: null,
+    email: null,
+    organizacion: null,
+  };
+  if (!token?.trim()) return vacio;
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("yamas_send_info_invitacion", {
+    p_token: token.trim(),
+  });
+  if (error || !data) return vacio;
+
+  const r = data as {
+    valida?: boolean;
+    rol?: string;
+    email?: string;
+    organizacion?: string;
+  };
+  if (!r.valida) return vacio;
+
+  return {
+    valida: true,
+    rol: (r.rol as "empresa" | "empleado") ?? "empleado",
+    email: r.email ?? null,
+    organizacion: r.organizacion ?? null,
+  };
 }

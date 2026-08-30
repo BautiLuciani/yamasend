@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentMembership } from "@/lib/auth/permisos";
+import { getInfoInvitacionAction } from "@/lib/actions/auth";
 import LoginGate from "../login-gate";
 
 export default async function RegisterPage({
@@ -16,5 +17,16 @@ export default async function RegisterPage({
     redirect("/panel");
   }
 
-  return <LoginGate initialTab="register" inviteToken={invite ?? null} />;
+  // El tipo de invitación se resuelve en el servidor: el cliente no puede
+  // decidir que su registro es "de empresa" para saltearse el WhatsApp.
+  const info = invite ? await getInfoInvitacionAction(invite) : null;
+
+  return (
+    <LoginGate
+      initialTab="register"
+      inviteToken={invite ?? null}
+      esInvitacionEmpresa={info?.valida === true && info.rol === "empresa"}
+      organizacionInvita={info?.organizacion ?? null}
+    />
+  );
 }

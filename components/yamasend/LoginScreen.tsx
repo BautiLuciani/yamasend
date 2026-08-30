@@ -24,6 +24,14 @@ interface LoginScreenProps {
    * partir del token, nunca este componente.
    */
   inviteToken?: string | null;
+  /**
+   * true cuando el token corresponde a una invitación de EMPRESA. Una cuenta
+   * de empresa es una consola de gestión y no tiene WhatsApp propio, así que
+   * el campo no aplica.
+   */
+  esInvitacionEmpresa?: boolean;
+  /** Nombre de la organización que invita, para dar contexto en el form. */
+  organizacionInvita?: string | null;
 }
 
 const PLANS: { key: PlanKey; nombre: string; precio: string; features: string[] }[] = [
@@ -59,6 +67,8 @@ export default function LoginScreen({
   initialTab = "login",
   onTabChange,
   inviteToken = null,
+  esInvitacionEmpresa = false,
+  organizacionInvita = null,
 }: LoginScreenProps) {
   const [tab, setTabState] = useState<"login" | "register">(initialTab);
   const setTab = (next: "login" | "register") => {
@@ -108,7 +118,7 @@ export default function LoginScreen({
   const paso1Valido =
     regNombre.trim().length > 0 &&
     emailValid &&
-    regWa.trim().length > 0 &&
+    (esInvitacionEmpresa || regWa.trim().length > 0) &&
     pwValid;
 
   async function handleLogin() {
@@ -138,7 +148,7 @@ export default function LoginScreen({
 
   async function handleCrearCuenta() {
     setRegErr("");
-    if (!regNombre || !regEmail || !regWa) {
+    if (!regNombre || !regEmail || (!esInvitacionEmpresa && !regWa)) {
       setRegErr("Nombre, email y número de WhatsApp son obligatorios.");
       return;
     }
@@ -154,7 +164,7 @@ export default function LoginScreen({
     const err = await onRegister({
       nombre: regNombre,
       email: regEmail,
-      whatsapp: regWa,
+      whatsapp: esInvitacionEmpresa ? "" : regWa,
       password: regPw,
       plan: regPlan,
       inviteToken,
@@ -169,7 +179,7 @@ export default function LoginScreen({
 
   function handleContinuarPaso1() {
     setRegErr("");
-    if (!regNombre || !regEmail || !regWa) {
+    if (!regNombre || !regEmail || (!esInvitacionEmpresa && !regWa)) {
       setRegErr("Nombre, email y número de WhatsApp son obligatorios.");
       return;
     }
@@ -474,6 +484,17 @@ export default function LoginScreen({
                         )}
                       </div>
 
+                      {organizacionInvita && (
+                        <div className="bg-ys-green-bg border border-ys-green-border rounded-[10px] px-3.5 py-2.5">
+                          <div className="text-[12.5px] font-semibold text-ys-green-text">
+                            {esInvitacionEmpresa
+                              ? `Estás creando la cuenta de empresa de ${organizacionInvita}.`
+                              : `Te invitaron a sumarte a ${organizacionInvita}.`}
+                          </div>
+                        </div>
+                      )}
+
+                      {!esInvitacionEmpresa && (
                       <div className="flex flex-col gap-[7px]">
                         <div className="text-[12.5px] font-extrabold text-ys-text">
                           WhatsApp Business
@@ -494,6 +515,7 @@ export default function LoginScreen({
                           Tu número de Meta Business — ID de cuenta.
                         </div>
                       </div>
+                      )}
 
                       <div className="flex flex-col gap-[9px]">
                         <div className="text-[12.5px] font-extrabold text-ys-text">Contraseña</div>

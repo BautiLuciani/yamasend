@@ -545,6 +545,7 @@ export const PERMISOS_COMPLETOS: Permisos = {
 /** Membresía del usuario logueado: quién es y qué puede hacer. */
 export interface Membership {
   miembroId: string;
+  nombreDisplay: string | null;
   orgId: string | null;
   orgNombre: string | null;
   tenantId: string | null; // null para empresa/admin (no tienen WhatsApp)
