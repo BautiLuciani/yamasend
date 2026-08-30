@@ -71,6 +71,15 @@ const NAV_ITEMS: {
     ),
   },
   {
+    key: "ia",
+    label: "Asistente",
+    icon: (c) => (
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+        <path d="M8 2.2 9.1 6 12.9 7.1 9.1 8.2 8 12 6.9 8.2 3.1 7.1 6.9 6 8 2.2Z" stroke={c} strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     key: "campanas",
     label: "Campañas",
     icon: (c) => (

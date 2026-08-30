@@ -5,6 +5,7 @@ import Image from "next/image";
 import type { EmpleadoResumen, EmpresaSection, EmpresaUser } from "@/lib/types";
 import EmpresaSidebar from "./EmpresaSidebar";
 import EmpresaDashboardSection from "./EmpresaDashboardSection";
+import EmpresaIA from "./EmpresaIA";
 import EmpresaEmpleadosSection from "./EmpresaEmpleadosSection";
 import {
   EmpresaAudienciasSection,
@@ -37,6 +38,7 @@ const VALID_SECTIONS: EmpresaSection[] = [
   "audiencias",
   "templates",
   "campanas",
+  "ia",
 ];
 
 interface Props {
@@ -219,7 +221,9 @@ export default function EmpresaShell({
                 >
                   {key === "campanas"
                     ? "Campañas"
-                    : key.charAt(0).toUpperCase() + key.slice(1)}
+                    : key === "ia"
+                      ? "Asistente"
+                      : key.charAt(0).toUpperCase() + key.slice(1)}
                 </button>
               ))}
             </div>
@@ -233,7 +237,13 @@ export default function EmpresaShell({
         </div>
       )}
 
-      <div className="flex-1 min-w-0 flex flex-col overflow-y-auto pt-[58px] md:pt-0">
+      {/* El chat maneja su propio scroll interno y necesita altura fija; el
+          resto de las secciones scrollean el contenedor. */}
+      <div
+        className={`flex-1 min-w-0 flex flex-col pt-[58px] md:pt-0 ${
+          section === "ia" ? "overflow-hidden h-screen" : "overflow-y-auto"
+        }`}
+      >
         {section === "dashboard" && (
           <EmpresaDashboardSection
             stats={stats}
@@ -318,6 +328,8 @@ export default function EmpresaShell({
             <EmpresaTemplatesSection templates={templates} />
           </div>
         )}
+
+        {section === "ia" && <EmpresaIA orgNombre={empresa.orgNombre} />}
 
         {section === "campanas" && (
           <div className="flex flex-col gap-5 px-4 md:px-[38px] pt-3 md:pt-[34px] pb-[34px]">

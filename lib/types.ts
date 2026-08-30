@@ -568,7 +568,8 @@ export type EmpresaSection =
   | "contactos"
   | "audiencias"
   | "templates"
-  | "campanas";
+  | "campanas"
+  | "ia";
 
 /** Secciones de navegación del sidebar / drawer mobile (diseño Claude Design). */
 export type AppSection =
