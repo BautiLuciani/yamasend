@@ -161,6 +161,8 @@ export interface EmpleadoResumen {
   mensajesError: number;
   mensajesLeidos: number;
   ultimaActividadAt: string | null;
+  /** false = le falta que le carguen el WhatsApp Business; no puede enviar. */
+  whatsappConfigurado: boolean;
 }
 
 /**

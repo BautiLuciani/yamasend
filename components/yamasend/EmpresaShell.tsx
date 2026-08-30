@@ -13,8 +13,10 @@ import {
   EmpresaTemplatesSection,
   SectionHeader,
 } from "./EmpresaSections";
+import { useRouter } from "next/navigation";
 import {
   getEmpresaAudienciasAction,
+  getEmpresaInvitacionesAction,
   getEmpresaCampanasAction,
   getEmpresaContactosAction,
   getEmpresaTemplatesAction,
@@ -22,6 +24,7 @@ import {
   type EmpresaCampana,
   type EmpresaContacto,
   type EmpresaDashboard,
+  type EmpresaInvitacion,
   type EmpresaTemplate,
 } from "@/lib/actions/empresa";
 
@@ -60,6 +63,7 @@ export default function EmpresaShell({
       : "dashboard";
   }
 
+  const router = useRouter();
   const [section, setSectionState] = useState<EmpresaSection>(getInitialSection);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -85,6 +89,7 @@ export default function EmpresaShell({
   const [contactosBusqueda, setContactosBusqueda] = useState("");
   const [contactosCargando, setContactosCargando] = useState(false);
 
+  const [invitaciones, setInvitaciones] = useState<EmpresaInvitacion[]>([]);
   const [audiencias, setAudiencias] = useState<EmpresaAudiencia[]>([]);
   const [templates, setTemplates] = useState<EmpresaTemplate[]>([]);
   const [campanas, setCampanas] = useState<EmpresaCampana[]>([]);
@@ -110,6 +115,21 @@ export default function EmpresaShell({
     const t = setTimeout(cargarContactos, 250);
     return () => clearTimeout(t);
   }, [section, cargarContactos]);
+
+  useEffect(() => {
+    if (section === "empleados") {
+      getEmpresaInvitacionesAction().then(setInvitaciones);
+    }
+  }, [section]);
+
+  // Tras una escritura (permisos, aprobación, invitación) hay que releer las
+  // métricas y los empleados, que vienen del servidor. router.refresh() vuelve
+  // a ejecutar el Server Component sin perder el estado local del shell —
+  // sección activa, filtro por empleado, paginación.
+  const refrescar = useCallback(() => {
+    router.refresh();
+    getEmpresaInvitacionesAction().then(setInvitaciones);
+  }, [router]);
 
   useEffect(() => {
     if (section === "audiencias") {
@@ -225,7 +245,9 @@ export default function EmpresaShell({
         {section === "empleados" && (
           <EmpresaEmpleadosSection
             empleados={empleados}
+            invitaciones={invitaciones}
             onVerEmpleado={verEmpleado}
+            onRefrescar={refrescar}
           />
         )}
 

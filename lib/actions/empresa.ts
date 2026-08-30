@@ -106,6 +106,7 @@ export async function getEmpresaEmpleadosAction(): Promise<EmpleadoResumen[]> {
     mensajesError: Number(r.mensajes_error ?? 0),
     mensajesLeidos: Number(r.mensajes_leidos ?? 0),
     ultimaActividadAt: (r.ultima_actividad_at as string) ?? null,
+    whatsappConfigurado: r.whatsapp_configurado === true,
   }));
 }
 
@@ -262,4 +263,146 @@ export async function getEmpresaCampanasAction(
     enviadoAt: (r.enviado_at as string) ?? null,
     createdAt: (r.created_at as string) ?? null,
   }));
+}
+
+/* ═══════════════════════ Escrituras de gestión ═══════════════════════
+ *
+ * Todas van por RPCs SECURITY DEFINER que validan, dentro de Postgres, que
+ * el empleado destino pertenece a la organización del que llama. La guarda
+ * assertEmpresa() de acá es una primera barrera, pero NO es la que protege:
+ * si alguien invocara el server action salteándola, la RPC lo rechaza igual.
+ */
+
+export interface AccionResult {
+  ok: boolean;
+  error: string | null;
+}
+
+const ERRORES: Record<string, string> = {
+  sin_permiso: "No tenés permiso para hacer esto.",
+  no_encontrado: "No se encontró ese empleado en tu equipo.",
+  estado_invalido: "Ese estado no es válido.",
+  email_invalido: "El email no tiene un formato válido.",
+};
+
+function traducir(res: unknown): AccionResult {
+  const r = res as { ok?: boolean; error?: string } | null;
+  if (r?.ok) return { ok: true, error: null };
+  const codigo = r?.error ?? "";
+  return { ok: false, error: ERRORES[codigo] ?? "No se pudo completar la acción." };
+}
+
+export async function actualizarPermisosEmpleadoAction(
+  miembroId: string,
+  permisos: Permisos,
+): Promise<AccionResult> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_actualizar_permisos",
+    { p_miembro_id: miembroId, p_permisos: permisos },
+  );
+  if (error) return { ok: false, error: "No se pudieron guardar los permisos." };
+  return traducir(data);
+}
+
+export async function cambiarEstadoEmpleadoAction(
+  miembroId: string,
+  estado: "activo" | "suspendido",
+): Promise<AccionResult> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_cambiar_estado",
+    { p_miembro_id: miembroId, p_estado: estado },
+  );
+  if (error) return { ok: false, error: "No se pudo cambiar el estado." };
+  return traducir(data);
+}
+
+export async function quitarEmpleadoAction(
+  miembroId: string,
+): Promise<AccionResult> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_quitar_empleado",
+    { p_miembro_id: miembroId },
+  );
+  if (error) return { ok: false, error: "No se pudo quitar al empleado." };
+  return traducir(data);
+}
+
+export interface EmpresaInvitacion {
+  id: string;
+  email: string;
+  nombreSugerido: string | null;
+  /** null cuando la invitación ya no sirve (usada, revocada o vencida). */
+  token: string | null;
+  estado: string;
+  expiraAt: string | null;
+  createdAt: string | null;
+}
+
+export async function getEmpresaInvitacionesAction(): Promise<EmpresaInvitacion[]> {
+  if (!(await assertEmpresa())) return [];
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("yamas_send_empresa_invitaciones");
+  if (error || !data) return [];
+
+  return (data as Record<string, unknown>[]).map((r) => ({
+    id: String(r.id),
+    email: String(r.email ?? ""),
+    nombreSugerido: (r.nombre_sugerido as string) ?? null,
+    token: (r.token as string) ?? null,
+    estado: String(r.estado ?? "pendiente"),
+    expiraAt: (r.expira_at as string) ?? null,
+    createdAt: (r.created_at as string) ?? null,
+  }));
+}
+
+export interface CrearInvitacionResult extends AccionResult {
+  token: string | null;
+}
+
+export async function crearInvitacionAction(
+  email: string,
+  nombre: string,
+  permisos: Permisos,
+): Promise<CrearInvitacionResult> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso, token: null };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_crear_invitacion",
+    { p_email: email, p_nombre: nombre || null, p_permisos: permisos },
+  );
+  if (error) return { ok: false, error: "No se pudo crear la invitación.", token: null };
+
+  const base = traducir(data);
+  const r = data as { token?: string } | null;
+  return { ...base, token: base.ok ? (r?.token ?? null) : null };
+}
+
+export async function revocarInvitacionAction(
+  id: string,
+): Promise<AccionResult> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_revocar_invitacion",
+    { p_id: id },
+  );
+  if (error) return { ok: false, error: "No se pudo revocar la invitación." };
+  return traducir(data);
 }
