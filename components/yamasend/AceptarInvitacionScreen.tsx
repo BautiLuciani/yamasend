@@ -41,16 +41,31 @@ export default function AceptarInvitacionScreen({
     setCargando(true);
     setError(null);
     const res = await aceptarInvitacionExistenteAction(token);
-    setCargando(false);
 
     if (!res.ok) {
+      // Solo se rehabilita el botón si falló: si salió bien, la navegación ya
+      // está en camino y dejarlo clickeable permitía un segundo click real
+      // sobre una invitación ya consumida (que devolvía "ya_tiene_empresa").
+      setCargando(false);
       setError(res.error);
       return;
     }
-    // /panel decide solo qué mostrar: si la invitación pedía aprobación, la
-    // membresía quedó pendiente y cae en la pared de espera.
-    router.push("/panel");
-    router.refresh();
+
+    // Navegación dura y no router.push() + router.refresh().
+    //
+    // Aceptar cambia la membresía de "empleado independiente activo" a
+    // "pendiente", así que /panel tiene que renderizar algo completamente
+    // distinto (la pared de espera en vez de la app). El problema es que
+    // /panel ya estaba en el Router Cache de Next con el árbol viejo: push()
+    // servía ese árbol cacheado y refresh() salía a buscar el nuevo en
+    // paralelo, dos navegaciones compitiendo por la misma ruta. El resultado
+    // era que el primer click no cambiaba nada a la vista, aunque del lado del
+    // servidor ya estuviera todo hecho.
+    //
+    // Un assign() fuerza un render limpio desde el servidor con el estado
+    // nuevo. Cuesta una recarga completa, pero esto pasa una sola vez en la
+    // vida de la cuenta y a cambio es determinístico.
+    window.location.assign("/panel");
   }
 
   const empresa = organizacion ?? "una empresa";
