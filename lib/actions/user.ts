@@ -177,20 +177,3 @@ export async function getContactsForTenant(
 }
 
 
-/**
- * Estado de la membresía del usuario logueado.
- *
- * La usa la pantalla de "esperando aprobación" para darse cuenta sola de que
- * la empresa ya lo aceptó, sin que tenga que refrescar a mano. Se resolvió con
- * un sondeo liviano y no con Realtime a propósito: activar Realtime sobre
- * yamas_send_miembros obliga a exponer esa tabla en la publicación y a sumarle
- * una policy pensada para replicación, y es una tabla de permisos. Una consulta
- * cada 10 segundos, solo mientras esta pantalla está abierta y solo para
- * cuentas pendientes, es muchísimo menos superficie por el mismo resultado.
- */
-export async function getMiEstadoMembresiaAction(): Promise<
-  "pendiente" | "activo" | "suspendido" | null
-> {
-  const membership = await getCurrentMembership();
-  return membership?.estado ?? null;
-}

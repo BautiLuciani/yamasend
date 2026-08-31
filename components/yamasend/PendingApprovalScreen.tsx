@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { getMiEstadoMembresiaAction } from "@/lib/actions/user";
+import { getMiEstadoMembresiaAction } from "@/lib/actions/membresia";
 
 /**
  * Pantalla que ve un empleado que se registró con un link de invitación pero
