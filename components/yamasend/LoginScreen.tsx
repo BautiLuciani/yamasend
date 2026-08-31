@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import type { PlanKey } from "@/lib/types";
 
 const RECORDAR_EMAIL_KEY = "yamasend_recordar_email";
 
@@ -13,7 +12,14 @@ interface LoginScreenProps {
     email: string;
     whatsapp: string;
     password: string;
-    plan: PlanKey;
+    /**
+     * Qué tipo de cuenta pidió el usuario. Llega hasta la función de Postgres,
+     * que es la que decide el rol de verdad: acá es una intención, no un
+     * permiso. "empresa" solo puede crear una organización nueva.
+     */
+    tipoCuenta: "individual" | "empresa";
+    /** Solo para tipoCuenta "empresa": nombre de la organización a crear. */
+    nombreEmpresa?: string | null;
     inviteToken?: string | null;
   }) => Promise<string | null>;
   initialTab?: "login" | "register";
@@ -34,30 +40,56 @@ interface LoginScreenProps {
   organizacionInvita?: string | null;
 }
 
-const PLANS: { key: PlanKey; nombre: string; precio: string; features: string[] }[] = [
+type TipoCuenta = "individual" | "empresa";
+
+/**
+ * Las dos formas de entrar a YamaSend. Se muestran como cards antes del
+ * formulario porque elegir mal acá significa terminar con una cuenta que no
+ * hace lo que el usuario esperaba: por eso cada una aclara también lo que NO
+ * hace, que es donde está la confusión real (una cuenta empresa no manda
+ * mensajes).
+ */
+const TIPOS: {
+  key: TipoCuenta;
+  nombre: string;
+  resumen: string;
+  features: string[];
+  nota: string;
+  icon: React.ReactNode;
+}[] = [
   {
-    key: "starter",
-    nombre: "Starter",
-    precio: "USD 100 /mes",
-    features: ["500 msgs/día", "1 número WA", "AI calificación leads", "Panel Ycloud.com"],
-  },
-  {
-    key: "pro",
-    nombre: "Pro",
-    precio: "USD 200 /mes",
+    key: "individual",
+    nombre: "Cuenta individual",
+    resumen: "Para vos y tu WhatsApp Business.",
     features: [
-      "Ilimitado msgs/día",
-      "3 números WA",
-      "AI calificación leads",
-      "Panel Ycloud.com",
-      "Slack 24/7",
+      "Importás tus contactos",
+      "Creás audiencias, templates y campañas",
+      "Asistente de IA sobre tus conversaciones",
     ],
+    nota: "Necesitás tu número de WhatsApp Business.",
+    icon: (
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="5.5" r="2.6" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M3 13.5c0-2.4 2.2-3.8 5-3.8s5 1.4 5 3.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
   },
   {
-    key: "uso",
-    nombre: "Uso",
-    precio: "USD 0,15 /msg",
-    features: ["Sin límite diario", "1 número WA", "AI calificación leads", "Panel Ycloud.com"],
+    key: "empresa",
+    nombre: "Cuenta empresa",
+    resumen: "Para gestionar a tu equipo de vendedores.",
+    features: [
+      "Ves las métricas de cada empleado",
+      "Controlás sus permisos y sus créditos",
+      "Accedés a sus contactos, templates y campañas",
+    ],
+    nota: "No envía mensajes: es una consola de gestión.",
+    icon: (
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+        <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M5.5 5.5h1.2M9.3 5.5h1.2M5.5 8h1.2M9.3 8h1.2M6.5 13.5V11h3v2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
   },
 ];
 
@@ -75,7 +107,9 @@ export default function LoginScreen({
     setTabState(next);
     onTabChange?.(next);
   };
-  const [regStep, setRegStep] = useState<1 | 2>(1);
+  // Con un link de invitación no hay tipo que elegir: el rol ya lo fijó el
+  // token, así que se entra derecho al formulario.
+  const [regStep, setRegStep] = useState<1 | 2>(inviteToken ? 2 : 1);
   const [success, setSuccess] = useState<{ title: string; sub: string } | null>(
     null,
   );
@@ -107,7 +141,10 @@ export default function LoginScreen({
   const [regWa, setRegWa] = useState("");
   const [regPw, setRegPw] = useState("");
   const [regShowPw, setRegShowPw] = useState(false);
-  const [regPlan, setRegPlan] = useState<PlanKey>("starter");
+  const [regTipo, setRegTipo] = useState<TipoCuenta | null>(
+    inviteToken ? "individual" : null,
+  );
+  const [regEmpresaNombre, setRegEmpresaNombre] = useState("");
   const [regErr, setRegErr] = useState("");
   const [regLoading, setRegLoading] = useState(false);
 
@@ -115,10 +152,19 @@ export default function LoginScreen({
   const pwValid = regPw.length >= 8;
   const pwHasUpper = /[A-Z]/.test(regPw);
   const pwHasNumber = /[0-9]/.test(regPw);
-  const paso1Valido =
+  // Una cuenta empresa no tiene WhatsApp propio, y una invitación de empresa
+  // tampoco: en los dos casos el campo directamente no aplica.
+  const esCuentaEmpresa = esInvitacionEmpresa || regTipo === "empresa";
+  const pideWhatsapp = !esCuentaEmpresa;
+  // El nombre de la organización solo se pide en el alta por autoservicio. Si
+  // viene por invitación, la organización ya existe y no hay que crearla.
+  const pideNombreEmpresa = !inviteToken && regTipo === "empresa";
+
+  const formValido =
     regNombre.trim().length > 0 &&
     emailValid &&
-    (esInvitacionEmpresa || regWa.trim().length > 0) &&
+    (!pideWhatsapp || regWa.trim().length > 0) &&
+    (!pideNombreEmpresa || regEmpresaNombre.trim().length >= 2) &&
     pwValid;
 
   async function handleLogin() {
@@ -148,8 +194,16 @@ export default function LoginScreen({
 
   async function handleCrearCuenta() {
     setRegErr("");
-    if (!regNombre || !regEmail || (!esInvitacionEmpresa && !regWa)) {
-      setRegErr("Nombre, email y número de WhatsApp son obligatorios.");
+    if (!regNombre || !regEmail || (pideWhatsapp && !regWa)) {
+      setRegErr(
+        pideWhatsapp
+          ? "Nombre, email y número de WhatsApp son obligatorios."
+          : "Nombre y email son obligatorios.",
+      );
+      return;
+    }
+    if (pideNombreEmpresa && regEmpresaNombre.trim().length < 2) {
+      setRegErr("Ingresá el nombre de tu empresa.");
       return;
     }
     if (!emailValid) {
@@ -164,9 +218,10 @@ export default function LoginScreen({
     const err = await onRegister({
       nombre: regNombre,
       email: regEmail,
-      whatsapp: esInvitacionEmpresa ? "" : regWa,
+      whatsapp: pideWhatsapp ? regWa : "",
       password: regPw,
-      plan: regPlan,
+      tipoCuenta: pideNombreEmpresa ? "empresa" : "individual",
+      nombreEmpresa: pideNombreEmpresa ? regEmpresaNombre.trim() : null,
       inviteToken,
     });
     setRegLoading(false);
@@ -177,20 +232,9 @@ export default function LoginScreen({
     }
   }
 
-  function handleContinuarPaso1() {
+  function handleElegirTipo() {
+    if (!regTipo) return;
     setRegErr("");
-    if (!regNombre || !regEmail || (!esInvitacionEmpresa && !regWa)) {
-      setRegErr("Nombre, email y número de WhatsApp son obligatorios.");
-      return;
-    }
-    if (!emailValid) {
-      setRegErr("Email inválido.");
-      return;
-    }
-    if (!pwValid) {
-      setRegErr("La contraseña debe tener al menos 8 caracteres.");
-      return;
-    }
     setRegStep(2);
   }
 
@@ -212,7 +256,12 @@ export default function LoginScreen({
       <div
         className="relative w-full flex flex-col gap-[26px]"
         style={{
-          maxWidth: tab === "register" && regStep === 2 && !success ? "560px" : "440px",
+          // El selector de tipo necesita más aire para las dos cards en
+          // desktop; el formulario se ve mejor angosto.
+          maxWidth:
+            tab === "register" && regStep === 1 && !inviteToken && !success
+              ? "560px"
+              : "440px",
           animation: "ys-fade-up .24s cubic-bezier(.4,0,.2,1) both",
         }}
       >
@@ -416,25 +465,133 @@ export default function LoginScreen({
 
               {tab === "register" && (
                 <div className="flex flex-col gap-5">
-                  <div className="flex items-center gap-2.5">
-                    <StepBadge n={1} label="Cuenta" state={regStep === 1 ? "on" : "done"} />
-                    <div className="flex-1 h-[1.5px] bg-ys-border-softest rounded-sm overflow-hidden">
-                      <div
-                        className="h-full bg-ys-green transition-[width] duration-200"
-                        style={{ width: regStep > 1 ? "100%" : "0%" }}
+                  {/* Los pasos solo aparecen en el alta abierta. Con un link
+                      de invitación el rol ya viene fijado por el token, así
+                      que no hay tipo que elegir ni paso que mostrar. */}
+                  {!inviteToken && (
+                    <div className="flex items-center gap-2.5">
+                      <StepBadge
+                        n={1}
+                        label="Tipo"
+                        state={regStep === 1 ? "on" : "done"}
+                      />
+                      <div className="flex-1 h-[1.5px] bg-ys-border-softest rounded-sm overflow-hidden">
+                        <div
+                          className="h-full bg-ys-green transition-[width] duration-200"
+                          style={{ width: regStep > 1 ? "100%" : "0%" }}
+                        />
+                      </div>
+                      <StepBadge
+                        n={2}
+                        label="Tus datos"
+                        state={regStep === 2 ? "on" : "pending"}
                       />
                     </div>
-                    <StepBadge n={2} label="Plan" state={regStep === 2 ? "on" : "pending"} />
-                  </div>
+                  )}
 
                   {regStep === 1 && (
+                    <div className="flex flex-col gap-[18px]" style={{ animation: "ys-fade-up .2s cubic-bezier(.4,0,.2,1) both" }}>
+                      <div className="flex flex-col gap-[5px]">
+                        <div className="text-[21px] font-extrabold tracking-[-0.02em] text-ys-text">
+                          ¿Qué tipo de cuenta necesitás?
+                        </div>
+                        <p className="text-[13.5px] text-ys-muted font-medium">
+                          Elegí una para continuar. Si sos parte de un equipo,
+                          pedile el link de invitación a tu empresa.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-[11px]">
+                        {TIPOS.map((tipoCuenta) => {
+                          const active = regTipo === tipoCuenta.key;
+                          return (
+                            <button
+                              key={tipoCuenta.key}
+                              onClick={() => setRegTipo(tipoCuenta.key)}
+                              className={`text-left h-full rounded-[14px] border-[1.5px] px-4 py-[14px] flex flex-col gap-2.5 cursor-pointer transition-all hover:-translate-y-px ${
+                                active
+                                  ? "border-ys-green bg-ys-green-bg"
+                                  : "border-ys-border hover:border-ys-green-border"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div
+                                  className={
+                                    active ? "text-ys-green-text" : "text-ys-dimmer"
+                                  }
+                                >
+                                  {tipoCuenta.icon}
+                                </div>
+                                <div
+                                  className={`text-[15px] font-extrabold ${active ? "text-ys-green-text" : "text-ys-text"}`}
+                                >
+                                  {tipoCuenta.nombre}
+                                </div>
+                                {active && (
+                                  <svg className="ml-auto flex-none" width="18" height="18" viewBox="0 0 16 16" fill="none">
+                                    <circle cx="8" cy="8" r="7" fill="#12B76A" />
+                                    <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                )}
+                              </div>
+
+                              <div className="text-[12.5px] font-semibold text-ys-muted leading-snug">
+                                {tipoCuenta.resumen}
+                              </div>
+
+                              <div className="text-[10.5px] text-ys-dim leading-loose">
+                                {tipoCuenta.features.map((f) => (
+                                  <span key={f} className="block">
+                                    <span className="text-ys-green-text">✓ </span>
+                                    {f}
+                                  </span>
+                                ))}
+                              </div>
+
+                              <div className="mt-auto pt-2.5 border-t border-ys-border-softest text-[10.5px] font-semibold text-ys-dimmer leading-snug">
+                                {tipoCuenta.nota}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        onClick={handleElegirTipo}
+                        disabled={!regTipo}
+                        className={`flex items-center justify-center gap-2 text-sm font-bold py-[13px] rounded-[11px] transition-all ${
+                          regTipo
+                            ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+                            : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+                        }`}
+                      >
+                        Continuar →
+                      </button>
+
+                      <div className="flex justify-center gap-[7px] text-[13px] text-ys-muted font-semibold">
+                        ¿Ya tenés cuenta?
+                        <button
+                          onClick={() => setTab("login")}
+                          className="text-ys-green-text font-bold cursor-pointer"
+                        >
+                          Iniciá sesión
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {regStep === 2 && (
                     <div className="flex flex-col gap-5" style={{ animation: "ys-fade-up .2s cubic-bezier(.4,0,.2,1) both" }}>
                       <div className="flex flex-col gap-[5px]">
                         <div className="text-[21px] font-extrabold tracking-[-0.02em] text-ys-text">
-                          Creá tu cuenta
+                          {pideNombreEmpresa
+                            ? "Creá la cuenta de tu empresa"
+                            : "Creá tu cuenta"}
                         </div>
                         <p className="text-[13.5px] text-ys-muted font-medium">
-                          Empezá a usar YamaSend en pocos minutos.
+                          {pideNombreEmpresa
+                            ? "Vas a poder invitar a tu equipo apenas termines."
+                            : "Empezá a usar YamaSend en pocos minutos."}
                         </p>
                       </div>
 
@@ -444,8 +601,43 @@ export default function LoginScreen({
                         </div>
                       )}
 
+                      {organizacionInvita && (
+                        <div className="bg-ys-green-bg border border-ys-green-border rounded-[10px] px-3.5 py-2.5">
+                          <div className="text-[12.5px] font-semibold text-ys-green-text">
+                            {esInvitacionEmpresa
+                              ? `Estás creando la cuenta de empresa de ${organizacionInvita}.`
+                              : `Te invitaron a sumarte a ${organizacionInvita}.`}
+                          </div>
+                        </div>
+                      )}
+
+                      {pideNombreEmpresa && (
+                        <div className="flex flex-col gap-[7px]">
+                          <div className="text-[12.5px] font-extrabold text-ys-text">
+                            Nombre de la empresa
+                          </div>
+                          <div className="flex items-center gap-2.5 border border-ys-border rounded-[10px] px-[13px] py-[11px] transition-colors hover:border-ys-green-border focus-within:!border-ys-green">
+                            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                              <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="#9aa19c" strokeWidth="1.5" />
+                              <path d="M5.5 5.5h1.2M9.3 5.5h1.2M5.5 8h1.2M9.3 8h1.2M6.5 13.5V11h3v2.5" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
+                            </svg>
+                            <input
+                              value={regEmpresaNombre}
+                              onChange={(e) => setRegEmpresaNombre(e.target.value)}
+                              placeholder="Inmobiliaria Ruiz"
+                              className="flex-1 min-w-0 border-none outline-none bg-transparent text-sm font-semibold text-ys-text"
+                            />
+                          </div>
+                          <div className="text-[11px] text-ys-dim font-medium">
+                            Así lo van a ver tus empleados al sumarse.
+                          </div>
+                        </div>
+                      )}
+
                       <div className="flex flex-col gap-[7px]">
-                        <div className="text-[12.5px] font-extrabold text-ys-text">Nombre</div>
+                        <div className="text-[12.5px] font-extrabold text-ys-text">
+                          {pideNombreEmpresa ? "Tu nombre" : "Nombre"}
+                        </div>
                         <div className="flex items-center gap-2.5 border border-ys-border rounded-[10px] px-[13px] py-[11px] transition-colors hover:border-ys-green-border focus-within:!border-ys-green">
                           <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                             <circle cx="8" cy="5.5" r="2.6" stroke="#9aa19c" strokeWidth="1.5" />
@@ -484,37 +676,27 @@ export default function LoginScreen({
                         )}
                       </div>
 
-                      {organizacionInvita && (
-                        <div className="bg-ys-green-bg border border-ys-green-border rounded-[10px] px-3.5 py-2.5">
-                          <div className="text-[12.5px] font-semibold text-ys-green-text">
-                            {esInvitacionEmpresa
-                              ? `Estás creando la cuenta de empresa de ${organizacionInvita}.`
-                              : `Te invitaron a sumarte a ${organizacionInvita}.`}
+                      {pideWhatsapp && (
+                        <div className="flex flex-col gap-[7px]">
+                          <div className="text-[12.5px] font-extrabold text-ys-text">
+                            WhatsApp Business
+                          </div>
+                          <div className="flex items-center gap-2.5 border border-ys-border rounded-[10px] px-[13px] py-[11px] transition-colors hover:border-ys-green-border focus-within:!border-ys-green">
+                            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                              <path d="M14 7.5c0 3-2.7 5.2-6 5.2-.7 0-1.4-.1-2-.3L2.5 13.5l.8-2.5A5 5 0 0 1 2 7.5C2 4.5 4.7 2.3 8 2.3s6 2.2 6 5.2Z" stroke="#9aa19c" strokeWidth="1.5" strokeLinejoin="round" />
+                            </svg>
+                            <input
+                              type="tel"
+                              value={regWa}
+                              onChange={(e) => setRegWa(e.target.value)}
+                              placeholder="+54 9 11 1234-5678"
+                              className="flex-1 min-w-0 border-none outline-none bg-transparent text-sm font-semibold text-ys-text"
+                            />
+                          </div>
+                          <div className="text-[11px] text-ys-dim font-medium">
+                            Tu número de Meta Business — ID de cuenta.
                           </div>
                         </div>
-                      )}
-
-                      {!esInvitacionEmpresa && (
-                      <div className="flex flex-col gap-[7px]">
-                        <div className="text-[12.5px] font-extrabold text-ys-text">
-                          WhatsApp Business
-                        </div>
-                        <div className="flex items-center gap-2.5 border border-ys-border rounded-[10px] px-[13px] py-[11px] transition-colors hover:border-ys-green-border focus-within:!border-ys-green">
-                          <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                            <path d="M14 7.5c0 3-2.7 5.2-6 5.2-.7 0-1.4-.1-2-.3L2.5 13.5l.8-2.5A5 5 0 0 1 2 7.5C2 4.5 4.7 2.3 8 2.3s6 2.2 6 5.2Z" stroke="#9aa19c" strokeWidth="1.5" strokeLinejoin="round" />
-                          </svg>
-                          <input
-                            type="tel"
-                            value={regWa}
-                            onChange={(e) => setRegWa(e.target.value)}
-                            placeholder="+54 9 11 1234-5678"
-                            className="flex-1 min-w-0 border-none outline-none bg-transparent text-sm font-semibold text-ys-text"
-                          />
-                        </div>
-                        <div className="text-[11px] text-ys-dim font-medium">
-                          Tu número de Meta Business — ID de cuenta.
-                        </div>
-                      </div>
                       )}
 
                       <div className="flex flex-col gap-[9px]">
@@ -567,98 +749,18 @@ export default function LoginScreen({
                         .
                       </div>
 
-                      <button
-                        onClick={handleContinuarPaso1}
-                        disabled={!paso1Valido}
-                        className={`mt-1 flex items-center justify-center gap-2 text-sm font-bold py-[13px] rounded-[11px] transition-all ${
-                          paso1Valido
-                            ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
-                            : "bg-ys-el2 text-ys-faint cursor-not-allowed"
-                        }`}
-                      >
-                        Continuar →
-                      </button>
-
-                      <div className="flex justify-center gap-[7px] text-[13px] text-ys-muted font-semibold">
-                        ¿Ya tenés cuenta?
-                        <button
-                          onClick={() => setTab("login")}
-                          className="text-ys-green-text font-bold cursor-pointer"
-                        >
-                          Iniciá sesión
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {regStep === 2 && (
-                    <div className="flex flex-col gap-[18px]" style={{ animation: "ys-fade-up .2s cubic-bezier(.4,0,.2,1) both" }}>
-                      <div className="flex flex-col gap-[5px]">
-                        <div className="text-[21px] font-extrabold tracking-[-0.02em] text-ys-text">
-                          Elegí tu plan
-                        </div>
-                        <p className="text-[13.5px] text-ys-muted font-medium">
-                          14 días gratis en cualquier plan. Podés cambiarlo cuando quieras.
-                        </p>
-                      </div>
-
-                      {regErr && (
-                        <div className="rounded-lg bg-ys-red-bg border border-ys-red-border text-ys-red-text px-3.5 py-2.5 text-[13px] font-medium">
-                          {regErr}
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-[11px]">
-                        {PLANS.map((p) => {
-                          const active = regPlan === p.key;
-                          return (
-                            <button
-                              key={p.key}
-                              onClick={() => setRegPlan(p.key)}
-                              className={`text-left rounded-[14px] border-[1.5px] px-4 py-[14px] flex flex-col gap-2.5 cursor-pointer transition-all hover:-translate-y-px ${
-                                active ? "border-ys-green bg-ys-green-bg" : "border-ys-border"
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <div
-                                  className={`text-[15px] font-extrabold ${active ? "text-ys-green-text" : "text-ys-text"}`}
-                                >
-                                  {p.nombre}
-                                </div>
-                                {active && (
-                                  <svg className="ml-auto" width="18" height="18" viewBox="0 0 16 16" fill="none">
-                                    <circle cx="8" cy="8" r="7" fill="#12B76A" />
-                                    <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                                  </svg>
-                                )}
-                              </div>
-                              <div className="font-mono text-[15px] font-medium text-ys-text">
-                                {p.precio}
-                              </div>
-                              <div className="text-[10.5px] text-ys-dim leading-loose">
-                                {p.features.map((f) => (
-                                  <span key={f} className="block">
-                                    <span className="text-ys-green-text">✓ </span>
-                                    {f}
-                                  </span>
-                                ))}
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="text-[11px] text-ys-dim font-medium text-center">
-                        * Costos de Meta no incluidos · 14 días gratis en cualquier plan
-                      </div>
-
                       <div className="flex gap-2.5">
-                        <button
-                          onClick={() => setRegStep(1)}
-                          className="flex-none px-[18px] rounded-[11px] border border-ys-border text-[13.5px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8]"
-                        >
-                          Atrás
-                        </button>
+                        {!inviteToken && (
+                          <button
+                            onClick={() => {
+                              setRegErr("");
+                              setRegStep(1);
+                            }}
+                            className="flex-none px-[18px] py-3 rounded-[11px] border border-ys-border text-[13.5px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8]"
+                          >
+                            Atrás
+                          </button>
+                        )}
                         {regLoading ? (
                           <div className="flex-1 flex items-center justify-center gap-2.5 bg-ys-green-hover text-white text-sm font-bold py-3 rounded-[11px]">
                             <div className="w-[15px] h-[15px] rounded-full border-2 border-white/35 border-t-white animate-spin" />
@@ -667,7 +769,12 @@ export default function LoginScreen({
                         ) : (
                           <button
                             onClick={handleCrearCuenta}
-                            className="flex-1 flex items-center justify-center bg-ys-green text-white text-sm font-bold py-3 rounded-[11px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+                            disabled={!formValido}
+                            className={`flex-1 flex items-center justify-center text-sm font-bold py-3 rounded-[11px] transition-all ${
+                              formValido
+                                ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+                                : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+                            }`}
                           >
                             Crear cuenta gratis
                           </button>

@@ -138,7 +138,7 @@ export interface EmpresaUser {
   orgNombre: string;
   contactoNombre: string;
   contactoEmail: string;
-  rol: UserRole; // "empresa" o "admin"
+  rol: UserRole;
   creditosPool: number;
 }
 
@@ -490,7 +490,13 @@ export type KpiFilterKey =
  *   empleado → la app tal como existe hoy. Puede estar suelto (sin empresa)
  *              o colgando de una organización.
  */
-export type UserRole = "admin" | "empresa" | "empleado";
+/**
+ * Roles del sistema. El rol "admin" existió mientras las cuentas de empresa
+ * se daban de alta a mano; con el registro por autoservicio dejó de tener
+ * sentido y se eliminó de la app y de la base (incluido el CHECK de la
+ * columna, que ya no lo acepta).
+ */
+export type UserRole = "empresa" | "empleado";
 
 /**
  * "pendiente" = se registró con un link de invitación pero la empresa

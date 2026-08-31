@@ -1,7 +1,6 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import type { PlanKey } from "@/lib/types";
 
 export interface AuthResult {
   error: string | null;
@@ -40,11 +39,21 @@ export async function registerAction(data: {
   /** Vacío para cuentas de empresa: no tienen WhatsApp propio. */
   whatsapp: string;
   password: string;
-  plan: PlanKey;
+  /**
+   * Tipo de cuenta elegido en el primer paso del registro. Viaja tal cual a
+   * la RPC, que es la que decide el rol real: acá es una intención, no un
+   * permiso. Pedir "empresa" solo puede crear una organización NUEVA, nunca
+   * sumarse a una existente, así que declararse empresa no da acceso a datos
+   * de nadie.
+   */
+  tipoCuenta: "individual" | "empresa";
+  /** Nombre de la organización a crear. Solo aplica a tipoCuenta "empresa". */
+  nombreEmpresa?: string | null;
   /**
    * Token de un link de invitación (/register?invite=...). Si viene, el
    * usuario queda vinculado a esa organización en estado "pendiente" hasta
-   * que la empresa lo apruebe. Si no viene, es un empleado independiente.
+   * que la empresa lo apruebe, y el tipo de cuenta elegido se ignora: manda
+   * la invitación.
    */
   inviteToken?: string | null;
 }): Promise<AuthResult> {
@@ -72,6 +81,9 @@ export async function registerAction(data: {
   // Una cuenta de empresa no tiene WhatsApp, así que no lleva fila en
   // yamas_inmo_clientes. Ese hueco es lo que la deja bloqueada de todas las
   // tablas base por RLS, que es exactamente lo que queremos.
+  //
+  // Se deduce del número vacío y no del tipo elegido a propósito: la fila de
+  // clientes se indexa por el número, así que sin número no hay fila posible.
   const esEmpresa = waClean.length === 0;
 
   const { error: insertError } = esEmpresa
@@ -86,7 +98,6 @@ export async function registerAction(data: {
       ventas_tel: waClean,
       contacto_nombre: data.nombre,
       contacto_email: data.email,
-      plan: data.plan,
       YamaSend: "yes",
       trialend: trialEnd,
     });
@@ -108,6 +119,8 @@ export async function registerAction(data: {
       p_tenant_id: esEmpresa ? null : waClean,
       p_nombre: data.nombre,
       p_invite_token: data.inviteToken?.trim() || null,
+      p_tipo_cuenta: data.tipoCuenta,
+      p_nombre_empresa: data.nombreEmpresa?.trim() || null,
     },
   );
 
@@ -128,6 +141,12 @@ export async function registerAction(data: {
       return {
         error:
           "Tu cuenta se creó, pero el link de invitación ya venció o fue revocado. Pedile a la empresa que te mande uno nuevo.",
+      };
+    }
+    if (resultado.error === "nombre_empresa_invalido") {
+      return {
+        error:
+          "Tu cuenta se creó, pero el nombre de la empresa no es válido. Escribile a soporte para terminar de configurarla.",
       };
     }
     if (resultado.error !== "ya_es_miembro") {

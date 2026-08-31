@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import LoginScreen from "@/components/yamasend/LoginScreen";
 import { loginAction, registerAction } from "@/lib/actions/auth";
-import type { PlanKey } from "@/lib/types";
 
 export default function LoginGate({
   initialTab,
@@ -32,7 +31,8 @@ export default function LoginGate({
     email: string;
     whatsapp: string;
     password: string;
-    plan: PlanKey;
+    tipoCuenta: "individual" | "empresa";
+    nombreEmpresa?: string | null;
     inviteToken?: string | null;
   }) {
     const { error } = await registerAction(data);

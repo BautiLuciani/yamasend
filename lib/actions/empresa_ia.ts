@@ -174,7 +174,7 @@ export async function sendEmpresaIAMessageAction(
   if (
     !membership ||
     membership.estado !== "activo" ||
-    (membership.rol !== "empresa" && membership.rol !== "admin")
+    membership.rol !== "empresa"
   ) {
     return { texto: "", error: "No tenés permiso para usar esta sección." };
   }

@@ -49,7 +49,7 @@ const i18n = {
     myprofile_nav_personal: "Perfil personal",
     myprofile_nav_security: "Seguridad",
     myprofile_nav_agency: "Datos de la empresa",
-    myprofile_nav_billing: "Plan y facturación",
+    myprofile_nav_creditos: "Créditos",
 
     myprofile_personal_title: "Perfil personal",
     myprofile_personal_desc: "Tus datos de contacto dentro de YamaSend.",
@@ -97,12 +97,11 @@ const i18n = {
     myprofile_field_reglas_evitar_placeholder:
       "Ej: No prometer plazos de financiación. No mencionar precios exactos sin confirmar con el equipo.",
 
-    myprofile_billing_title: "Plan y facturación",
-    myprofile_billing_desc: "Administrá tu plan y método de pago.",
-    myprofile_billing_current_plan: "Plan actual",
-    myprofile_billing_construction_title: "Sección en construcción",
-    myprofile_billing_construction_desc:
-      "Estamos preparando la gestión de planes y facturación. Muy pronto vas a poder administrarla desde acá.",
+    myprofile_creditos_title: "Créditos",
+    myprofile_creditos_desc: "Comprá y seguí el consumo de créditos de tu cuenta.",
+    myprofile_creditos_construction_title: "Sección en construcción",
+    myprofile_creditos_construction_desc:
+      "Estamos preparando la compra de créditos. Muy pronto vas a poder cargarlos desde acá.",
 
     // ── Dashboard ──
     dash_greeting: "Hola",
@@ -201,7 +200,7 @@ const i18n = {
     myprofile_nav_personal: "Personal profile",
     myprofile_nav_security: "Security",
     myprofile_nav_agency: "Company details",
-    myprofile_nav_billing: "Plan & billing",
+    myprofile_nav_creditos: "Credits",
 
     myprofile_personal_title: "Personal profile",
     myprofile_personal_desc: "Your contact details within YamaSend.",
@@ -249,12 +248,11 @@ const i18n = {
     myprofile_field_reglas_evitar_placeholder:
       "E.g.: Don't promise financing terms. Don't mention exact prices without confirming with the team.",
 
-    myprofile_billing_title: "Plan & billing",
-    myprofile_billing_desc: "Manage your plan and payment method.",
-    myprofile_billing_current_plan: "Current plan",
-    myprofile_billing_construction_title: "Section under construction",
-    myprofile_billing_construction_desc:
-      "We're working on plan and billing management. You'll be able to manage it from here soon.",
+    myprofile_creditos_title: "Credits",
+    myprofile_creditos_desc: "Buy credits and track your account usage.",
+    myprofile_creditos_construction_title: "Section under construction",
+    myprofile_creditos_construction_desc:
+      "We're working on credit purchases. You'll be able to top up from here soon.",
 
     dash_greeting: "Hi",
     dash_subtitle: "Here's what happened with your sends in the last",

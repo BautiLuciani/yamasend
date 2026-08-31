@@ -29,7 +29,7 @@ async function assertEmpresa(): Promise<boolean> {
   const membership = await getCurrentMembership();
   if (!membership) return false;
   if (membership.estado !== "activo") return false;
-  return membership.rol === "empresa" || membership.rol === "admin";
+  return membership.rol === "empresa";
 }
 
 function normalizarPermisos(raw: unknown): Permisos {

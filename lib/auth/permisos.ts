@@ -180,12 +180,8 @@ export async function assertPermiso(
     };
   }
 
-  // El admin puede todo; la empresa es informativa y no escribe nunca sobre
-  // los recursos de sus empleados, sin importar qué diga su jsonb de permisos.
-  if (membership.rol === "admin") {
-    return { ok: true, error: null, tenantId: membership.tenantId, membership };
-  }
-
+  // La empresa es informativa y no escribe nunca sobre los recursos de sus
+  // empleados, sin importar qué diga su jsonb de permisos.
   if (membership.rol === "empresa") {
     return {
       ok: false,

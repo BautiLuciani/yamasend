@@ -84,7 +84,7 @@ export async function getCurrentEmpresaUser(): Promise<EmpresaUser | null> {
 
   const membership = await getCurrentMembership();
   if (!membership) return null;
-  if (membership.rol !== "empresa" && membership.rol !== "admin") return null;
+  if (membership.rol !== "empresa") return null;
   if (!membership.orgId) return null;
 
   const { data: org } = await supabase

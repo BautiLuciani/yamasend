@@ -12,13 +12,7 @@ interface MyProfileModalProps {
   onUserUpdate: (patch: Partial<AppUser>) => void;
 }
 
-type Section = "personal" | "security" | "agency" | "billing";
-
-const PLAN_LABELS: Record<string, string> = {
-  starter: "Starter",
-  pro: "Pro",
-  uso: "Por mensaje",
-};
+type Section = "personal" | "security" | "agency" | "creditos";
 
 function NavItem({
   active,
@@ -317,7 +311,6 @@ export default function MyProfileModal({
 
   if (!open) return null;
 
-  const planLabel = PLAN_LABELS[user.plan] || user.plan;
 
   return (
     <div
@@ -371,13 +364,13 @@ export default function MyProfileModal({
             }
           />
           <NavItem
-            active={section === "billing"}
-            onClick={() => handleSelectSection("billing")}
-            label={t("myprofile_nav_billing")}
+            active={section === "creditos"}
+            onClick={() => handleSelectSection("creditos")}
+            label={t("myprofile_nav_creditos")}
             icon={
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <rect x="2" y="4" width="12" height="8.5" rx="1.8" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M2 6.8h12" stroke="currentColor" strokeWidth="1.5" />
+                <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M8 5.2v5.6M6.4 6.6h2.2a1.1 1.1 0 0 1 0 2.2H6.4h2.4a1.1 1.1 0 0 1 0 2.2H6.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             }
           />
@@ -631,24 +624,15 @@ export default function MyProfileModal({
             </>
           )}
 
-          {section === "billing" && (
+          {section === "creditos" && (
             <>
               <div className="flex flex-col gap-1">
                 <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
-                  {t("myprofile_billing_title")}
+                  {t("myprofile_creditos_title")}
                 </div>
                 <div className="text-[13.5px] text-ys-muted font-medium">
-                  {t("myprofile_billing_desc")}
+                  {t("myprofile_creditos_desc")}
                 </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <div className="text-[11px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">
-                  {t("myprofile_billing_current_plan")}
-                </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full text-[12px] font-bold px-3 py-1.5 bg-ys-green-bg text-ys-green-text w-fit">
-                  {planLabel}
-                </span>
               </div>
 
               <div className="flex-1 flex flex-col items-center justify-center gap-3 border border-dashed border-ys-border2 rounded-2xl py-10 px-6 text-center">
@@ -659,10 +643,10 @@ export default function MyProfileModal({
                   </svg>
                 </div>
                 <div className="text-[15px] font-extrabold text-ys-text">
-                  {t("myprofile_billing_construction_title")}
+                  {t("myprofile_creditos_construction_title")}
                 </div>
                 <div className="text-[13px] text-ys-muted font-medium leading-[1.5] max-w-[320px]">
-                  {t("myprofile_billing_construction_desc")}
+                  {t("myprofile_creditos_construction_desc")}
                 </div>
               </div>
             </>

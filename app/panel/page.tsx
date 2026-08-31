@@ -13,7 +13,6 @@ import { getCurrentMembership } from "@/lib/auth/permisos";
 import { createClient } from "@/lib/supabase/server";
 import AppShell from "@/components/yamasend/AppShell";
 import EmpresaShell from "@/components/yamasend/EmpresaShell";
-import AdminShell from "@/components/yamasend/AdminShell";
 import PendingApprovalScreen from "@/components/yamasend/PendingApprovalScreen";
 import { logoutAction } from "@/lib/actions/auth";
 import {
@@ -26,7 +25,7 @@ import {
  *
  *   sin membresía          → /login
  *   empleado no activo     → pared de "esperando aprobación"
- *   empresa / admin        → consola de gestión (solo lectura)
+ *   empresa                → consola de gestión (solo lectura)
  *   empleado activo        → la app de siempre
  *
  * El rol se resuelve ANTES de cargar cualquier dato: si primero cargáramos
@@ -38,17 +37,6 @@ export default async function PanelPage() {
 
   if (!membership) {
     redirect("/login");
-  }
-
-  // El admin tiene su propia consola: no tiene org_id, así que el shell de
-  // empresa lo rechazaría y quedaría sin ningún lugar donde entrar.
-  if (membership.rol === "admin") {
-    return (
-      <AdminShell
-        nombre={membership.nombreDisplay ?? "Admin"}
-        onLogout={logoutAction}
-      />
-    );
   }
 
   if (membership.rol === "empresa") {
