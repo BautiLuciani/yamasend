@@ -14,6 +14,8 @@ import type {
   IAFlowState,
   IAHistoryTurn,
   KpiFilterKey,
+  MemberEstado,
+  Permisos,
   StatusState,
   Template,
 } from "@/lib/types";
@@ -242,6 +244,63 @@ export default function AppShell({
       cancelado = true;
     };
   }, []);
+
+  // Permisos del empleado en vivo. Si la empresa le cambia algo (permisos,
+  // estado, créditos) desde su consola, se refleja acá sin esperar a que
+  // recargue: sin esto, un permiso recién revocado seguía viéndose habilitado
+  // hasta el próximo refresh, que podía tardar horas.
+  //
+  // Filtra por tenant_id y no por auth_user_id porque AppUser no trae ese uuid
+  // — tenant_id ya es único por fila de empleado en yamas_send_miembros, así
+  // que sirve igual de bien como filtro y evita sumar un campo nuevo al tipo.
+  useEffect(() => {
+    if (!realtimeClient || !user.tenantId) return;
+
+    const channel = realtimeClient
+      .channel(`mi-membresia-${user.tenantId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "yamas_send_miembros",
+          filter: `tenant_id=eq.${user.tenantId}`,
+        },
+        (payload) => {
+          const row = payload.new as {
+            permisos: Permisos;
+            estado: MemberEstado;
+            creditos_asignados: number;
+            creditos_usados: number;
+            org_id: string | null;
+          };
+
+          setUser((prev) => ({
+            ...prev,
+            permisos: row.permisos,
+            estado: row.estado,
+            orgId: row.org_id,
+            credito: row.org_id
+              ? Math.max(row.creditos_asignados - row.creditos_usados, 0)
+              : prev.credito,
+          }));
+
+          // Si te suspenden o te quitan del equipo en este mismo momento,
+          // assertPermiso() del servidor ya te va a estar bloqueando todo; la
+          // UI se queda mostrando la última pantalla sin poder hacer nada
+          // hasta un refresh. Se fuerza acá para no dejar al usuario mirando
+          // una app que parece andar pero rechaza cada click.
+          if (row.estado !== "activo") {
+            router.refresh();
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      realtimeClient.removeChannel(channel);
+    };
+  }, [realtimeClient, user.tenantId, router]);
 
   useEffect(() => {
     if (!realtimeClient) return;

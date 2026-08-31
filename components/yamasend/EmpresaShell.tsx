@@ -2,7 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import type { EmpleadoResumen, EmpresaSection, EmpresaUser } from "@/lib/types";
+import type {
+  EmpleadoResumen,
+  EmpresaSection,
+  EmpresaUser,
+  MemberEstado,
+  Permisos,
+} from "@/lib/types";
+import { createClient } from "@/lib/supabase/client";
 import EmpresaSidebar from "./EmpresaSidebar";
 import EmpresaDashboardSection from "./EmpresaDashboardSection";
 import EmpresaIA from "./EmpresaIA";
@@ -51,9 +58,22 @@ interface Props {
 export default function EmpresaShell({
   empresa,
   stats,
-  empleados,
+  empleados: empleadosProp,
   onLogout,
 }: Props) {
+  // Empleados viene del servidor, pero se envuelve en estado local para que
+  // Realtime pueda actualizarlo sin depender de router.refresh() (que vuelve
+  // a ejecutar el Server Component entero). Se resincroniza con la prop
+  // durante el render (no en un efecto) siguiendo el patrón recomendado por
+  // React para "adjust state when a prop changes" — mismo criterio que ya
+  // usa AppShell para `user`.
+  const [empleados, setEmpleados] = useState<EmpleadoResumen[]>(empleadosProp);
+  const [prevEmpleadosProp, setPrevEmpleadosProp] = useState(empleadosProp);
+  if (empleadosProp !== prevEmpleadosProp) {
+    setPrevEmpleadosProp(empleadosProp);
+    setEmpleados(empleadosProp);
+  }
+
   // La sección vive en la URL para que sobreviva a un refresh, con
   // window.history.replaceState en vez de router.push: mismo criterio que
   // AppShell, evita el spinner de Next en un cambio de tab que es estado local.
@@ -132,6 +152,144 @@ export default function EmpresaShell({
     router.refresh();
     getEmpresaInvitacionesAction().then(setInvitaciones);
   }, [router]);
+
+  // Mismo patrón que AppShell: Realtime autentica el WebSocket por separado
+  // de las cookies de sesión, así que hace falta pasarle el access_token a
+  // mano una vez. Sin esto el socket queda "anon" y las policies de RLS
+  // nunca dejan pasar el evento, aunque la suscripción se vea "SUBSCRIBED".
+  const [realtimeClient, setRealtimeClient] = useState<ReturnType<
+    typeof createClient
+  > | null>(null);
+
+  useEffect(() => {
+    let cancelado = false;
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelado || !session?.access_token) return;
+      supabase.realtime.setAuth(session.access_token);
+      setRealtimeClient(supabase);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  // Empleados en vivo: permisos, estado (suspender/reactivar) y créditos.
+  // Filtra por org_id, así que cubre altas y bajas de la organización además
+  // de ediciones — necesario para el caso de "aceptar la invitación desde una
+  // cuenta que ya existía", que hace un UPDATE de org_id en vez de un INSERT.
+  useEffect(() => {
+    if (!realtimeClient) return;
+
+    const channel = realtimeClient
+      .channel(`empresa-miembros-${empresa.orgId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "yamas_send_miembros",
+          filter: `org_id=eq.${empresa.orgId}`,
+        },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const id = (payload.old as { id?: string })?.id;
+            if (id) setEmpleados((prev) => prev.filter((e) => e.miembroId !== id));
+            return;
+          }
+
+          const row = payload.new as {
+            id: string;
+            tenant_id: string | null;
+            nombre_display: string | null;
+            estado: MemberEstado;
+            permisos: Permisos;
+            creditos_asignados: number;
+            creditos_usados: number;
+            rol: string;
+          };
+
+          // "empleado" pendiente todavía no debe listarse acá: vive en
+          // Invitaciones abiertas hasta que se lo acepte. Si cambia de
+          // pendiente a activo/suspendido, entra recién en ese momento.
+          if (row.rol !== "empleado" || row.estado === "pendiente") return;
+
+          setEmpleados((prev) => {
+            const existente = prev.find((e) => e.miembroId === row.id);
+            const actualizado: EmpleadoResumen = {
+              ...(existente ?? {
+                miembroId: row.id,
+                tenantId: row.tenant_id ?? "",
+                nombre: row.nombre_display ?? "Sin nombre",
+                contactosCount: 0,
+                audienciasCount: 0,
+                templatesCount: 0,
+                campanasCount: 0,
+                campanasEnviadas: 0,
+                mensajesOk: 0,
+                mensajesError: 0,
+                mensajesLeidos: 0,
+                ultimaActividadAt: null,
+                whatsappConfigurado: false,
+              }),
+              estado: row.estado,
+              permisos: row.permisos,
+              creditosAsignados: row.creditos_asignados,
+              creditosUsados: row.creditos_usados,
+              creditosSaldo: Math.max(
+                row.creditos_asignados - row.creditos_usados,
+                0,
+              ),
+            };
+
+            if (existente) {
+              return prev.map((e) => (e.miembroId === row.id ? actualizado : e));
+            }
+            // Recién apareció (se aceptó una invitación desde otra pestaña o
+            // desde otro dispositivo): entra a la lista, aunque con métricas
+            // en cero hasta el próximo refresh real — es mejor que no verlo.
+            return [...prev, actualizado];
+          });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      realtimeClient.removeChannel(channel);
+    };
+  }, [realtimeClient, empresa.orgId]);
+
+  // Invitaciones abiertas en vivo: que aparezcan/desaparezcan los botones de
+  // Aceptar/Rechazar sin recargar cuando el empleado se registra, y que la
+  // fila desaparezca sola cuando se la resuelve desde otra pestaña.
+  useEffect(() => {
+    if (!realtimeClient) return;
+
+    const channel = realtimeClient
+      .channel(`empresa-invitaciones-${empresa.orgId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "yamas_send_invitaciones",
+          filter: `org_id=eq.${empresa.orgId}`,
+        },
+        () => {
+          // Se relee por RPC en vez de armar la fila a mano desde el payload:
+          // yamas_send_empresa_invitaciones() decide token/expira_at con
+          // lógica que no vale la pena duplicar en el cliente (por ejemplo,
+          // ocultar el token de una invitación ya vencida).
+          getEmpresaInvitacionesAction().then(setInvitaciones);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      realtimeClient.removeChannel(channel);
+    };
+  }, [realtimeClient, empresa.orgId]);
+
 
   useEffect(() => {
     if (section === "audiencias") {
