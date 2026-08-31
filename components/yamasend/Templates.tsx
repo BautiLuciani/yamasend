@@ -7,7 +7,15 @@ interface TemplatesProps {
   templates: Template[];
   onNewTemplate: () => void;
   /** false esconde los botones de alta. El gate real está en el server action. */
+  /**
+   * false NO esconde el botón: lo deja visible y bloqueado. Esconderlo hacía
+   * que el permiso revocado fuera invisible —la sección simplemente perdía el
+   * botón sin explicación—. Ahora se ve, y al tocarlo avisa quién puede
+   * habilitarlo. El gate real sigue estando en el server action.
+   */
   puedeCrear?: boolean;
+  /** Se dispara al tocar el botón sin permiso. Muestra el aviso. */
+  onSinPermiso?: () => void;
   onOpenTemplate: (tpl: Template) => void;
 }
 
@@ -59,7 +67,7 @@ function StatusBadge({ status }: { status: Template["status"] }) {
   );
 }
 
-export default function Templates({ templates, onNewTemplate, onOpenTemplate, puedeCrear = true }: TemplatesProps) {
+export default function Templates({ templates, onNewTemplate, onOpenTemplate, puedeCrear = true, onSinPermiso }: TemplatesProps) {
   const [query, setQuery] = useState("");
   const [estado, setEstado] = useState<
     "todos" | "verificado" | "enviado" | "rechazado" | "borrador"
@@ -100,17 +108,26 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate, pu
             Creá y administrá tus mensajes de WhatsApp.
           </div>
         </div>
-        {puedeCrear && (
-          <button
-            onClick={onNewTemplate}
-            className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
-          >
+        <button
+          onClick={puedeCrear ? onNewTemplate : onSinPermiso}
+          className={`ml-auto w-full md:w-auto justify-center flex items-center gap-2 text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] transition-all ${
+            puedeCrear
+              ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+              : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+          }`}
+        >
+          {puedeCrear ? (
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
             </svg>
-            Nuevo template
-          </button>
-        )}
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+          )}
+          Nuevo template
+        </button>
       </div>
 
       {templates.length > 0 && (
@@ -188,17 +205,26 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate, pu
           <div className="text-sm text-ys-muted font-medium text-center max-w-[420px]">
             Los templates son los mensajes que vas a utilizar para comunicarte con tus contactos.
           </div>
-          {puedeCrear && (
-            <button
-              onClick={onNewTemplate}
-              className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-            >
+          <button
+            onClick={puedeCrear ? onNewTemplate : onSinPermiso}
+            className={`mt-1.5 flex items-center gap-2 text-[13.5px] font-bold rounded-[10px] px-[18px] py-2.5 transition-all ${
+              puedeCrear
+                ? "text-white bg-ys-green cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px"
+                : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+            }`}
+          >
+            {puedeCrear ? (
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
               </svg>
-              Crear template
-            </button>
-          )}
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+            )}
+            Crear template
+          </button>
         </div>
       )}
 

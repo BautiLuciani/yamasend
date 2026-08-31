@@ -634,6 +634,22 @@ export default function AppShell({
     setToast({ id: `${Date.now()}-${Math.random()}`, texto, tipo });
   }
 
+  /**
+   * Aviso al tocar una acción que la empresa le sacó al empleado.
+   *
+   * El nombre de la organización va en el texto porque el usuario no puede
+   * hacer nada al respecto por su cuenta: lo único accionable es pedírselo a
+   * quien administra sus permisos, así que hay que decirle quién es.
+   */
+  function avisarSinPermiso(accion: string) {
+    notificar(
+      user.orgNombre
+        ? `No tenés permiso para ${accion}. Comunicate con ${user.orgNombre}.`
+        : `No tenés permiso para ${accion}.`,
+      "error",
+    );
+  }
+
   function addMsg(
     text: string,
     type: ChatMessage["type"] = "bot",
@@ -1462,6 +1478,7 @@ export default function AppShell({
             onOpenGroup={(group) => setOpenGroupId(group.id)}
             onCreateGroup={() => setCreateGroupOpen(true)}
             puedeCrear={user.permisos.crear_audiencias}
+            onSinPermiso={() => avisarSinPermiso("crear audiencias")}
           />
         </div>
       )}
@@ -1473,6 +1490,7 @@ export default function AppShell({
             onNewTemplate={handleStartNewTpl}
             onOpenTemplate={setDetailTemplate}
             puedeCrear={user.permisos.crear_templates}
+            onSinPermiso={() => avisarSinPermiso("crear templates")}
           />
         </div>
       )}
@@ -1487,6 +1505,7 @@ export default function AppShell({
             }}
             onOpenCampaign={(campaignId) => setDetailCampaignId(campaignId)}
             puedeCrear={user.permisos.crear_campanas}
+            onSinPermiso={() => avisarSinPermiso("crear campañas")}
           />
         </div>
       )}
@@ -1552,6 +1571,7 @@ export default function AppShell({
         }}
         importing={false}
         puedeImportar={user.permisos.importar_contactos}
+        onSinPermiso={() => avisarSinPermiso("importar contactos")}
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}

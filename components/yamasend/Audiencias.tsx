@@ -9,7 +9,15 @@ interface AudienciasProps {
   onOpenGroup: (group: ContactList) => void;
   onCreateGroup: () => void;
   /** false esconde los botones de alta. El gate real está en el server action. */
+  /**
+   * false NO esconde el botón: lo deja visible y bloqueado. Esconderlo hacía
+   * que el permiso revocado fuera invisible —la sección simplemente perdía el
+   * botón sin explicación—. Ahora se ve, y al tocarlo avisa quién puede
+   * habilitarlo. El gate real sigue estando en el server action.
+   */
   puedeCrear?: boolean;
+  /** Se dispara al tocar el botón sin permiso. Muestra el aviso. */
+  onSinPermiso?: () => void;
 }
 
 function initialsOf(nombre: string): string {
@@ -19,7 +27,7 @@ function initialsOf(nombre: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup, puedeCrear = true }: AudienciasProps) {
+export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup, puedeCrear = true, onSinPermiso }: AudienciasProps) {
   const [query, setQuery] = useState("");
 
   const totalContactosOrganizados = useMemo(
@@ -76,14 +84,16 @@ export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup
           <div className="text-sm text-ys-muted font-medium text-center max-w-[380px]">
             Agrupá contactos para segmentar mejor tus campañas.
           </div>
-          {puedeCrear && (
-            <button
-              onClick={onCreateGroup}
-              className="mt-1.5 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-[11px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-            >
-              Crear mi primera audiencia
-            </button>
-          )}
+          <button
+            onClick={puedeCrear ? onCreateGroup : onSinPermiso}
+            className={`mt-1.5 text-[13.5px] font-bold rounded-[10px] px-[18px] py-[11px] transition-all ${
+              puedeCrear
+                ? "text-white bg-ys-green cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px"
+                : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+            }`}
+          >
+            Crear mi primera audiencia
+          </button>
         </div>
       ) : (
         <>
@@ -120,22 +130,43 @@ export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {puedeCrear && (
-                <button
-                  onClick={onCreateGroup}
-                  className="text-center border-[1.5px] border-dashed border-[#cfe0d7] bg-[#fbfdfc] rounded-2xl px-5 py-[18px] min-h-[158px] flex flex-col items-center justify-center gap-2.5 cursor-pointer transition-all hover:border-ys-green hover:bg-ys-green-bg hover:-translate-y-0.5"
+              <button
+                onClick={puedeCrear ? onCreateGroup : onSinPermiso}
+                className={`text-center border-[1.5px] border-dashed rounded-2xl px-5 py-[18px] min-h-[158px] flex flex-col items-center justify-center gap-2.5 transition-all ${
+                  puedeCrear
+                    ? "border-[#cfe0d7] bg-[#fbfdfc] cursor-pointer hover:border-ys-green hover:bg-ys-green-bg hover:-translate-y-0.5"
+                    : "border-ys-border bg-[#fbfcfb] cursor-not-allowed"
+                }`}
+              >
+                <div
+                  className={`w-10 h-10 rounded-[13px] flex items-center justify-center ${
+                    puedeCrear ? "bg-ys-green-bg" : "bg-ys-el2"
+                  }`}
                 >
-                  <div className="w-10 h-10 rounded-[13px] bg-ys-green-bg flex items-center justify-center">
+                  {puedeCrear ? (
                     <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
                       <path d="M8 3v10M3 8h10" stroke="#12B76A" strokeWidth="2.2" strokeLinecap="round" />
                     </svg>
-                  </div>
-                  <div className="text-sm font-extrabold text-ys-green-text">Crear audiencia</div>
-                  <div className="text-[12.5px] text-ys-muted font-medium text-center">
-                    Elegí contactos y armá un segmento
-                  </div>
-                </button>
-              )}
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                      <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="#9aa19c" strokeWidth="1.6" strokeLinecap="round" />
+                      <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="#9aa19c" strokeWidth="1.6" />
+                    </svg>
+                  )}
+                </div>
+                <div
+                  className={`text-sm font-extrabold ${
+                    puedeCrear ? "text-ys-green-text" : "text-ys-dim"
+                  }`}
+                >
+                  Crear audiencia
+                </div>
+                <div className="text-[12.5px] text-ys-muted font-medium text-center">
+                  {puedeCrear
+                    ? "Elegí contactos y armá un segmento"
+                    : "No tenés permiso para crear audiencias"}
+                </div>
+              </button>
               {filtered.map((l) => {
                 const preview = l.contactosIds
                   .slice(0, 3)

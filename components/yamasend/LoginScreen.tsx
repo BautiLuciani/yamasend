@@ -21,7 +21,7 @@ interface LoginScreenProps {
     /** Solo para tipoCuenta "empresa": nombre de la organización a crear. */
     nombreEmpresa?: string | null;
     inviteToken?: string | null;
-  }) => Promise<string | null>;
+  }) => Promise<{ error: string | null; codigo: string | null }>;
   initialTab?: "login" | "register";
   onTabChange?: (tab: "login" | "register") => void;
   /**
@@ -146,6 +146,9 @@ export default function LoginScreen({
   );
   const [regEmpresaNombre, setRegEmpresaNombre] = useState("");
   const [regErr, setRegErr] = useState("");
+  // Se guarda aparte del texto de error porque este caso no se resuelve
+  // corrigiendo el formulario: hay que iniciar sesión y volver al link.
+  const [regCuentaExistente, setRegCuentaExistente] = useState(false);
   const [regLoading, setRegLoading] = useState(false);
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(regEmail);
@@ -215,7 +218,8 @@ export default function LoginScreen({
       return;
     }
     setRegLoading(true);
-    const err = await onRegister({
+    setRegCuentaExistente(false);
+    const res = await onRegister({
       nombre: regNombre,
       email: regEmail,
       whatsapp: pideWhatsapp ? regWa : "",
@@ -225,8 +229,12 @@ export default function LoginScreen({
       inviteToken,
     });
     setRegLoading(false);
-    if (err) {
-      setRegErr(err);
+    if (res.error) {
+      setRegErr(res.error);
+      // El cartel explicativo solo aplica si se llegó por un link: sin
+      // invitación, "ya existe una cuenta" se resuelve yendo a login y no
+      // hace falta explicar nada más.
+      setRegCuentaExistente(res.codigo === "cuenta_existente" && !!inviteToken);
     } else {
       setSuccess({ title: "¡Cuenta creada!", sub: "Cargando panel..." });
     }
@@ -598,6 +606,33 @@ export default function LoginScreen({
                       {regErr && (
                         <div className="rounded-lg bg-ys-red-bg border border-ys-red-border text-ys-red-text px-3.5 py-2.5 text-[13px] font-medium">
                           {regErr}
+                        </div>
+                      )}
+
+                      {/* Llegó por un link de invitación pero ya tenía cuenta.
+                          No es un error de tipeo: el camino correcto es entrar
+                          con su cuenta y volver a abrir el link, así que se
+                          explica y se lo lleva de la mano. */}
+                      {regCuentaExistente && (
+                        <div className="rounded-[10px] bg-ys-warn-bg border border-[#f0dcb4] px-3.5 py-3 flex flex-col gap-2.5">
+                          <div className="text-[12.5px] font-extrabold text-ys-warn-text">
+                            ¿Ya usabas YamaSend con este email?
+                          </div>
+                          <div className="text-[12.5px] font-medium text-ys-warn-text leading-relaxed">
+                            No hace falta crear otra cuenta. Iniciá sesión con
+                            la que ya tenés y te vamos a traer de vuelta acá
+                            para que aceptes la invitación con esa cuenta.
+                          </div>
+                          <button
+                            onClick={() => {
+                              setRegErr("");
+                              setRegCuentaExistente(false);
+                              setTab("login");
+                            }}
+                            className="self-start text-[12.5px] font-bold text-white bg-ys-green rounded-[9px] px-3.5 py-2 cursor-pointer transition-colors hover:bg-ys-green-hover"
+                          >
+                            Iniciar sesión
+                          </button>
                         </div>
                       )}
 

@@ -7,7 +7,15 @@ interface CampanasProps {
   campaigns: Campaign[];
   onNewCampaign: () => void;
   /** false esconde los botones de alta. El gate real está en el server action. */
+  /**
+   * false NO esconde el botón: lo deja visible y bloqueado. Esconderlo hacía
+   * que el permiso revocado fuera invisible —la sección simplemente perdía el
+   * botón sin explicación—. Ahora se ve, y al tocarlo avisa quién puede
+   * habilitarlo. El gate real sigue estando en el server action.
+   */
   puedeCrear?: boolean;
+  /** Se dispara al tocar el botón sin permiso. Muestra el aviso. */
+  onSinPermiso?: () => void;
   onOpenCampaign: (campaignId: string) => void;
 }
 
@@ -74,7 +82,7 @@ function useClickOutside(onOutside: () => void) {
   return ref;
 }
 
-export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, puedeCrear = true }: CampanasProps) {
+export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, puedeCrear = true, onSinPermiso }: CampanasProps) {
   const [query, setQuery] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<CampaignStatus | "todas">("todas");
   const [periodoFiltro, setPeriodoFiltro] = useState<Periodo>("todo");
@@ -126,17 +134,26 @@ export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, pue
             Creá, enviá y analizá tus campañas de WhatsApp.
           </div>
         </div>
-        {puedeCrear && (
-          <button
-            onClick={onNewCampaign}
-            className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
-          >
+        <button
+          onClick={puedeCrear ? onNewCampaign : onSinPermiso}
+          className={`ml-auto w-full md:w-auto justify-center flex items-center gap-2 text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] transition-all ${
+            puedeCrear
+              ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+              : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+          }`}
+        >
+          {puedeCrear ? (
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
             </svg>
-            Nueva campaña
-          </button>
-        )}
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+          )}
+          Nueva campaña
+        </button>
       </div>
 
       <div className="flex items-center gap-3.5 flex-wrap text-[13px] text-ys-muted font-semibold">
@@ -248,17 +265,26 @@ export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, pue
           <div className="text-sm text-ys-muted font-medium text-center max-w-[440px]">
             Elegí una audiencia, seleccioná un mensaje y empezá a comunicarte con tus contactos.
           </div>
-          {puedeCrear && (
-            <button
-              onClick={onNewCampaign}
-              className="mt-1.5 flex items-center gap-2 text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
-            >
+          <button
+            onClick={puedeCrear ? onNewCampaign : onSinPermiso}
+            className={`mt-1.5 flex items-center gap-2 text-[13.5px] font-bold rounded-[10px] px-[18px] py-2.5 transition-all ${
+              puedeCrear
+                ? "text-white bg-ys-green cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px"
+                : "bg-ys-el2 text-ys-faint cursor-not-allowed"
+            }`}
+          >
+            {puedeCrear ? (
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
               </svg>
-              Nueva campaña
-            </button>
-          )}
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+            )}
+            Nueva campaña
+          </button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white border border-ys-border rounded-2xl py-16 px-6 flex flex-col items-center gap-3.5">

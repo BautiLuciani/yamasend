@@ -4,6 +4,12 @@ import { createClient } from "@/lib/supabase/server";
 
 export interface AuthResult {
   error: string | null;
+  /**
+   * Código de máquina para los casos que la UI necesita tratar distinto que
+   * un error de texto. Hoy solo "cuenta_existente", que dispara el cartel
+   * explicando cómo aceptar una invitación con una cuenta que ya existe.
+   */
+  codigo?: string | null;
 }
 
 /**
@@ -65,6 +71,20 @@ export async function registerAction(data: {
     email: data.email,
     password: data.password,
   });
+
+  // Supabase tiene dos formas de contar que el email ya existe: un error
+  // explícito, o —con la ofuscación de emails activada— un usuario devuelto
+  // con la lista de identities vacía. Se contemplan las dos.
+  const yaExiste =
+    authError?.message?.toLowerCase().includes("already") === true ||
+    (authData?.user != null && (authData.user.identities?.length ?? 0) === 0);
+
+  if (yaExiste) {
+    return {
+      error: "Ya existe una cuenta con ese email.",
+      codigo: "cuenta_existente",
+    };
+  }
 
   if (authError) {
     return { error: authError.message || "No se pudo crear la cuenta." };

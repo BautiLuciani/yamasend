@@ -22,7 +22,12 @@ export default function LoginGate({
   async function handleLogin(email: string, password: string) {
     const { error } = await loginAction(email, password);
     if (error) return error;
-    router.push(redirectTo);
+    // Si se llegó acá por un link de invitación, después de loguearse hay que
+    // volver a ese link y no al panel: si no, la invitación se pierde otra vez
+    // y la persona queda igual que antes.
+    router.push(
+      inviteToken ? `/register?invite=${encodeURIComponent(inviteToken)}` : redirectTo,
+    );
     return null;
   }
 
@@ -35,10 +40,10 @@ export default function LoginGate({
     nombreEmpresa?: string | null;
     inviteToken?: string | null;
   }) {
-    const { error } = await registerAction(data);
-    if (error) return error;
+    const { error, codigo } = await registerAction(data);
+    if (error) return { error, codigo: codigo ?? null };
     router.push(redirectTo);
-    return null;
+    return { error: null, codigo: null };
   }
 
   return (
