@@ -12,6 +12,7 @@ import {
   asignarCreditosAction,
   cambiarEstadoEmpleadoAction,
   quitarEmpleadoAction,
+  resolverInvitacionAction,
   revocarInvitacionAction,
   type EmpresaInvitacion,
 } from "@/lib/actions/empresa";
@@ -105,6 +106,7 @@ export default function EmpresaEmpleadosSection({
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmarQuitar, setConfirmarQuitar] = useState<EmpleadoResumen | null>(null);
+  const [comprarAbierto, setComprarAbierto] = useState(false);
 
   // Copia local de los permisos para poder pintar el toggle al instante.
   // El servidor sigue siendo la fuente de verdad: si la RPC falla, se
@@ -180,6 +182,15 @@ export default function EmpresaEmpleadosSection({
     onRefrescar();
   }
 
+  async function resolver(id: string, aceptar: boolean) {
+    setOcupado(id);
+    setError(null);
+    const res = await resolverInvitacionAction(id, aceptar);
+    setOcupado(null);
+    if (!res.ok) setError(res.error);
+    else onRefrescar();
+  }
+
   async function revocar(id: string) {
     setOcupado(id);
     const res = await revocarInvitacionAction(id);
@@ -229,9 +240,20 @@ export default function EmpresaEmpleadosSection({
             {empleados.reduce((t, e) => t + e.creditosSaldo, 0)}
           </span>
         </div>
-        <span className="ml-auto text-[12.5px] font-medium text-ys-dim max-w-[280px]">
-          1 crédito = 1 mensaje enviado. Para cargar más, escribinos.
-        </span>
+        <div className="ml-auto flex items-center gap-3 flex-wrap">
+          <span className="text-[12.5px] font-medium text-ys-dim">
+            1 crédito = 1 mensaje enviado.
+          </span>
+          <button
+            onClick={() => setComprarAbierto(true)}
+            className="flex-none flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            </svg>
+            Comprar créditos
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -252,34 +274,59 @@ export default function EmpresaEmpleadosSection({
             >
               <div className="flex flex-col gap-0.5 min-w-0">
                 <span className="text-[13.5px] font-bold text-ys-text truncate">
-                  {inv.email}
+                  {inv.nombreSugerido || inv.email || "Sin nombre"}
                 </span>
                 <span className="text-[12px] font-medium text-ys-dim">
                   {inv.estado === "registrado"
-                    ? "Ya se registró — falta aprobarlo abajo"
+                    ? "Ya se registró — falta que lo aceptes"
                     : "Esperando que se registre"}
                 </span>
               </div>
+
+              {/* Las acciones dependen del estado: mientras nadie se registró
+                  lo único que se puede hacer es pasar el link o anularlo. Una
+                  vez que se registró, aparece la decisión de aceptarlo. */}
               <div className="ml-auto flex items-center gap-2 flex-none">
-                {inv.token && (
-                  <button
-                    onClick={() =>
-                      navigator.clipboard.writeText(
-                        `${window.location.origin}/register?invite=${inv.token}`,
-                      )
-                    }
-                    className="text-[12.5px] font-bold text-[#3f4844] bg-white border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer hover:bg-[#f7f9f8]"
-                  >
-                    Copiar link
-                  </button>
+                {inv.estado === "registrado" ? (
+                  <>
+                    <button
+                      onClick={() => resolver(inv.id, false)}
+                      disabled={ocupado === inv.id}
+                      className="text-[12.5px] font-bold text-ys-red-text bg-white border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer hover:bg-ys-red-bg disabled:opacity-40"
+                    >
+                      Rechazar
+                    </button>
+                    <button
+                      onClick={() => resolver(inv.id, true)}
+                      disabled={ocupado === inv.id}
+                      className="text-[12.5px] font-bold text-white bg-ys-green rounded-[10px] px-3.5 py-2 cursor-pointer hover:bg-ys-green-hover disabled:opacity-40"
+                    >
+                      Aceptar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {inv.token && (
+                      <button
+                        onClick={() =>
+                          navigator.clipboard.writeText(
+                            `${window.location.origin}/register?invite=${inv.token}`,
+                          )
+                        }
+                        className="text-[12.5px] font-bold text-[#3f4844] bg-white border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer hover:bg-[#f7f9f8]"
+                      >
+                        Copiar link
+                      </button>
+                    )}
+                    <button
+                      onClick={() => revocar(inv.id)}
+                      disabled={ocupado === inv.id}
+                      className="text-[12.5px] font-bold text-ys-red-text bg-white border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer hover:bg-ys-red-bg disabled:opacity-40"
+                    >
+                      Revocar
+                    </button>
+                  </>
                 )}
-                <button
-                  onClick={() => revocar(inv.id)}
-                  disabled={ocupado === inv.id}
-                  className="text-[12.5px] font-bold text-ys-red-text bg-white border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer hover:bg-ys-red-bg disabled:opacity-40"
-                >
-                  Revocar
-                </button>
               </div>
             </div>
           ))}
@@ -519,6 +566,41 @@ export default function EmpresaEmpleadosSection({
               className="text-[13px] font-semibold text-ys-dim cursor-pointer hover:underline"
             >
               Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {comprarAbierto && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-[rgba(16,24,20,0.45)]"
+            onClick={() => setComprarAbierto(false)}
+          />
+          <div className="relative w-full max-w-[440px] max-h-full overflow-y-auto bg-white border border-ys-border rounded-2xl p-5 md:p-6 flex flex-col gap-4 shadow-[0_20px_48px_rgba(16,24,20,0.18)]">
+            <h2 className="text-[17px] font-extrabold text-ys-text">
+              Comprar créditos
+            </h2>
+            <div className="flex flex-col items-center gap-3 border border-dashed border-ys-border2 rounded-2xl py-8 px-5 text-center">
+              <div className="w-11 h-11 rounded-full bg-ys-el2 flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+                  <path d="M8 5.2v3.3M8 10.8h.01" stroke="#8a908c" strokeWidth="1.6" strokeLinecap="round" />
+                  <circle cx="8" cy="8" r="6" stroke="#8a908c" strokeWidth="1.4" />
+                </svg>
+              </div>
+              <div className="text-[15px] font-extrabold text-ys-text">
+                Todavía no está disponible
+              </div>
+              <div className="text-[13px] text-ys-muted font-medium leading-[1.5]">
+                Estamos armando el pago. Cuando esté, vas a poder cargar
+                créditos al pool desde acá y repartirlos entre tus empleados.
+              </div>
+            </div>
+            <button
+              onClick={() => setComprarAbierto(false)}
+              className="self-end text-[13.5px] font-bold text-[#3f4844] bg-white border border-ys-border rounded-[10px] px-4 py-[11px] cursor-pointer hover:bg-[#f7f9f8]"
+            >
+              Entendido
             </button>
           </div>
         </div>

@@ -34,7 +34,6 @@ export default function InvitarEmpleadoModal({
   onClose: () => void;
   onCreada: () => void;
 }) {
-  const [email, setEmail] = useState("");
   const [nombre, setNombre] = useState("");
   const [permisos, setPermisos] = useState<Permisos>({ ...PERMISOS_INICIALES });
   const [guardando, setGuardando] = useState(false);
@@ -45,7 +44,7 @@ export default function InvitarEmpleadoModal({
   async function crear() {
     setGuardando(true);
     setError(null);
-    const res = await crearInvitacionAction(email.trim(), nombre.trim(), permisos);
+    const res = await crearInvitacionAction(nombre.trim(), permisos);
     setGuardando(false);
 
     if (!res.ok || !res.token) {
@@ -106,27 +105,17 @@ export default function InvitarEmpleadoModal({
               {copiado ? "¡Copiado!" : "Copiar link"}
             </button>
             <p className="text-[12.5px] text-ys-dim font-medium leading-relaxed">
-              Cuando se registre te va a aparecer en Empleados como pendiente.
-              Ahí lo aprobás y recién entonces puede entrar.
+              Cuando se registre te va a aparecer acá arriba, en invitaciones
+              abiertas, con los botones para aceptarlo o rechazarlo. Recién
+              cuando lo aceptes puede entrar.
             </p>
           </div>
         ) : (
           <>
             <div className="flex flex-col gap-3.5">
               <label className="flex flex-col gap-1.5">
-                <span className="text-[12.5px] font-bold text-ys-text">Email</span>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="vendedor@empresa.com"
-                  className="bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13.5px] font-semibold text-ys-text outline-none focus:border-ys-green-border"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
                 <span className="text-[12.5px] font-bold text-ys-text">
-                  Nombre <span className="font-medium text-ys-dim">(opcional)</span>
+                  Nombre del empleado
                 </span>
                 <input
                   value={nombre}
@@ -134,6 +123,10 @@ export default function InvitarEmpleadoModal({
                   placeholder="Juan Pérez"
                   className="bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13.5px] font-semibold text-ys-text outline-none focus:border-ys-green-border"
                 />
+                <span className="text-[11.5px] text-ys-dim font-medium leading-snug">
+                  Es solo para que lo reconozcas en tu lista. Él se registra con
+                  el email que quiera.
+                </span>
               </label>
             </div>
 
@@ -178,7 +171,7 @@ export default function InvitarEmpleadoModal({
               </button>
               <button
                 onClick={crear}
-                disabled={guardando || email.trim().length === 0}
+                disabled={guardando || nombre.trim().length < 2}
                 className="ml-auto flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {guardando ? "Creando..." : "Generar link"}

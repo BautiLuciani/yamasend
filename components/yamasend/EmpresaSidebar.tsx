@@ -71,21 +71,21 @@ const NAV_ITEMS: {
     ),
   },
   {
-    key: "ia",
-    label: "Asistente",
-    icon: (c) => (
-      <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
-        <path d="M8 2.2 9.1 6 12.9 7.1 9.1 8.2 8 12 6.9 8.2 3.1 7.1 6.9 6 8 2.2Z" stroke={c} strokeWidth="1.4" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
-  {
     key: "campanas",
     label: "Campañas",
     icon: (c) => (
       <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
         <path d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z" stroke={c} strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M12 6v4" stroke={c} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    key: "ia",
+    label: "Asistente",
+    icon: (c) => (
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+        <path d="M8 2.2 9.1 6 12.9 7.1 9.1 8.2 8 12 6.9 8.2 3.1 7.1 6.9 6 8 2.2Z" stroke={c} strokeWidth="1.4" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -117,17 +117,6 @@ export default function EmpresaSidebar({
           className="w-[196px] h-auto object-contain"
           priority
         />
-      </div>
-
-      {/* Señal ambiente de contexto: dejar claro de un vistazo que esto no es
-          la app de un vendedor sino la consola de la empresa. */}
-      <div className="mx-1 px-3 py-2.5 rounded-[10px] bg-ys-green-bg border border-ys-green-border flex flex-col gap-0.5">
-        <span className="text-[10.5px] font-bold text-ys-green-text uppercase tracking-wide">
-          Cuenta de empresa
-        </span>
-        <span className="text-[13px] font-extrabold text-ys-text truncate">
-          {orgNombre}
-        </span>
       </div>
 
       <div className="flex flex-col gap-[3px]">
@@ -173,7 +162,7 @@ export default function EmpresaSidebar({
           </div>
           <div className="flex flex-col gap-px min-w-0">
             <div className="text-[13.5px] font-bold text-ys-text truncate">{orgNombre}</div>
-            <div className="text-xs text-ys-dim font-medium truncate">Solo lectura</div>
+            <div className="text-xs text-ys-dim font-medium truncate">Empresa</div>
           </div>
           <svg className="ml-auto mr-2 flex-shrink-0" width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path d="m4.5 10 3.5-3.5L11.5 10" stroke="#9aa19c" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />

@@ -280,6 +280,7 @@ export interface AccionResult {
 
 const ERRORES: Record<string, string> = {
   sin_permiso: "No tenés permiso para hacer esto.",
+  nombre_invalido: "Ingresá un nombre de al menos 2 caracteres.",
   no_encontrado: "No se encontró ese empleado en tu equipo.",
   estado_invalido: "Ese estado no es válido.",
   email_invalido: "El email no tiene un formato válido.",
@@ -341,7 +342,8 @@ export async function quitarEmpleadoAction(
 
 export interface EmpresaInvitacion {
   id: string;
-  email: string;
+  /** Solo lo tienen las invitaciones viejas: dejó de pedirse. */
+  email: string | null;
   nombreSugerido: string | null;
   /** null cuando la invitación ya no sirve (usada, revocada o vencida). */
   token: string | null;
@@ -359,7 +361,7 @@ export async function getEmpresaInvitacionesAction(): Promise<EmpresaInvitacion[
 
   return (data as Record<string, unknown>[]).map((r) => ({
     id: String(r.id),
-    email: String(r.email ?? ""),
+    email: (r.email as string) ?? null,
     nombreSugerido: (r.nombre_sugerido as string) ?? null,
     token: (r.token as string) ?? null,
     estado: String(r.estado ?? "pendiente"),
@@ -372,8 +374,13 @@ export interface CrearInvitacionResult extends AccionResult {
   token: string | null;
 }
 
+/**
+ * Crea una invitación. Ya no se pide email: nunca se comparaba contra el email
+ * con el que la persona termina registrándose (puede usar el que quiera), así
+ * que solo aportaba un campo más y una falsa sensación de control. El nombre
+ * es ahora lo que identifica a la invitación en el listado.
+ */
 export async function crearInvitacionAction(
-  email: string,
   nombre: string,
   permisos: Permisos,
 ): Promise<CrearInvitacionResult> {
@@ -383,7 +390,7 @@ export async function crearInvitacionAction(
   const supabase = await createClient();
   const { data, error } = await supabase.rpc(
     "yamas_send_empresa_crear_invitacion",
-    { p_email: email, p_nombre: nombre || null, p_permisos: permisos },
+    { p_nombre: nombre, p_permisos: permisos },
   );
   if (error) return { ok: false, error: "No se pudo crear la invitación.", token: null };
 
@@ -453,4 +460,30 @@ export async function asignarCreditosAction(
     pool: null,
     saldo: null,
   };
+}
+
+
+/**
+ * Acepta o rechaza a alguien que ya se registró con el link de invitación.
+ *
+ * Va por invitación y no por miembro porque un empleado pendiente todavía no
+ * aparece en getEmpresaEmpleadosAction(): esa lista se arma sobre los tenants
+ * visibles, que a propósito excluye a los no aprobados para que la empresa no
+ * vea sus contactos antes de aceptarlo.
+ */
+export async function resolverInvitacionAction(
+  id: string,
+  aceptar: boolean,
+): Promise<AccionResult> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_resolver_invitacion",
+    { p_id: id, p_aceptar: aceptar },
+  );
+  if (error)
+    return { ok: false, error: "No se pudo procesar la solicitud." };
+  return traducir(data);
 }

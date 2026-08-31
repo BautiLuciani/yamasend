@@ -200,14 +200,6 @@ export default function EmpresaShell({
             onClick={() => setDrawerOpen(false)}
           />
           <div className="relative w-[262px] max-w-[85vw] h-full bg-ys-card border-r border-ys-border px-3.5 pt-5 pb-4 flex flex-col gap-4 overflow-y-auto">
-            <div className="px-2 py-2.5 rounded-[10px] bg-ys-green-bg border border-ys-green-border flex flex-col gap-0.5">
-              <span className="text-[10.5px] font-bold text-ys-green-text uppercase tracking-wide">
-                Cuenta de empresa
-              </span>
-              <span className="text-[13px] font-extrabold text-ys-text truncate">
-                {empresa.orgNombre}
-              </span>
-            </div>
             <div className="flex flex-col gap-[3px]">
               {VALID_SECTIONS.map((key) => (
                 <button
@@ -227,12 +219,32 @@ export default function EmpresaShell({
                 </button>
               ))}
             </div>
-            <button
-              onClick={onLogout}
-              className="mt-auto px-3 py-2.5 rounded-[10px] text-[13.5px] font-semibold text-ys-orange hover:bg-ys-warn-bg text-left cursor-pointer"
-            >
-              Cerrar sesión
-            </button>
+            <div className="mt-auto border-t border-ys-border-softest pt-3.5 flex flex-col gap-[3px]">
+              <div className="flex items-center gap-[11px] px-3 pt-2 pb-3">
+                <div className="w-[38px] h-[38px] rounded-full bg-ys-dark text-white text-[13px] font-extrabold flex items-center justify-center flex-shrink-0">
+                  {empresa.orgNombre
+                    .split(" ")
+                    .map((p) => p[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase() || "?"}
+                </div>
+                <div className="flex flex-col gap-px min-w-0">
+                  <div className="text-sm font-bold text-ys-text truncate">
+                    {empresa.orgNombre}
+                  </div>
+                  <div className="text-[12.5px] text-ys-dim font-medium truncate">
+                    Empresa
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={onLogout}
+                className="px-3 py-2.5 rounded-[10px] text-[13.5px] font-semibold text-ys-orange hover:bg-ys-warn-bg text-left cursor-pointer"
+              >
+                Cerrar sesión
+              </button>
+            </div>
           </div>
         </div>
       )}

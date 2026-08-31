@@ -100,12 +100,6 @@ import {
 } from "@/lib/actions/ia_conversaciones";
 import { createClient } from "@/lib/supabase/client";
 
-const PLAN_LABELS: Record<string, string> = {
-  starter: "Starter",
-  pro: "Pro",
-  uso: "Por mensaje",
-};
-
 // URL del workflow de n8n que genera/consulta la sesión de WhatsApp (WAHA).
 // Devuelve una imagen PNG (QR para escanear) o un JSON { status: "WORKING", ... }
 // si la sesión ya está conectada.
@@ -1382,7 +1376,10 @@ export default function AppShell({
     setProfileOpen(true);
   }
 
-  const planLabel = PLAN_LABELS[user.plan] || user.plan;
+  // Etiqueta de tipo de cuenta, en el mismo lugar donde antes iba el plan.
+  // Los planes se eliminaron: lo que distingue a una cuenta ahora es si es
+  // individual o de empresa.
+  const planLabel = "Individual";
 
   // Secciones que el empleado no puede ver por permisos. Solo IA por ahora:
   // el resto de las secciones son informativas y se ven siempre, lo que se

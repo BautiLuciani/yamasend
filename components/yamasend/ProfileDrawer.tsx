@@ -15,12 +15,6 @@ interface ProfileDrawerProps {
   onOpenMyProfile: () => void;
 }
 
-const PLAN_LABELS: Record<string, string> = {
-  starter: "Starter",
-  pro: "Pro",
-  uso: "Por mensaje",
-};
-
 function isTrial(trialEnd: string, now: number): boolean {
   const end = new Date(trialEnd).getTime();
   const in7 = now + 7 * 24 * 60 * 60 * 1000;
@@ -39,7 +33,7 @@ export default function ProfileDrawer({
   const [now] = useState(() => Date.now());
   const { t } = useLang();
   const trial = isTrial(user.trialEnd, now);
-  const planLabel = PLAN_LABELS[user.plan] || user.plan;
+  const planLabel = "Individual";
   const daysLeft = Math.max(
     0,
     Math.ceil((new Date(user.trialEnd).getTime() - now) / 86400000),
