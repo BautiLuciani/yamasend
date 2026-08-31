@@ -212,24 +212,23 @@ async function resolverContextoNegocio(): Promise<ContextoNegocio | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: cliente } = await supabase
-    .from("yamas_inmo_clientes")
-    .select(
-      "contacto_nombre, nombre_empresa, rubro, descripcion_negocio, publico_objetivo, tono_comunicacion, diferenciales",
-    )
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  // Vía RPC y no un select directo: un empleado con organización tiene que
+  // heredar el contexto de LA EMPRESA (yamas_send_organizaciones), no el
+  // propio de yamas_inmo_clientes. La decisión de cuál de las dos fuentes usar
+  // vive en Postgres (yamas_send_contexto_negocio), no acá, para que la IA y
+  // la sección "Datos de la empresa" del perfil nunca puedan divergir.
+  const { data, error } = await supabase.rpc("yamas_send_contexto_negocio");
+  if (error || !data) return null;
 
-  if (!cliente) return null;
-
+  const r = data as Record<string, string | null>;
   return {
-    nombreUsuario: cliente.contacto_nombre ?? null,
-    nombreEmpresa: cliente.nombre_empresa ?? null,
-    rubro: cliente.rubro ?? "",
-    descripcionNegocio: cliente.descripcion_negocio ?? "",
-    publicoObjetivo: cliente.publico_objetivo ?? "",
-    tonoComunicacion: cliente.tono_comunicacion ?? "",
-    diferenciales: cliente.diferenciales ?? "",
+    nombreUsuario: r.nombreUsuario ?? null,
+    nombreEmpresa: r.nombreEmpresa ?? null,
+    rubro: r.rubro ?? "",
+    descripcionNegocio: r.descripcionNegocio ?? "",
+    publicoObjetivo: r.publicoObjetivo ?? "",
+    tonoComunicacion: r.tonoComunicacion ?? "",
+    diferenciales: r.diferenciales ?? "",
   };
 }
 

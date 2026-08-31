@@ -96,6 +96,8 @@ const i18n = {
     myprofile_field_reglas_evitar: "Cosas a evitar",
     myprofile_field_reglas_evitar_placeholder:
       "Ej: No prometer plazos de financiación. No mencionar precios exactos sin confirmar con el equipo.",
+    myprofile_agency_readonly_notice:
+      "Estos datos los carga tu empresa y los usa la IA para responder. Vos podés verlos pero no editarlos.",
 
     myprofile_creditos_title: "Créditos",
     myprofile_creditos_desc: "Comprá y seguí el consumo de créditos de tu cuenta.",
@@ -247,6 +249,8 @@ const i18n = {
     myprofile_field_reglas_evitar: "Things to avoid",
     myprofile_field_reglas_evitar_placeholder:
       "E.g.: Don't promise financing terms. Don't mention exact prices without confirming with the team.",
+    myprofile_agency_readonly_notice:
+      "Your company set these up and the AI uses them to respond. You can view them but not edit them.",
 
     myprofile_creditos_title: "Credits",
     myprofile_creditos_desc: "Buy credits and track your account usage.",

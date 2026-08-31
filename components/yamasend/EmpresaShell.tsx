@@ -11,6 +11,7 @@ import type {
 } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
 import EmpresaSidebar from "./EmpresaSidebar";
+import MyProfileModal from "./MyProfileModal";
 import EmpresaDashboardSection from "./EmpresaDashboardSection";
 import EmpresaIA from "./EmpresaIA";
 import EmpresaEmpleadosSection from "./EmpresaEmpleadosSection";
@@ -88,6 +89,7 @@ export default function EmpresaShell({
   const router = useRouter();
   const [section, setSectionState] = useState<EmpresaSection>(getInitialSection);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [myProfileOpen, setMyProfileOpen] = useState(false);
 
   function setSection(next: EmpresaSection) {
     setSectionState(next);
@@ -328,6 +330,7 @@ export default function EmpresaShell({
         onNavigate={setSection}
         orgNombre={empresa.orgNombre}
         onLogout={onLogout}
+        onOpenMyProfile={() => setMyProfileOpen(true)}
       />
 
       {/* Header mobile */}
@@ -396,6 +399,15 @@ export default function EmpresaShell({
                   </div>
                 </div>
               </div>
+              <button
+                onClick={() => {
+                  setDrawerOpen(false);
+                  setMyProfileOpen(true);
+                }}
+                className="px-3 py-2.5 rounded-[10px] text-[13.5px] font-semibold text-[#3f4844] hover:bg-ys-el2 text-left cursor-pointer"
+              >
+                Mi perfil
+              </button>
               <button
                 onClick={onLogout}
                 className="px-3 py-2.5 rounded-[10px] text-[13.5px] font-semibold text-ys-orange hover:bg-ys-warn-bg text-left cursor-pointer"
@@ -514,6 +526,18 @@ export default function EmpresaShell({
           </div>
         )}
       </div>
+
+      <MyProfileModal
+        open={myProfileOpen}
+        user={empresa}
+        onClose={() => setMyProfileOpen(false)}
+        // El nombre que se edita en "Perfil personal" es contacto_nombre (la
+        // persona dueña), no el nombre de la organización que se ve en el
+        // sidebar (orgNombre = columna "nombre", sin editor en este modal).
+        // EmpresaUser tampoco vive en estado local acá —es prop directa del
+        // servidor—, así que no hay nada que este callback deba sincronizar.
+        onUserUpdate={() => {}}
+      />
     </div>
   );
 }

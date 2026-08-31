@@ -21,14 +21,6 @@ export const mockUser: AppUser = {
   permisos: PERMISOS_COMPLETOS,
   orgId: null,
   orgNombre: null,
-  nombreEmpresa: "",
-  rubro: "",
-  descripcionNegocio: "",
-  publicoObjetivo: "",
-  tonoComunicacion: "",
-  zonaCobertura: "",
-  diferenciales: "",
-  reglasEvitar: "",
 };
 
 export const mockContacts: Contact[] = [

@@ -1452,9 +1452,11 @@ export default function AppShell({
   }
 
   // Etiqueta de tipo de cuenta, en el mismo lugar donde antes iba el plan.
-  // Los planes se eliminaron: lo que distingue a una cuenta ahora es si es
-  // individual o de empresa.
-  const planLabel = "Individual";
+  // Depende de user.orgId y no de un campo fijo a propósito: ese campo ya se
+  // actualiza en vivo por el canal de Realtime de más arriba (permisos,
+  // estado, org_id), así que la etiqueta cambia sola en el momento en que la
+  // empresa quita o suma al empleado, sin esperar a un refresh.
+  const planLabel = user.orgId ? "Empleado" : "Individual";
 
   // Secciones que el empleado no puede ver por permisos. Solo IA por ahora:
   // el resto de las secciones son informativas y se ven siempre, lo que se

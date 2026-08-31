@@ -26,7 +26,7 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
   const { data: row, error } = await supabase
     .from("yamas_inmo_clientes")
     .select(
-      "tenant_id, contacto_nombre, contacto_email, ventas_tel, plan, trialend, credito, nombre_empresa, rubro, descripcion_negocio, publico_objetivo, tono_comunicacion, zona_cobertura, diferenciales, reglas_evitar",
+      "tenant_id, contacto_nombre, contacto_email, ventas_tel, plan, trialend, credito",
     )
     .eq("auth_user_id", user.id)
     .maybeSingle();
@@ -54,14 +54,6 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
       : row.credito
         ? parseFloat(row.credito)
         : 0,
-    nombreEmpresa: row.nombre_empresa ?? "",
-    rubro: row.rubro ?? "",
-    descripcionNegocio: row.descripcion_negocio ?? "",
-    publicoObjetivo: row.publico_objetivo ?? "",
-    tonoComunicacion: row.tono_comunicacion ?? "",
-    zonaCobertura: row.zona_cobertura ?? "",
-    diferenciales: row.diferenciales ?? "",
-    reglasEvitar: row.reglas_evitar ?? "",
   };
 }
 

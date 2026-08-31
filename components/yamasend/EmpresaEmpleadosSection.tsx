@@ -107,6 +107,20 @@ export default function EmpresaEmpleadosSection({
   const [error, setError] = useState<string | null>(null);
   const [confirmarQuitar, setConfirmarQuitar] = useState<EmpleadoResumen | null>(null);
   const [comprarAbierto, setComprarAbierto] = useState(false);
+  // Colapsado por defecto y no expandido: con muchos empleados, ver todas las
+  // tarjetas abiertas de entrada es lo que Bauti pidió evitar. Se guarda un
+  // Set de ids expandidos en vez de un booleano por tarjeta para no tener que
+  // tocar EmpleadoResumen ni desnormalizar el estado en otro lado.
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+
+  function toggleExpandido(id: string) {
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // Copia local de los permisos para poder pintar el toggle al instante.
   // El servidor sigue siendo la fuente de verdad: si la RPC falla, se
@@ -187,8 +201,17 @@ export default function EmpresaEmpleadosSection({
     setError(null);
     const res = await resolverInvitacionAction(id, aceptar);
     setOcupado(null);
-    if (!res.ok) setError(res.error);
-    else onRefrescar();
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    // Sin onRefrescar() acá a propósito: los canales de Realtime del shell ya
+    // escuchan tanto yamas_send_invitaciones como yamas_send_miembros filtrados
+    // por esta organización, así que la fila de invitaciones y (si se aceptó)
+    // la del empleado se actualizan solas. Llamar a router.refresh() en
+    // paralelo sumaba una segunda escritura de estado casi simultánea a la de
+    // Realtime, sin ganar nada — y era la carrera que hacía sentir el primer
+    // click como si no hubiera pasado nada.
   }
 
   async function revocar(id: string) {
@@ -292,16 +315,19 @@ export default function EmpresaEmpleadosSection({
                     <button
                       onClick={() => resolver(inv.id, false)}
                       disabled={ocupado === inv.id}
-                      className="text-[12.5px] font-bold text-ys-red-text bg-white border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer hover:bg-ys-red-bg disabled:opacity-40"
+                      className="text-[12.5px] font-bold text-ys-red-text bg-white border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer hover:bg-ys-red-bg disabled:opacity-40 disabled:cursor-wait"
                     >
                       Rechazar
                     </button>
                     <button
                       onClick={() => resolver(inv.id, true)}
                       disabled={ocupado === inv.id}
-                      className="text-[12.5px] font-bold text-white bg-ys-green rounded-[10px] px-3.5 py-2 cursor-pointer hover:bg-ys-green-hover disabled:opacity-40"
+                      className="text-[12.5px] font-bold text-white bg-ys-green rounded-[10px] px-3.5 py-2 cursor-pointer hover:bg-ys-green-hover disabled:opacity-60 disabled:cursor-wait"
                     >
-                      Aceptar
+                      {/* Sin esto el botón se veía igual mientras la request
+                          estaba en vuelo: el click parecía no haber hecho
+                          nada y la persona volvía a tocarlo. */}
+                      {ocupado === inv.id ? "Aceptando..." : "Aceptar"}
                     </button>
                   </>
                 ) : (
@@ -348,13 +374,18 @@ export default function EmpresaEmpleadosSection({
           {empleados.map((emp) => {
             const trabajando = ocupado === emp.miembroId;
             const permisos = permisosDe(emp);
+            const abierto = expandidos.has(emp.miembroId);
 
             return (
               <div
                 key={emp.miembroId}
                 className="bg-white border border-ys-border rounded-2xl p-4 md:p-[18px] flex flex-col gap-4"
               >
-                <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => toggleExpandido(emp.miembroId)}
+                  className="flex items-center gap-3 flex-wrap cursor-pointer text-left"
+                  aria-expanded={abierto}
+                >
                   <div className="w-9 h-9 flex-none rounded-full bg-ys-green-bg text-ys-green-text text-[12.5px] font-extrabold flex items-center justify-center">
                     {emp.nombre.slice(0, 2).toUpperCase()}
                   </div>
@@ -368,50 +399,70 @@ export default function EmpresaEmpleadosSection({
                   </div>
                   <div className="ml-auto flex items-center gap-2 flex-none">
                     <EstadoBadge estado={emp.estado} />
-                  </div>
-                </div>
-
-                {/* Aviso operativo: sin WhatsApp cargado el empleado puede
-                    organizarse pero no enviar. Explicarlo acá evita que la
-                    empresa crea que el producto está roto. */}
-                {!emp.whatsappConfigurado && (
-                  <div className="bg-ys-warn-bg border border-[#f0dcb4] rounded-xl px-3.5 py-2.5 flex items-center gap-2.5">
-                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
-                      <circle cx="8" cy="8" r="6" stroke="#c07a12" strokeWidth="1.6" />
-                      <path d="M8 5v3.5M8 10.6v.4" stroke="#c07a12" strokeWidth="1.6" strokeLinecap="round" />
-                    </svg>
-                    <span className="text-[12.5px] font-semibold text-ys-warn-text">
-                      WhatsApp sin configurar: puede armar audiencias y templates,
-                      pero todavía no puede enviar.
-                    </span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-3 md:gap-4 border-t border-ys-border-softest pt-3.5">
-                  <Metrica label="Contactos" valor={emp.contactosCount} />
-                  <Metrica label="Audiencias" valor={emp.audienciasCount} />
-                  <Metrica label="Templates" valor={emp.templatesCount} />
-                  <Metrica label="Campañas" valor={emp.campanasEnviadas} />
-                  <Metrica label="Mensajes" valor={emp.mensajesOk} />
-                  <Metrica label="Créditos" valor={emp.creditosSaldo} />
-                </div>
-
-                <div className="flex flex-col gap-2.5 border-t border-ys-border-softest pt-3.5">
-                  <span className="text-[11.5px] font-bold text-ys-dim uppercase tracking-wide">
-                    Permisos
-                  </span>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PERMISO_KEYS.map((key) => (
-                      <PermisoToggle
-                        key={key}
-                        label={PERMISO_LABEL[key]}
-                        activo={permisos[key]}
-                        disabled={trabajando}
-                        onToggle={(v) => togglePermiso(emp, key, v)}
+                    {/* Flecha en vez de +/-: menos ambigua sobre qué hace en
+                        cada estado, y es el mismo lenguaje visual que ya usa
+                        el acordeón de "Ideas para empezar" en la IA. */}
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      className={`flex-none text-ys-dimmer transition-transform ${abierto ? "rotate-180" : ""}`}
+                    >
+                      <path
+                        d="m4.5 6 3.5 3.5L11.5 6"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                       />
-                    ))}
+                    </svg>
                   </div>
-                </div>
+                </button>
+
+                {abierto && (
+                  <>
+                    {/* Aviso operativo: sin WhatsApp cargado el empleado puede
+                        organizarse pero no enviar. Explicarlo acá evita que la
+                        empresa crea que el producto está roto. */}
+                    {!emp.whatsappConfigurado && (
+                      <div className="bg-ys-warn-bg border border-[#f0dcb4] rounded-xl px-3.5 py-2.5 flex items-center gap-2.5">
+                        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
+                          <circle cx="8" cy="8" r="6" stroke="#c07a12" strokeWidth="1.6" />
+                          <path d="M8 5v3.5M8 10.6v.4" stroke="#c07a12" strokeWidth="1.6" strokeLinecap="round" />
+                        </svg>
+                        <span className="text-[12.5px] font-semibold text-ys-warn-text">
+                          WhatsApp sin configurar: puede armar audiencias y templates,
+                          pero todavía no puede enviar.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-3 md:grid-cols-6 gap-3 md:gap-4 border-t border-ys-border-softest pt-3.5">
+                      <Metrica label="Contactos" valor={emp.contactosCount} />
+                      <Metrica label="Audiencias" valor={emp.audienciasCount} />
+                      <Metrica label="Templates" valor={emp.templatesCount} />
+                      <Metrica label="Campañas" valor={emp.campanasEnviadas} />
+                      <Metrica label="Mensajes" valor={emp.mensajesOk} />
+                      <Metrica label="Créditos" valor={emp.creditosSaldo} />
+                    </div>
+
+                    <div className="flex flex-col gap-2.5 border-t border-ys-border-softest pt-3.5">
+                      <span className="text-[11.5px] font-bold text-ys-dim uppercase tracking-wide">
+                        Permisos
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {PERMISO_KEYS.map((key) => (
+                          <PermisoToggle
+                            key={key}
+                            label={PERMISO_LABEL[key]}
+                            activo={permisos[key]}
+                            disabled={trabajando}
+                            onToggle={(v) => togglePermiso(emp, key, v)}
+                          />
+                        ))}
+                      </div>
+                    </div>
 
                 <div className="flex items-center gap-2 flex-wrap border-t border-ys-border-softest pt-3.5">
                   {emp.estado === "pendiente" && (
@@ -466,6 +517,8 @@ export default function EmpresaEmpleadosSection({
                     Quitar del equipo
                   </button>
                 </div>
+                  </>
+                )}
               </div>
             );
           })}

@@ -117,14 +117,6 @@ export interface AppUser {
   permisos: Permisos;
   orgId: string | null;
   orgNombre: string | null;
-  nombreEmpresa: string;
-  rubro: string;
-  descripcionNegocio: string;
-  publicoObjetivo: string;
-  tonoComunicacion: string;
-  zonaCobertura: string;
-  diferenciales: string;
-  reglasEvitar: string;
 }
 
 /**

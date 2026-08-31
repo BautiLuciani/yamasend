@@ -1,13 +1,60 @@
 "use client";
 
-import { useState } from "react";
-import type { AppUser } from "@/lib/types";
+import { useEffect, useState } from "react";
+import type { AppUser, EmpresaUser } from "@/lib/types";
 import { useLang } from "./LangContext";
-import { updateProfileAction, changePasswordAction } from "@/lib/actions/profile";
+import {
+  updateProfileAction,
+  updateEmpresaPerfilAction,
+  changePasswordAction,
+  getDatosNegocioAction,
+  actualizarDatosNegocioAction,
+  type DatosNegocio,
+} from "@/lib/actions/profile";
+
+/**
+ * Identidad mínima que necesita este modal, sea la sesión de un empleado
+ * (AppUser), de una cuenta individual (también AppUser, con orgId null) o de
+ * una empresa (EmpresaUser). Se arma acá y no se reusan los tipos completos
+ * porque los dos difieren en varios campos que este modal no necesita
+ * (permisos, tenantId, creditosPool...) — pedir solo lo que se usa hace
+ * explícito qué de cada tipo entra en juego.
+ */
+interface Identidad {
+  rol: "empresa" | "empleado";
+  contactoNombre: string;
+  contactoEmail: string;
+  /** Empresa no tiene WhatsApp: la sección Perfil personal esconde el campo. */
+  ventasTel: string | null;
+  orgId: string | null;
+  trialEnd: string | null;
+}
+
+function identidadDe(user: AppUser | EmpresaUser): Identidad {
+  if ("miembroId" in user) {
+    // EmpresaUser
+    return {
+      rol: "empresa",
+      contactoNombre: user.contactoNombre,
+      contactoEmail: user.contactoEmail,
+      ventasTel: null,
+      orgId: user.orgId,
+      trialEnd: null,
+    };
+  }
+  return {
+    rol: "empleado",
+    contactoNombre: user.contactoNombre,
+    contactoEmail: user.contactoEmail,
+    ventasTel: user.ventasTel,
+    orgId: user.orgId,
+    trialEnd: user.trialEnd,
+  };
+}
 
 interface MyProfileModalProps {
   open: boolean;
-  user: AppUser;
+  user: AppUser | EmpresaUser;
   onClose: () => void;
   onUserUpdate: (patch: Partial<AppUser>) => void;
 }
@@ -89,26 +136,33 @@ function TextArea({
   onChange,
   placeholder,
   rows = 3,
+  readOnly,
 }: {
   value: string;
   onChange?: (v: string) => void;
   placeholder?: string;
   rows?: number;
+  readOnly?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   return (
     <div
-      className="flex items-center gap-2.5 border rounded-[10px] px-[13px] py-[11px] transition-colors"
+      className={`flex items-center gap-2.5 border rounded-[10px] px-[13px] py-[11px] transition-colors ${
+        readOnly ? "bg-ys-el2" : ""
+      }`}
       style={{ borderColor: focused ? "#12B76A" : "#e8ebe9" }}
     >
       <textarea
         value={value}
+        readOnly={readOnly}
         onChange={(e) => onChange?.(e.target.value)}
-        onFocus={() => setFocused(true)}
+        onFocus={() => !readOnly && setFocused(true)}
         onBlur={() => setFocused(false)}
         placeholder={placeholder}
         rows={rows}
-        className="flex-1 min-w-0 border-none outline-none bg-transparent text-sm font-semibold text-ys-text resize-none"
+        className={`flex-1 min-w-0 border-none outline-none bg-transparent text-sm font-semibold text-ys-text resize-none ${
+          readOnly ? "cursor-not-allowed text-ys-muted" : ""
+        }`}
       />
     </div>
   );
@@ -160,6 +214,18 @@ function PasswordInput({
   );
 }
 
+const DATOS_NEGOCIO_VACIOS: DatosNegocio = {
+  editable: true,
+  nombreEmpresa: "",
+  rubro: "",
+  descripcionNegocio: "",
+  publicoObjetivo: "",
+  tonoComunicacion: "",
+  zonaCobertura: "",
+  diferenciales: "",
+  reglasEvitar: "",
+};
+
 export default function MyProfileModal({
   open,
   user,
@@ -167,6 +233,7 @@ export default function MyProfileModal({
   onUserUpdate,
 }: MyProfileModalProps) {
   const { t } = useLang();
+  const identidad = identidadDe(user);
   const [section, setSection] = useState<Section>("personal");
   // Solo tiene efecto en mobile: controla si se muestra el menú de
   // secciones o el contenido de la sección elegida (pantallas separadas,
@@ -174,22 +241,36 @@ export default function MyProfileModal({
   const [mobileView, setMobileView] = useState<"menu" | "content">("menu");
 
   // Perfil personal
-  const [nombre, setNombre] = useState(user.contactoNombre);
-  const [tel, setTel] = useState(user.ventasTel);
+  const [nombre, setNombre] = useState(identidad.contactoNombre);
+  const [tel, setTel] = useState(identidad.ventasTel ?? "");
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  // Agencia
-  const [nombreEmpresa, setNombreEmpresa] = useState(user.nombreEmpresa);
-  const [rubro, setRubro] = useState(user.rubro);
-  const [descripcionNegocio, setDescripcionNegocio] = useState(user.descripcionNegocio);
-  const [publicoObjetivo, setPublicoObjetivo] = useState(user.publicoObjetivo);
-  const [tonoComunicacion, setTonoComunicacion] = useState(user.tonoComunicacion);
-  const [zonaCobertura, setZonaCobertura] = useState(user.zonaCobertura);
-  const [diferenciales, setDiferenciales] = useState(user.diferenciales);
-  const [reglasEvitar, setReglasEvitar] = useState(user.reglasEvitar);
+  // Datos de la empresa. Se piden por RPC al abrir el modal, no vienen en las
+  // props: es la única sección cuya fuente cambia según el rol (organización
+  // vs fila propia) y ese cálculo ya vive en yamas_send_mi_perfil_datos_negocio(),
+  // así que no tiene sentido resolverlo de nuevo acá con datos que además
+  // AppUser/EmpresaUser ya no cargan.
+  const [datosNegocio, setDatosNegocio] = useState<DatosNegocio>(DATOS_NEGOCIO_VACIOS);
+  // Arranca en true (no se setea dentro del efecto) siguiendo el mismo
+  // patrón que ya usa AppShell para dashboardInsightLoading: la carga
+  // siempre corre al abrir, así que el estado inicial ya la refleja.
+  const [cargandoNegocio, setCargandoNegocio] = useState(true);
   const [savingAgency, setSavingAgency] = useState(false);
   const [agencyMsg, setAgencyMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let vivo = true;
+    getDatosNegocioAction().then((res) => {
+      if (!vivo) return;
+      setDatosNegocio(res ?? DATOS_NEGOCIO_VACIOS);
+      setCargandoNegocio(false);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [open]);
 
   // Contraseña
   const [currentPw, setCurrentPw] = useState("");
@@ -204,19 +285,11 @@ export default function MyProfileModal({
   const [prevUser, setPrevUser] = useState(user);
   if (user !== prevUser) {
     setPrevUser(user);
-    setNombre(user.contactoNombre);
-    setTel(user.ventasTel);
-    setNombreEmpresa(user.nombreEmpresa);
-    setRubro(user.rubro);
-    setDescripcionNegocio(user.descripcionNegocio);
-    setPublicoObjetivo(user.publicoObjetivo);
-    setTonoComunicacion(user.tonoComunicacion);
-    setZonaCobertura(user.zonaCobertura);
-    setDiferenciales(user.diferenciales);
-    setReglasEvitar(user.reglasEvitar);
+    const nueva = identidadDe(user);
+    setNombre(nueva.contactoNombre);
+    setTel(nueva.ventasTel ?? "");
   }
 
-  // Al cerrar, volver siempre a la primera sección y limpiar mensajes/contraseñas
   function handleSelectSection(s: Section) {
     setSection(s);
     setMobileView("content");
@@ -239,47 +312,36 @@ export default function MyProfileModal({
   async function handleSaveProfile() {
     setSavingProfile(true);
     setProfileMsg(null);
-    const res = await updateProfileAction({
-      contactoNombre: nombre,
-      ventasTel: tel,
-    });
+
+    const res =
+      identidad.rol === "empresa"
+        ? await updateEmpresaPerfilAction(nombre)
+        : await updateProfileAction({ contactoNombre: nombre, ventasTel: tel });
+
     setSavingProfile(false);
     if (res.error) {
       setProfileMsg({ type: "err", text: res.error });
-    } else {
-      setProfileMsg({ type: "ok", text: t("myprofile_saved") });
-      onUserUpdate({ contactoNombre: nombre.trim(), ventasTel: tel.trim() });
+      return;
     }
+    setProfileMsg({ type: "ok", text: t("myprofile_saved") });
+    // onUserUpdate solo tiene sentido para AppUser (EmpresaUser no fluye por
+    // ese callback en EmpresaShell); no pasa nada si EmpresaShell lo ignora.
+    onUserUpdate({ contactoNombre: nombre.trim(), ventasTel: tel.trim() });
   }
 
   async function handleSaveAgency() {
+    if (!datosNegocio.editable) return;
     setSavingAgency(true);
     setAgencyMsg(null);
-    const res = await updateProfileAction({
-      nombreEmpresa,
-      rubro,
-      descripcionNegocio,
-      publicoObjetivo,
-      tonoComunicacion,
-      zonaCobertura,
-      diferenciales,
-      reglasEvitar,
-    });
+    const res = await actualizarDatosNegocioAction(
+      datosNegocio,
+      identidad.orgId !== null,
+    );
     setSavingAgency(false);
     if (res.error) {
       setAgencyMsg({ type: "err", text: res.error });
     } else {
       setAgencyMsg({ type: "ok", text: t("myprofile_saved") });
-      onUserUpdate({
-        nombreEmpresa: nombreEmpresa.trim(),
-        rubro: rubro.trim(),
-        descripcionNegocio: descripcionNegocio.trim(),
-        publicoObjetivo: publicoObjetivo.trim(),
-        tonoComunicacion: tonoComunicacion.trim(),
-        zonaCobertura: zonaCobertura.trim(),
-        diferenciales: diferenciales.trim(),
-        reglasEvitar: reglasEvitar.trim(),
-      });
     }
   }
 
@@ -310,6 +372,15 @@ export default function MyProfileModal({
   }
 
   if (!open) return null;
+
+  // Setter genérico por campo, no un hook: escribe directo sobre el objeto
+  // datosNegocio ya en estado. Evita ocho useState sueltos para ocho campos
+  // que siempre viajan juntos al guardar.
+  function setCampoNegocio<K extends keyof Omit<DatosNegocio, "editable">>(
+    key: K,
+  ) {
+    return (v: string) => setDatosNegocio((d) => ({ ...d, [key]: v }));
+  }
 
 
   return (
@@ -363,17 +434,22 @@ export default function MyProfileModal({
               </svg>
             }
           />
-          <NavItem
-            active={section === "creditos"}
-            onClick={() => handleSelectSection("creditos")}
-            label={t("myprofile_nav_creditos")}
-            icon={
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M8 5.2v5.6M6.4 6.6h2.2a1.1 1.1 0 0 1 0 2.2H6.4h2.4a1.1 1.1 0 0 1 0 2.2H6.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            }
-          />
+          {/* Créditos: solo tiene sentido para empleado/individual, que gastan
+              créditos directamente. La empresa carga y reparte créditos desde
+              su sección de Empleados, no acá. */}
+          {identidad.rol !== "empresa" && (
+            <NavItem
+              active={section === "creditos"}
+              onClick={() => handleSelectSection("creditos")}
+              label={t("myprofile_nav_creditos")}
+              icon={
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <circle cx="8" cy="8" r="5.8" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M8 5.2v5.6M6.4 6.6h2.2a1.1 1.1 0 0 1 0 2.2H6.4h2.4a1.1 1.1 0 0 1 0 2.2H6.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              }
+            />
+          )}
 
           <div className="hidden md:block mt-auto pt-3 border-t border-ys-border-softest">
             <button
@@ -425,16 +501,20 @@ export default function MyProfileModal({
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_email")}</FieldLabel>
-                  <TextInput value={user.contactoEmail} readOnly type="email" />
+                  <TextInput value={identidad.contactoEmail} readOnly type="email" />
                   <div className="text-[12px] text-ys-dim font-medium">
                     {t("myprofile_field_email_readonly")}
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-[7px]">
-                  <FieldLabel>{t("myprofile_field_phone")}</FieldLabel>
-                  <TextInput value={tel} onChange={setTel} />
-                </div>
+                {/* Una cuenta empresa no tiene WhatsApp propio: es una
+                    consola de gestión, no envía mensajes. */}
+                {identidad.rol !== "empresa" && (
+                  <div className="flex flex-col gap-[7px]">
+                    <FieldLabel>{t("myprofile_field_phone")}</FieldLabel>
+                    <TextInput value={tel} onChange={setTel} />
+                  </div>
+                )}
 
                 {profileMsg && (
                   <div
@@ -531,73 +611,102 @@ export default function MyProfileModal({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 max-w-[560px]">
+              {/* Aviso de solo lectura: solo se ve para un empleado con
+                  organización. Ni la empresa ni un individual lo ven, porque
+                  en esos dos casos SÍ pueden editar. */}
+              {!datosNegocio.editable && (
+                <div className="bg-ys-warn-bg border border-[#f0dcb4] rounded-xl px-3.5 py-3 flex items-center gap-2.5 max-w-[560px]">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="flex-none">
+                    <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="#c07a12" strokeWidth="1.6" strokeLinecap="round" />
+                    <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="#c07a12" strokeWidth="1.6" />
+                  </svg>
+                  <span className="text-[12.5px] font-semibold text-ys-warn-text">
+                    {t("myprofile_agency_readonly_notice")}
+                  </span>
+                </div>
+              )}
+
+              <div className={`flex flex-col gap-4 max-w-[560px] ${cargandoNegocio ? "opacity-50 pointer-events-none" : ""}`}>
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_agency_name")}</FieldLabel>
-                  <TextInput value={nombreEmpresa} onChange={setNombreEmpresa} />
+                  <TextInput
+                    value={datosNegocio.nombreEmpresa}
+                    onChange={setCampoNegocio("nombreEmpresa")}
+                    readOnly={!datosNegocio.editable}
+                  />
                 </div>
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_agency_field")}</FieldLabel>
-                  <TextInput value={rubro} onChange={setRubro} />
+                  <TextInput
+                    value={datosNegocio.rubro}
+                    onChange={setCampoNegocio("rubro")}
+                    readOnly={!datosNegocio.editable}
+                  />
                 </div>
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_descripcion_negocio")}</FieldLabel>
                   <TextArea
-                    value={descripcionNegocio}
-                    onChange={setDescripcionNegocio}
+                    value={datosNegocio.descripcionNegocio}
+                    onChange={setCampoNegocio("descripcionNegocio")}
                     placeholder={t("myprofile_field_descripcion_negocio_placeholder")}
                     rows={3}
+                    readOnly={!datosNegocio.editable}
                   />
                 </div>
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_publico_objetivo")}</FieldLabel>
                   <TextArea
-                    value={publicoObjetivo}
-                    onChange={setPublicoObjetivo}
+                    value={datosNegocio.publicoObjetivo}
+                    onChange={setCampoNegocio("publicoObjetivo")}
                     placeholder={t("myprofile_field_publico_objetivo_placeholder")}
                     rows={2}
+                    readOnly={!datosNegocio.editable}
                   />
                 </div>
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_tono_comunicacion")}</FieldLabel>
                   <TextArea
-                    value={tonoComunicacion}
-                    onChange={setTonoComunicacion}
+                    value={datosNegocio.tonoComunicacion}
+                    onChange={setCampoNegocio("tonoComunicacion")}
                     placeholder={t("myprofile_field_tono_comunicacion_placeholder")}
                     rows={2}
+                    readOnly={!datosNegocio.editable}
                   />
                 </div>
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_zona_cobertura")}</FieldLabel>
                   <TextInput
-                    value={zonaCobertura}
-                    onChange={setZonaCobertura}
+                    value={datosNegocio.zonaCobertura}
+                    onChange={setCampoNegocio("zonaCobertura")}
                     placeholder={t("myprofile_field_zona_cobertura_placeholder")}
+                    readOnly={!datosNegocio.editable}
                   />
                 </div>
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_diferenciales")}</FieldLabel>
                   <TextArea
-                    value={diferenciales}
-                    onChange={setDiferenciales}
+                    value={datosNegocio.diferenciales}
+                    onChange={setCampoNegocio("diferenciales")}
                     placeholder={t("myprofile_field_diferenciales_placeholder")}
                     rows={3}
+                    readOnly={!datosNegocio.editable}
                   />
                 </div>
 
                 <div className="flex flex-col gap-[7px]">
                   <FieldLabel>{t("myprofile_field_reglas_evitar")}</FieldLabel>
                   <TextArea
-                    value={reglasEvitar}
-                    onChange={setReglasEvitar}
+                    value={datosNegocio.reglasEvitar}
+                    onChange={setCampoNegocio("reglasEvitar")}
                     placeholder={t("myprofile_field_reglas_evitar_placeholder")}
                     rows={2}
+                    readOnly={!datosNegocio.editable}
                   />
                 </div>
 
@@ -613,18 +722,20 @@ export default function MyProfileModal({
                   </div>
                 )}
 
-                <button
-                  onClick={handleSaveAgency}
-                  disabled={savingAgency}
-                  className="self-start text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-default disabled:hover:translate-y-0"
-                >
-                  {savingAgency ? "..." : t("myprofile_save")}
-                </button>
+                {datosNegocio.editable && (
+                  <button
+                    onClick={handleSaveAgency}
+                    disabled={savingAgency}
+                    className="self-start text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-default disabled:hover:translate-y-0"
+                  >
+                    {savingAgency ? "..." : t("myprofile_save")}
+                  </button>
+                )}
               </div>
             </>
           )}
 
-          {section === "creditos" && (
+          {section === "creditos" && identidad.rol !== "empresa" && (
             <>
               <div className="flex flex-col gap-1">
                 <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">

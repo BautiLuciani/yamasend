@@ -33,7 +33,10 @@ export default function ProfileDrawer({
   const [now] = useState(() => Date.now());
   const { t } = useLang();
   const trial = isTrial(user.trialEnd, now);
-  const planLabel = "Individual";
+  // Mismo criterio que AppShell: depende de user.orgId, que llega ya
+  // actualizado en vivo por Realtime — así que si la empresa lo suma o lo
+  // saca del equipo, este drawer también lo refleja sin refrescar.
+  const planLabel = user.orgId ? "Empleado" : "Individual";
   const daysLeft = Math.max(
     0,
     Math.ceil((new Date(user.trialEnd).getTime() - now) / 86400000),
