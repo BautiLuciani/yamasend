@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/client";
 import EmpresaSidebar from "./EmpresaSidebar";
 import MyProfileModal from "./MyProfileModal";
 import EmpresaTemplateCreateModal from "./EmpresaTemplateCreateModal";
+import EmpresaTemplateAddEmpleadosModal from "./EmpresaTemplateAddEmpleadosModal";
 import EmpresaDashboardSection from "./EmpresaDashboardSection";
 import EmpresaIA from "./EmpresaIA";
 import EmpresaEmpleadosSection from "./EmpresaEmpleadosSection";
@@ -32,6 +33,7 @@ import {
   getEmpresaTemplatesAction,
   getEmpresaTemplatesPropiosAction,
   crearTemplateEmpresaAction,
+  agregarEmpleadosTemplateAction,
   cambiarVisibilidadTemplateAction,
   type EmpresaAudiencia,
   type EmpresaCampana,
@@ -98,6 +100,7 @@ export default function EmpresaShell({
   const [nuevoTemplateAbierto, setNuevoTemplateAbierto] = useState(false);
   const [templatesPropios, setTemplatesPropios] = useState<EmpresaTemplatePropio[]>([]);
   const [templateOcupado, setTemplateOcupado] = useState<string | null>(null);
+  const [sumarEmpleadosA, setSumarEmpleadosA] = useState<EmpresaTemplatePropio | null>(null);
 
   function setSection(next: EmpresaSection) {
     setSectionState(next);
@@ -185,6 +188,15 @@ export default function EmpresaShell({
     );
     if (res.ok) {
       setNuevoTemplateAbierto(false);
+      recargarTemplatesPropios();
+    }
+    return { ok: res.ok, error: res.error };
+  }
+
+  async function handleAgregarEmpleados(masterId: string, tenantIds: string[]) {
+    const res = await agregarEmpleadosTemplateAction(masterId, tenantIds);
+    if (res.ok) {
+      setSumarEmpleadosA(null);
       recargarTemplatesPropios();
     }
     return { ok: res.ok, error: res.error };
@@ -554,6 +566,7 @@ export default function EmpresaShell({
               propios={templatesPropios}
               onNuevo={() => setNuevoTemplateAbierto(true)}
               onToggleVisibilidad={handleToggleVisibilidad}
+              onSumarEmpleados={setSumarEmpleadosA}
               ocupado={templateOcupado}
             />
           </div>
@@ -580,6 +593,13 @@ export default function EmpresaShell({
         empleados={empleados}
         onCancel={() => setNuevoTemplateAbierto(false)}
         onCrear={handleCrearTemplateEmpresa}
+      />
+
+      <EmpresaTemplateAddEmpleadosModal
+        template={sumarEmpleadosA}
+        empleados={empleados}
+        onCancel={() => setSumarEmpleadosA(null)}
+        onAgregar={handleAgregarEmpleados}
       />
 
       <MyProfileModal

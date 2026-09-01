@@ -560,43 +560,88 @@ export async function crearTemplateEmpresaAction(
   if (error)
     return { ok: false, error: "No se pudo crear el template.", enviados: 0, fallidos: 0 };
 
-  const r = data as {
-    ok?: boolean;
-    error?: string;
-    destinos?: {
-      templateId: string;
-      tenantId: string;
-      ycloudApi: string | null;
-      wabaId: string | null;
-    }[];
-  } | null;
+  const r = data as RespuestaTemplateEmpresa | null;
 
   if (!r?.ok) {
-    const ERR: Record<string, string> = {
-      sin_permiso: "No tenés permiso para crear templates.",
-      nombre_invalido: "El nombre del template es obligatorio.",
-      contenido_corto: "El mensaje tiene que tener al menos 10 caracteres.",
-      sin_empleados: "Elegí al menos un empleado.",
-    };
     return {
       ok: false,
-      error: ERR[r?.error ?? ""] ?? "No se pudo crear el template.",
+      error: traducirErrorTemplate(r, "No se pudo crear el template."),
       enviados: 0,
       fallidos: 0,
     };
   }
 
-  const destinos = r.destinos ?? [];
+  const { enviados, fallidos } = await dispararAprobaciones(
+    r.destinos ?? [],
+    nombre,
+    contenido,
+    categoria,
+  );
+
+  return { ok: true, error: null, enviados, fallidos };
+}
+
+interface RespuestaTemplateEmpresa {
+  ok?: boolean;
+  error?: string;
+  /** Nombres de los empleados que ya tienen un template con ese nombre. */
+  empleados?: string[];
+  destinos?: {
+    templateId: string;
+    tenantId: string;
+    ycloudApi: string | null;
+    wabaId: string | null;
+  }[];
+}
+
+/**
+ * Traduce los errores de las RPCs de templates de empresa.
+ *
+ * El caso de nombre duplicado nombra a los empleados concretos porque es lo
+ * único accionable: Meta exige nombre único por número, así que la salida es
+ * cambiar el nombre del template, y para decidirlo la empresa necesita saber
+ * con quién chocó.
+ */
+function traducirErrorTemplate(
+  r: RespuestaTemplateEmpresa | null,
+  fallback: string,
+): string {
+  if (r?.error === "nombre_duplicado") {
+    const nombres = r.empleados ?? [];
+    const quien =
+      nombres.length === 1
+        ? `${nombres[0]} ya tiene`
+        : `${nombres.slice(0, -1).join(", ")} y ${nombres.at(-1)} ya tienen`;
+    return `${quien} un template con ese nombre. Probá con un nombre distinto.`;
+  }
+  const ERR: Record<string, string> = {
+    sin_permiso: "No tenés permiso para crear templates.",
+    nombre_invalido: "El nombre del template es obligatorio.",
+    contenido_corto: "El mensaje tiene que tener al menos 10 caracteres.",
+    sin_empleados: "Elegí al menos un empleado que no lo tenga ya.",
+    no_encontrado: "No se encontró el template.",
+  };
+  return ERR[r?.error ?? ""] ?? fallback;
+}
+
+/**
+ * Dispara una solicitud de aprobación a Meta por cada destino.
+ *
+ * Secuencial y no en paralelo: son pocas llamadas y así no se le tiran N
+ * requests simultáneos al workflow de n8n, que es compartido. Un destino sin
+ * WhatsApp configurado se cuenta como fallido pero no aborta el lote: los
+ * demás salen igual.
+ */
+async function dispararAprobaciones(
+  destinos: NonNullable<RespuestaTemplateEmpresa["destinos"]>,
+  nombre: string,
+  contenido: string,
+  categoria: string,
+): Promise<{ enviados: number; fallidos: number }> {
   let enviados = 0;
   let fallidos = 0;
 
-  // Secuencial y no en paralelo: son pocas llamadas (un puñado de empleados)
-  // y así no se le tiran N requests simultáneos al workflow de n8n, que es
-  // compartido con el resto del sistema.
   for (const d of destinos) {
-    // Un empleado sin WhatsApp configurado no puede recibir la aprobación:
-    // la copia queda en borrador y la empresa lo ve en el detalle. No se
-    // aborta todo el lote por uno solo.
     if (!d.ycloudApi || !d.wabaId) {
       fallidos++;
       continue;
@@ -621,6 +666,55 @@ export async function crearTemplateEmpresaAction(
       fallidos++;
     }
   }
+
+  return { enviados, fallidos };
+}
+
+/**
+ * Suma empleados a un template de empresa que ya existe.
+ *
+ * Caso típico: entró alguien nuevo al equipo y tiene que poder mandar un
+ * template que el resto ya venía usando. Solo se pide la aprobación para él;
+ * las copias de los demás no se tocan, así que sus aprobaciones ya conseguidas
+ * quedan intactas.
+ */
+export async function agregarEmpleadosTemplateAction(
+  masterId: string,
+  tenantIds: string[],
+): Promise<{ ok: boolean; error: string | null; enviados: number; fallidos: number }> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso, enviados: 0, fallidos: 0 };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_agregar_empleados_template",
+    { p_master_id: masterId, p_tenant_ids: tenantIds },
+  );
+
+  if (error)
+    return { ok: false, error: "No se pudo actualizar el template.", enviados: 0, fallidos: 0 };
+
+  const r = data as (RespuestaTemplateEmpresa & {
+    nombre?: string;
+    contenido?: string;
+    categoria?: string;
+  }) | null;
+
+  if (!r?.ok) {
+    return {
+      ok: false,
+      error: traducirErrorTemplate(r, "No se pudo actualizar el template."),
+      enviados: 0,
+      fallidos: 0,
+    };
+  }
+
+  const { enviados, fallidos } = await dispararAprobaciones(
+    r.destinos ?? [],
+    r.nombre ?? "",
+    r.contenido ?? "",
+    r.categoria ?? "marketing",
+  );
 
   return { ok: true, error: null, enviados, fallidos };
 }

@@ -224,6 +224,7 @@ export function EmpresaTemplatesSection({
   propios,
   onNuevo,
   onToggleVisibilidad,
+  onSumarEmpleados,
   ocupado,
 }: {
   templates: EmpresaTemplate[];
@@ -231,6 +232,7 @@ export function EmpresaTemplatesSection({
   propios: EmpresaTemplatePropio[];
   onNuevo: () => void;
   onToggleVisibilidad: (templateId: string, visible: boolean) => void;
+  onSumarEmpleados: (template: EmpresaTemplatePropio) => void;
   ocupado: string | null;
 }) {
   return (
@@ -335,6 +337,18 @@ export function EmpresaTemplatesSection({
                     );
                   })}
                 </div>
+
+                {/* Sumar a alguien que entró después: se pide la aprobación
+                    solo para él, las copias del resto no se tocan. */}
+                <button
+                  onClick={() => onSumarEmpleados(t)}
+                  className="self-start flex items-center gap-2 text-[12.5px] font-bold text-[#5b3fa8] bg-[#f0eafd] border border-[#ddd3f5] rounded-[10px] px-3.5 py-2 cursor-pointer transition-colors hover:bg-[#e7dcfb]"
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+                  </svg>
+                  Sumar empleados
+                </button>
               </div>
             );
           })}
