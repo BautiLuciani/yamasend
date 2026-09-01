@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getMisCreditosAction, type MisCreditos } from "@/lib/actions/creditos";
+import { getMisCreditosAction, iniciarCompraCreditosAction, type MisCreditos } from "@/lib/actions/creditos";
 
 /**
  * Sección "Créditos" de Mi Perfil.
@@ -50,6 +50,11 @@ function Metrica({
 export default function CreditosSection() {
   const [datos, setDatos] = useState<MisCreditos | null>(null);
   const [cargando, setCargando] = useState(true);
+  // Código del pack en proceso de compra, para bloquear solo ese botón y no
+  // los otros dos mientras se crea la preferencia y se redirige a Mercado
+  // Pago (puede tardar un instante).
+  const [comprando, setComprando] = useState<string | null>(null);
+  const [errorCompra, setErrorCompra] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
@@ -74,6 +79,20 @@ export default function CreditosSection() {
         <div className="text-[13px] text-ys-muted font-medium">Cargando tus créditos…</div>
       </div>
     );
+  }
+
+  async function comprar(codigo: string) {
+    setErrorCompra(null);
+    setComprando(codigo);
+    const res = await iniciarCompraCreditosAction(codigo);
+    if (!res.ok || !res.initPoint) {
+      setErrorCompra(res.error ?? "No pudimos iniciar la compra.");
+      setComprando(null);
+      return;
+    }
+    // Redirección de página completa a propósito: Checkout Pro necesita
+    // salir del contexto de la SPA, no es una navegación interna de Next.
+    window.location.assign(res.initPoint);
   }
 
   if (!datos) {
@@ -206,20 +225,35 @@ export default function CreditosSection() {
                       </div>
                     )}
 
-                    {/* El botón queda deshabilitado a propósito hasta que el
-                        cobro con Mercado Pago esté entero. Habilitarlo antes de
-                        que exista el webhook que acredita dejaría a alguien
-                        pagando sin recibir los créditos. */}
                     <button
-                      disabled
-                      title="Disponible muy pronto"
-                      className="mt-auto w-full rounded-xl px-3 py-2.5 text-[13px] font-bold bg-ys-el2 text-ys-dimmer cursor-not-allowed"
+                      onClick={() => comprar(pack.codigo)}
+                      disabled={!precios.habilitado || comprando !== null}
+                      title={
+                        !precios.habilitado
+                          ? "Disponible muy pronto"
+                          : undefined
+                      }
+                      className={`mt-auto w-full rounded-xl px-3 py-2.5 text-[13px] font-bold transition-opacity ${
+                        !precios.habilitado
+                          ? "bg-ys-el2 text-ys-dimmer cursor-not-allowed"
+                          : "bg-ys-green text-white hover:opacity-90 disabled:opacity-60 disabled:cursor-wait"
+                      }`}
                     >
-                      Próximamente
+                      {!precios.habilitado
+                        ? "Próximamente"
+                        : comprando === pack.codigo
+                          ? "Redirigiendo…"
+                          : "Comprar"}
                     </button>
                   </div>
                 ))}
               </div>
+
+              {errorCompra && (
+                <div className="text-[12.5px] text-red-600 font-semibold text-center">
+                  {errorCompra}
+                </div>
+              )}
 
               <div className="text-[11.5px] text-ys-dimmer font-medium leading-[1.5]">
                 Los precios se actualizan solos según la cotización del día. Los
