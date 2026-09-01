@@ -12,6 +12,7 @@ import type {
 import { createClient } from "@/lib/supabase/client";
 import EmpresaSidebar from "./EmpresaSidebar";
 import MyProfileModal from "./MyProfileModal";
+import EmpresaTemplateCreateModal from "./EmpresaTemplateCreateModal";
 import EmpresaDashboardSection from "./EmpresaDashboardSection";
 import EmpresaIA from "./EmpresaIA";
 import EmpresaEmpleadosSection from "./EmpresaEmpleadosSection";
@@ -29,12 +30,16 @@ import {
   getEmpresaCampanasAction,
   getEmpresaContactosAction,
   getEmpresaTemplatesAction,
+  getEmpresaTemplatesPropiosAction,
+  crearTemplateEmpresaAction,
+  cambiarVisibilidadTemplateAction,
   type EmpresaAudiencia,
   type EmpresaCampana,
   type EmpresaContacto,
   type EmpresaDashboard,
   type EmpresaInvitacion,
   type EmpresaTemplate,
+  type EmpresaTemplatePropio,
 } from "@/lib/actions/empresa";
 
 const CONTACTOS_POR_PAGINA = 50;
@@ -90,6 +95,9 @@ export default function EmpresaShell({
   const [section, setSectionState] = useState<EmpresaSection>(getInitialSection);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [myProfileOpen, setMyProfileOpen] = useState(false);
+  const [nuevoTemplateAbierto, setNuevoTemplateAbierto] = useState(false);
+  const [templatesPropios, setTemplatesPropios] = useState<EmpresaTemplatePropio[]>([]);
+  const [templateOcupado, setTemplateOcupado] = useState<string | null>(null);
 
   function setSection(next: EmpresaSection) {
     setSectionState(next);
@@ -154,6 +162,40 @@ export default function EmpresaShell({
     router.refresh();
     getEmpresaInvitacionesAction().then(setInvitaciones);
   }, [router]);
+
+  const recargarTemplatesPropios = useCallback(() => {
+    getEmpresaTemplatesPropiosAction().then(setTemplatesPropios);
+  }, []);
+
+  useEffect(() => {
+    recargarTemplatesPropios();
+  }, [recargarTemplatesPropios]);
+
+  async function handleCrearTemplateEmpresa(
+    nombre: string,
+    contenido: string,
+    categoria: string,
+    tenantIds: string[],
+  ) {
+    const res = await crearTemplateEmpresaAction(
+      nombre,
+      contenido,
+      categoria,
+      tenantIds,
+    );
+    if (res.ok) {
+      setNuevoTemplateAbierto(false);
+      recargarTemplatesPropios();
+    }
+    return { ok: res.ok, error: res.error };
+  }
+
+  async function handleToggleVisibilidad(templateId: string, visible: boolean) {
+    setTemplateOcupado(templateId);
+    const res = await cambiarVisibilidadTemplateAction(templateId, visible);
+    setTemplateOcupado(null);
+    if (res.ok) recargarTemplatesPropios();
+  }
 
   // Mismo patrón que AppShell: Realtime autentica el WebSocket por separado
   // de las cookies de sesión, así que hace falta pasarle el access_token a
@@ -507,7 +549,13 @@ export default function EmpresaShell({
               filtroTenant={filtroTenant}
               onFiltroChange={cambiarFiltroTenant}
             />
-            <EmpresaTemplatesSection templates={templates} />
+            <EmpresaTemplatesSection
+              templates={templates}
+              propios={templatesPropios}
+              onNuevo={() => setNuevoTemplateAbierto(true)}
+              onToggleVisibilidad={handleToggleVisibilidad}
+              ocupado={templateOcupado}
+            />
           </div>
         )}
 
@@ -526,6 +574,13 @@ export default function EmpresaShell({
           </div>
         )}
       </div>
+
+      <EmpresaTemplateCreateModal
+        open={nuevoTemplateAbierto}
+        empleados={empleados}
+        onCancel={() => setNuevoTemplateAbierto(false)}
+        onCrear={handleCrearTemplateEmpresa}
+      />
 
       <MyProfileModal
         open={myProfileOpen}

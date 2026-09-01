@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { assertPermiso } from "@/lib/auth/permisos";
 import type { Template } from "@/lib/types";
 import { logActivity } from "@/lib/actions/activity";
+import { getTemplatesForTenant } from "@/lib/actions/campaigns";
 
 export interface SaveResult {
   id: string | null;
@@ -928,28 +929,11 @@ export async function refreshTemplatesAction(): Promise<RefreshTemplatesResult> 
     return { templates: null, error: "No se pudo resolver el tenant del usuario." };
   }
 
-  const { data: rows, error } = await supabase
-    .from("yamas_send_templates")
-    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang, ia_conversacion_id")
-    .eq("tenant_id", cliente.tenant_id)
-    .order("created_at", { ascending: false });
-
-  if (error || !rows) {
-    return { templates: null, error: error?.message ?? "No se pudieron traer los templates." };
-  }
-
-  const templates: Template[] = rows.map((r) => ({
-    id: r.id,
-    nombre: r.nombre,
-    contenido: r.contenido,
-    status: (r.status as Template["status"]) ?? "borrador",
-    tipo: r.template_type ?? "marketing",
-    precio: "0.0618",
-    rechazoMotivo: r.meta_rechazo_motivo ?? null,
-    templateLang: r.template_lang ?? "es_AR",
-    iaConversacionId: r.ia_conversacion_id ?? null,
-  }));
-
+  // Reusa getTemplatesForTenant en vez de repetir el select: ahí vive el
+  // filtro de los templates que reparte la empresa (solo visibles y
+  // aprobados). Duplicar el mapeo acá hacía que el polling los devolviera
+  // igual y reaparecieran solos a los pocos segundos de ocultarlos.
+  const templates = await getTemplatesForTenant(cliente.tenant_id);
   return { templates, error: null };
 }
 

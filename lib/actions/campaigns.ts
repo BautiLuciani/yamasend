@@ -16,23 +16,40 @@ export async function getTemplatesForTenant(
 
   const { data: rows, error } = await supabase
     .from("yamas_send_templates")
-    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang, ia_conversacion_id")
+    .select("id, nombre, contenido, status, template_type, meta_rechazo_motivo, template_lang, ia_conversacion_id, org_template_id, visible_empleado")
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
 
   if (error || !rows) return [];
 
-  return rows.map((r): Template => ({
-    id: r.id,
-    nombre: r.nombre,
-    contenido: r.contenido,
-    status: (r.status as Template["status"]) ?? "borrador",
-    tipo: r.template_type ?? "marketing",
-    precio: "0.0618",
-    rechazoMotivo: r.meta_rechazo_motivo ?? null,
-    templateLang: r.template_lang ?? "es_AR",
-    iaConversacionId: r.ia_conversacion_id ?? null,
-  }));
+  return rows
+    // Los templates que reparte la empresa se le ocultan al empleado hasta
+    // que Meta los aprueba: antes de eso no los puede usar para nada, y
+    // verlos "en revisión" solo generaría la duda de por qué no funcionan.
+    // Mientras tanto la empresa sí los ve, con el estado de cada copia.
+    //
+    // visible_empleado es el interruptor con el que la empresa se lo quita a
+    // alguien sin destruir la aprobación de Meta, que tarda días en
+    // conseguirse: se oculta y, si lo devuelve, reaparece al instante.
+    //
+    // Los templates propios del empleado (org_template_id null) no se filtran:
+    // sigue viendo sus borradores y rechazados como siempre.
+    .filter((r) => {
+      if (!r.org_template_id) return true;
+      return r.status === "verificado" && r.visible_empleado !== false;
+    })
+    .map((r): Template => ({
+      id: r.id,
+      nombre: r.nombre,
+      contenido: r.contenido,
+      status: (r.status as Template["status"]) ?? "borrador",
+      tipo: r.template_type ?? "marketing",
+      precio: "0.0618",
+      rechazoMotivo: r.meta_rechazo_motivo ?? null,
+      templateLang: r.template_lang ?? "es_AR",
+      iaConversacionId: r.ia_conversacion_id ?? null,
+      esDeEmpresa: r.org_template_id !== null,
+    }));
 }
 
 export async function getListsForTenant(

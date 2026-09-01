@@ -243,7 +243,15 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate, pu
             <button
               key={t.id}
               onClick={() => onOpenTemplate(t)}
-              className="text-left bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] hover:border-ys-green-border"
+              /* Los que bajó la empresa van en violeta: el empleado no los
+                 creó él y no los puede editar, así que necesita distinguirlos
+                 de un vistazo. Se cambia el fondo, no solo un detalle, para
+                 que la diferencia se lea sin buscarla. */
+              className={`text-left border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
+                t.esDeEmpresa
+                  ? "bg-[#faf8ff] border-[#ddd3f5] hover:border-[#a889e8]"
+                  : "bg-white border-ys-border hover:border-ys-green-border"
+              }`}
             >
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
@@ -254,10 +262,31 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate, pu
                 </div>
                 <StatusBadge status={t.status} />
               </div>
-              <div className="bg-[#fbfcfb] border border-ys-border-soft rounded-xl px-3.5 py-3 text-[13px] text-[#3f4844] leading-[1.5] font-medium line-clamp-3">
+
+              {t.esDeEmpresa && (
+                <span className="inline-flex items-center gap-1.5 self-start text-[11.5px] font-bold text-[#5b3fa8] bg-[#f0eafd] border border-[#ddd3f5] rounded-full px-2.5 py-1">
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+                    <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="#5b3fa8" strokeWidth="1.6" />
+                    <path d="M5.5 5.5h1.2M9.3 5.5h1.2M5.5 8h1.2M9.3 8h1.2M6.5 13.5V11h3v2.5" stroke="#5b3fa8" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                  De tu empresa
+                </span>
+              )}
+
+              <div
+                className={`border rounded-xl px-3.5 py-3 text-[13px] text-[#3f4844] leading-[1.5] font-medium line-clamp-3 ${
+                  t.esDeEmpresa
+                    ? "bg-white border-[#e6dffa]"
+                    : "bg-[#fbfcfb] border-ys-border-soft"
+                }`}
+              >
                 {t.contenido}
               </div>
-              <div className="flex items-center justify-between border-t border-ys-border-softer pt-3">
+              <div
+                className={`flex items-center justify-between border-t pt-3 ${
+                  t.esDeEmpresa ? "border-[#e6dffa]" : "border-ys-border-softer"
+                }`}
+              >
                 <div className="text-xs text-ys-dimmer font-semibold">
                   USD {t.precio ?? "0.0618"} / msj
                 </div>

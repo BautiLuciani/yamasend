@@ -51,6 +51,12 @@ export interface Template {
    * qué chat aterriza el aviso de aprobación/rechazo.
    */
   iaConversacionId?: string | null;
+  /**
+   * true cuando el template lo creó la empresa y se lo repartió al empleado.
+   * Solo cambia cómo se pinta la tarjeta: el empleado necesita distinguir de
+   * un vistazo lo que le bajó la empresa de lo que armó él.
+   */
+  esDeEmpresa?: boolean;
 }
 
 export interface ContactList {

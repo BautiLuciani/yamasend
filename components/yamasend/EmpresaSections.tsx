@@ -5,6 +5,7 @@ import type {
   EmpresaCampana,
   EmpresaContacto,
   EmpresaTemplate,
+  EmpresaTemplatePropio,
 } from "@/lib/actions/empresa";
 import type { EmpleadoResumen } from "@/lib/types";
 
@@ -220,50 +221,179 @@ const TPL_ESTADO: Record<string, { label: string; text: string; bg: string; dot:
 
 export function EmpresaTemplatesSection({
   templates,
+  propios,
+  onNuevo,
+  onToggleVisibilidad,
+  ocupado,
 }: {
   templates: EmpresaTemplate[];
+  /** Templates que creó la empresa, con el detalle de cada copia por empleado. */
+  propios: EmpresaTemplatePropio[];
+  onNuevo: () => void;
+  onToggleVisibilidad: (templateId: string, visible: boolean) => void;
+  ocupado: string | null;
 }) {
-  if (templates.length === 0)
-    return <Vacio mensaje="Todavía no hay templates creados por el equipo." />;
-
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
-      {templates.map((t) => {
-        const cfg = TPL_ESTADO[t.status] ?? TPL_ESTADO.borrador;
-        return (
-          <div
-            key={t.id}
-            className="bg-white border border-ys-border rounded-2xl p-4 md:p-[18px] flex flex-col gap-3"
-          >
-            <div className="flex items-start gap-2.5">
-              <span className="text-[14.5px] font-extrabold text-ys-text leading-snug min-w-0 break-words">
-                {t.nombre}
-              </span>
-              <span className={`ml-auto inline-flex items-center gap-1.5 text-[11.5px] font-bold rounded-full px-2.5 py-1 flex-none ${cfg.text} ${cfg.bg}`}>
-                <span className={`w-[6px] h-[6px] rounded-full ${cfg.dot}`} />
-                {cfg.label}
-              </span>
-            </div>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[15px] font-extrabold text-ys-text">
+            Templates de la empresa
+          </span>
+          <span className="text-[12.5px] text-ys-muted font-medium">
+            Los creás vos y los usan tus empleados con su propio WhatsApp.
+          </span>
+        </div>
+        <button
+          onClick={onNuevo}
+          className="ml-auto w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+          </svg>
+          Nuevo template
+        </button>
+      </div>
 
-            <p className="text-[12.5px] text-ys-muted font-medium leading-relaxed line-clamp-3 bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-3 py-2.5">
-              {t.contenido}
-            </p>
+      {propios.length === 0 ? (
+        <Vacio mensaje="Todavía no creaste templates para tu equipo." />
+      ) : (
+        <div className="flex flex-col gap-3 md:gap-3.5">
+          {propios.map((t) => {
+            const aprobadas = t.copias.filter((c) => c.status === "verificado").length;
+            return (
+              <div
+                key={t.id}
+                className="bg-white border border-[#ddd3f5] rounded-2xl p-4 md:p-[18px] flex flex-col gap-3.5"
+              >
+                <div className="flex items-start gap-2.5 flex-wrap">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="font-mono text-[14px] font-bold text-ys-text break-words">
+                      {t.nombre}
+                    </span>
+                    <span className="text-[12px] text-ys-dim font-semibold">
+                      {formatFecha(t.createdAt)}
+                    </span>
+                  </div>
+                  <span className="ml-auto text-[11.5px] font-bold text-[#5b3fa8] bg-[#f0eafd] border border-[#ddd3f5] rounded-full px-2.5 py-1 flex-none">
+                    {aprobadas}/{t.copias.length} aprobados
+                  </span>
+                </div>
 
-            {t.rechazoMotivo && (
-              <p className="text-[12px] font-semibold text-ys-red-text bg-ys-red-bg rounded-lg px-3 py-2">
-                {t.rechazoMotivo}
-              </p>
-            )}
+                <p className="text-[12.5px] text-ys-muted font-medium leading-relaxed bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-3 py-2.5">
+                  {t.contenido}
+                </p>
 
-            <div className="flex items-center gap-2.5 mt-auto pt-2 border-t border-ys-border-softest">
-              <AutorChip nombre={t.empleadoNombre} />
-              <span className="ml-auto text-[12px] font-semibold text-ys-dim flex-none">
-                {formatFecha(t.createdAt)}
-              </span>
-            </div>
+                {/* Una fila por empleado: cada copia se aprueba por separado en
+                    Meta, así que pueden estar en estados distintos. */}
+                <div className="flex flex-col gap-1.5 border-t border-ys-border-softest pt-3">
+                  {t.copias.map((c) => {
+                    const cfg = TPL_ESTADO[c.status] ?? TPL_ESTADO.borrador;
+                    const puedeAlternar = c.status === "verificado";
+                    return (
+                      <div
+                        key={c.templateId}
+                        className="flex items-center gap-2.5 flex-wrap py-1"
+                      >
+                        <span className="text-[13px] font-bold text-ys-text truncate min-w-0">
+                          {c.empleadoNombre}
+                        </span>
+                        <span className={`inline-flex items-center gap-1.5 text-[11.5px] font-bold rounded-full px-2.5 py-1 flex-none ${cfg.text} ${cfg.bg}`}>
+                          <span className={`w-[6px] h-[6px] rounded-full ${cfg.dot}`} />
+                          {cfg.label}
+                        </span>
+
+                        {/* Ocultar no borra ni reenvía nada a Meta: la
+                            aprobación tarda días en conseguirse, así que
+                            quitárselo a alguien y devolvérselo es instantáneo. */}
+                        {puedeAlternar && (
+                          <button
+                            onClick={() => onToggleVisibilidad(c.templateId, !c.visible)}
+                            disabled={ocupado === c.templateId}
+                            className={`ml-auto flex-none text-[12px] font-bold rounded-[9px] px-3 py-1.5 border cursor-pointer transition-colors disabled:opacity-40 ${
+                              c.visible
+                                ? "text-[#3f4844] bg-white border-ys-border hover:bg-[#f7f9f8]"
+                                : "text-ys-green-text bg-ys-green-bg border-ys-green-border"
+                            }`}
+                          >
+                            {c.visible ? "Ocultar" : "Mostrar"}
+                          </button>
+                        )}
+
+                        {!c.visible && puedeAlternar && (
+                          <span className="text-[11.5px] font-semibold text-ys-dim flex-none w-full md:w-auto">
+                            No lo ve en su panel
+                          </span>
+                        )}
+
+                        {c.rechazoMotivo && (
+                          <span className="text-[11.5px] font-semibold text-ys-red-text bg-ys-red-bg rounded-lg px-2.5 py-1 w-full">
+                            {c.rechazoMotivo}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 border-t border-ys-border-softest pt-5">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[15px] font-extrabold text-ys-text">
+            Templates del equipo
+          </span>
+          <span className="text-[12.5px] text-ys-muted font-medium">
+            Los que crearon tus empleados por su cuenta.
+          </span>
+        </div>
+
+        {templates.length === 0 ? (
+          <Vacio mensaje="Todavía no hay templates creados por el equipo." />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+            {templates.map((t) => {
+              const cfg = TPL_ESTADO[t.status] ?? TPL_ESTADO.borrador;
+              return (
+                <div
+                  key={t.id}
+                  className="bg-white border border-ys-border rounded-2xl p-4 md:p-[18px] flex flex-col gap-3"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-[14.5px] font-extrabold text-ys-text leading-snug min-w-0 break-words">
+                      {t.nombre}
+                    </span>
+                    <span className={`ml-auto inline-flex items-center gap-1.5 text-[11.5px] font-bold rounded-full px-2.5 py-1 flex-none ${cfg.text} ${cfg.bg}`}>
+                      <span className={`w-[6px] h-[6px] rounded-full ${cfg.dot}`} />
+                      {cfg.label}
+                    </span>
+                  </div>
+
+                  <p className="text-[12.5px] text-ys-muted font-medium leading-relaxed line-clamp-3 bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-3 py-2.5">
+                    {t.contenido}
+                  </p>
+
+                  {t.rechazoMotivo && (
+                    <p className="text-[12px] font-semibold text-ys-red-text bg-ys-red-bg rounded-lg px-3 py-2">
+                      {t.rechazoMotivo}
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2.5 mt-auto pt-2 border-t border-ys-border-softest">
+                    <AutorChip nombre={t.empleadoNombre} />
+                    <span className="ml-auto text-[12px] font-semibold text-ys-dim flex-none">
+                      {formatFecha(t.createdAt)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+        )}
+      </div>
     </div>
   );
 }

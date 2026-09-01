@@ -487,3 +487,155 @@ export async function resolverInvitacionAction(
     return { ok: false, error: "No se pudo procesar la solicitud." };
   return traducir(data);
 }
+
+/* ─────────────────────── Templates creados por la empresa ─────────────────── */
+
+// Mismo webhook de n8n que usa sendTemplateToMetaAction en write.ts (workflow
+// "YamaSend — Aprobar Template Meta (YCloud)"). Se repite la constante en vez
+// de exportarla desde write.ts porque los dos son archivos "use server" y
+// cruzarlos solo por un string obliga a Next a resolver ese módulo entero.
+const TEMPLATE_APROBAR_WEBHOOK_URL =
+  "https://yamasai.app.n8n.cloud/webhook/2ec4468d-e12b-448b-94c8-5f8eb253be9b";
+
+export interface EmpresaTemplateCopia {
+  templateId: string;
+  tenantId: string;
+  empleadoNombre: string;
+  status: string;
+  visible: boolean;
+  rechazoMotivo: string | null;
+}
+
+export interface EmpresaTemplatePropio {
+  id: string;
+  nombre: string;
+  contenido: string;
+  templateType: string;
+  createdAt: string | null;
+  copias: EmpresaTemplateCopia[];
+}
+
+export async function getEmpresaTemplatesPropiosAction(): Promise<
+  EmpresaTemplatePropio[]
+> {
+  if (!(await assertEmpresa())) return [];
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_templates_propios",
+  );
+  if (error || !data) return [];
+  return data as EmpresaTemplatePropio[];
+}
+
+/**
+ * Crea un template de empresa y dispara una aprobación de Meta por empleado.
+ *
+ * Meta aprueba templates POR número de WhatsApp Business, y cada empleado
+ * tiene el suyo: no existe una aprobación única que se pueda repartir. Por eso
+ * se crea una copia real por empleado y se llama al webhook de n8n una vez por
+ * cada uno, con las credenciales de ESE empleado.
+ *
+ * Las credenciales las resuelve la RPC (SECURITY DEFINER), que valida antes
+ * que cada tenant sea de un empleado activo de esta organización — la empresa
+ * no puede leer yamas_inmo_clientes por RLS, y los tenant_ids llegan del
+ * cliente, así que validarlos server-side no es opcional.
+ */
+export async function crearTemplateEmpresaAction(
+  nombre: string,
+  contenido: string,
+  categoria: string,
+  tenantIds: string[],
+): Promise<{ ok: boolean; error: string | null; enviados: number; fallidos: number }> {
+  if (!(await assertEmpresa()))
+    return { ok: false, error: ERRORES.sin_permiso, enviados: 0, fallidos: 0 };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("yamas_send_empresa_crear_template", {
+    p_nombre: nombre,
+    p_contenido: contenido,
+    p_categoria: categoria,
+    p_tenant_ids: tenantIds,
+  });
+
+  if (error)
+    return { ok: false, error: "No se pudo crear el template.", enviados: 0, fallidos: 0 };
+
+  const r = data as {
+    ok?: boolean;
+    error?: string;
+    destinos?: {
+      templateId: string;
+      tenantId: string;
+      ycloudApi: string | null;
+      wabaId: string | null;
+    }[];
+  } | null;
+
+  if (!r?.ok) {
+    const ERR: Record<string, string> = {
+      sin_permiso: "No tenés permiso para crear templates.",
+      nombre_invalido: "El nombre del template es obligatorio.",
+      contenido_corto: "El mensaje tiene que tener al menos 10 caracteres.",
+      sin_empleados: "Elegí al menos un empleado.",
+    };
+    return {
+      ok: false,
+      error: ERR[r?.error ?? ""] ?? "No se pudo crear el template.",
+      enviados: 0,
+      fallidos: 0,
+    };
+  }
+
+  const destinos = r.destinos ?? [];
+  let enviados = 0;
+  let fallidos = 0;
+
+  // Secuencial y no en paralelo: son pocas llamadas (un puñado de empleados)
+  // y así no se le tiran N requests simultáneos al workflow de n8n, que es
+  // compartido con el resto del sistema.
+  for (const d of destinos) {
+    // Un empleado sin WhatsApp configurado no puede recibir la aprobación:
+    // la copia queda en borrador y la empresa lo ve en el detalle. No se
+    // aborta todo el lote por uno solo.
+    if (!d.ycloudApi || !d.wabaId) {
+      fallidos++;
+      continue;
+    }
+    try {
+      const res = await fetch(TEMPLATE_APROBAR_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenant_id: d.tenantId,
+          ycloud_api: d.ycloudApi,
+          waba_id: d.wabaId,
+          nombre_meta: nombre.trim(),
+          contenido: contenido.trim(),
+          categoria,
+          ia_conversacion_id: null,
+        }),
+      });
+      if (res.ok) enviados++;
+      else fallidos++;
+    } catch {
+      fallidos++;
+    }
+  }
+
+  return { ok: true, error: null, enviados, fallidos };
+}
+
+/** Muestra u oculta la copia de un empleado sin tocar su aprobación de Meta. */
+export async function cambiarVisibilidadTemplateAction(
+  templateId: string,
+  visible: boolean,
+): Promise<AccionResult> {
+  if (!(await assertEmpresa())) return { ok: false, error: ERRORES.sin_permiso };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(
+    "yamas_send_empresa_template_visibilidad",
+    { p_template_id: templateId, p_visible: visible },
+  );
+  if (error) return { ok: false, error: "No se pudo actualizar el template." };
+  return traducir(data);
+}
