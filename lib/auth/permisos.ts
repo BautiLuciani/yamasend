@@ -63,7 +63,7 @@ export const getCurrentMembership = cache(
       supabase
         .from("yamas_send_miembros")
         .select(
-          "id, org_id, tenant_id, rol, estado, permisos, creditos_asignados, creditos_usados, nombre_display",
+          "id, org_id, tenant_id, rol, estado, permisos, creditos_asignados, creditos_usados, creditos_reservados, nombre_display",
         )
         .eq("auth_user_id", user.id)
         .maybeSingle();
@@ -115,6 +115,7 @@ export const getCurrentMembership = cache(
       permisos: normalizarPermisos(row.permisos),
       creditosAsignados: row.creditos_asignados ?? 0,
       creditosUsados: row.creditos_usados ?? 0,
+      creditosReservados: row.creditos_reservados ?? 0,
     };
   },
 );

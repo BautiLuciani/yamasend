@@ -49,11 +49,21 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
     // Un empleado de una organización tiene su cupo administrado por la
     // empresa; uno independiente sigue con el campo legacy de
     // yamas_inmo_clientes, que es como funciona hoy.
+    //
+    // Se restan también los reservados: un crédito apartado para una campaña
+    // programada ya está comprometido y mostrarlo como disponible haría que el
+    // usuario arme una segunda campaña que después no va a poder enviar.
     credito: membership.orgId
-      ? Math.max(membership.creditosAsignados - membership.creditosUsados, 0)
+      ? Math.max(
+          membership.creditosAsignados -
+            membership.creditosUsados -
+            membership.creditosReservados,
+          0,
+        )
       : row.credito
         ? parseFloat(row.credito)
         : 0,
+    creditosAsignados: membership.orgId ? membership.creditosAsignados : null,
   };
 }
 

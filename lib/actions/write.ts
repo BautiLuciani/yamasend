@@ -5,6 +5,10 @@ import { assertPermiso } from "@/lib/auth/permisos";
 import type { Template } from "@/lib/types";
 import { logActivity } from "@/lib/actions/activity";
 import { getTemplatesForTenant } from "@/lib/actions/campaigns";
+import {
+  reservarCreditosCampana,
+  reservaSegunEstado,
+} from "@/lib/creditos/reserva";
 
 export interface SaveResult {
   id: string | null;
@@ -374,6 +378,29 @@ export async function saveCampaignAction(
     };
   }
 
+  // Los créditos se apartan acá, en el momento de comprometer la campaña, y no
+  // recién al enviarla. Es lo que hace que una campaña programada no pueda
+  // quedarse sin fondos: el scheduler de n8n la dispara sin pasar por Next, así
+  // que si no reservamos ahora, después ya no hay dónde chequear.
+  //
+  // Si no alcanza, se borra la campaña recién creada en vez de dejarla en un
+  // limbo sin reserva. La fila no llegó a existir para el usuario: falló el
+  // guardado, no la campaña.
+  const reserva = await reservarCreditosCampana(
+    data.id,
+    reservaSegunEstado(fechaProgramada ? "programada" : "enviando", contactosIds.length),
+    Boolean(gate.membership?.orgId),
+  );
+
+  if (!reserva.ok) {
+    await supabase
+      .from("yamas_send_campanas")
+      .delete()
+      .eq("id", data.id)
+      .eq("tenant_id", cliente.tenant_id);
+    return { id: null, error: reserva.error };
+  }
+
   logActivity(
     cliente.tenant_id,
     esDuplicada ? "campana_duplicada" : "campana_creada",
@@ -400,39 +427,6 @@ export interface SendCampaignResult {
  * propio n8n llama a este mismo webhook directamente, sin pasar por acá).
  */
 
-/**
- * Verifica que el empleado tenga créditos suficientes para una campaña.
- *
- * El saldo se lee server-side vía RPC y nunca se acepta del cliente. Devuelve
- * ok:true cuando el gate no aplica (empleado independiente), para no romper
- * el flujo de las cuentas que no dependen de una empresa.
- */
-async function verificarSaldoParaEnvio(
-  destinatarios: number,
-): Promise<{ ok: boolean; error: string | null }> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("yamas_send_mi_saldo");
-
-  // Fallar abierto acá es deliberado: si la consulta de saldo se rompe, es
-  // peor bloquear a todo el mundo que dejar pasar un envío. El permiso de
-  // enviar_campanas ya se validó arriba.
-  if (error || !data) return { ok: true, error: null };
-
-  const s = data as { aplica?: boolean; saldo?: number };
-  if (!s.aplica) return { ok: true, error: null };
-
-  const saldo = s.saldo ?? 0;
-  if (saldo >= destinatarios) return { ok: true, error: null };
-
-  return {
-    ok: false,
-    error:
-      saldo === 0
-        ? "No te quedan créditos. Pedile a tu empresa que te asigne más."
-        : `Te quedan ${saldo} créditos y esta campaña necesita ${destinatarios}. Pedile más a tu empresa o achicá la audiencia.`,
-  };
-}
-
 export async function sendCampaignAction(
   campaignId: string,
   listaId: string,
@@ -451,10 +445,17 @@ export async function sendCampaignAction(
   // medias es peor que ninguna, porque nadie sabe a quién le llegó y Meta
   // cobra igual por cada mensaje que sí salió.
   //
-  // Solo aplica a empleados de una organización: un independiente no tiene
-  // empresa que le administre cupo (lo decide yamas_send_mi_saldo).
-  const saldoCheck = await verificarSaldoParaEnvio(total);
-  if (!saldoCheck.ok) return { ok: false, error: saldoCheck.error };
+  // La reserva es idempotente por campaña: saveCampaignAction ya apartó estos
+  // mismos créditos al crearla, así que acá el delta normalmente es cero. Se
+  // vuelve a llamar igual porque este action también se puede invocar sobre
+  // una campaña que no se acaba de crear, y porque es la última barrera antes
+  // de que salga plata.
+  const reserva = await reservarCreditosCampana(
+    campaignId,
+    total,
+    Boolean(gate.membership?.orgId),
+  );
+  if (!reserva.ok) return { ok: false, error: reserva.error };
 
   const supabase = await createClient();
 
@@ -1083,7 +1084,12 @@ async function cargarCampanaEditable(campanaId: string): Promise<
   | {
       ok: true;
       tenantId: string;
-      campana: { id: string; nombre: string; status: string };
+      campana: {
+        id: string;
+        nombre: string;
+        status: string;
+        contactosCount: number;
+      };
       supabase: Awaited<ReturnType<typeof createClient>>;
     }
 > {
@@ -1107,7 +1113,7 @@ async function cargarCampanaEditable(campanaId: string): Promise<
 
   const { data: campana, error } = await supabase
     .from("yamas_send_campanas")
-    .select("id, nombre, status")
+    .select("id, nombre, status, contactos_count")
     .eq("id", campanaId)
     .eq("tenant_id", cliente.tenant_id)
     .maybeSingle();
@@ -1130,7 +1136,12 @@ async function cargarCampanaEditable(campanaId: string): Promise<
   return {
     ok: true,
     tenantId: cliente.tenant_id,
-    campana: { id: campana.id, nombre: campana.nombre, status: campana.status },
+    campana: {
+      id: campana.id,
+      nombre: campana.nombre,
+      status: campana.status,
+      contactosCount: campana.contactos_count ?? 0,
+    },
     supabase,
   };
 }
@@ -1225,6 +1236,22 @@ export async function updateCampaignAudienceAction(
     };
   }
 
+  // Cambiar la audiencia cambia cuántos mensajes va a costar la campaña, así
+  // que hay que reajustar la reserva ANTES de guardar: si la audiencia nueva es
+  // más grande y no hay cupo, la campaña tiene que quedar como estaba. Al revés
+  // (guardar primero) dejaría una campaña programada con más destinatarios que
+  // créditos apartados.
+  //
+  // Solo las campañas programadas retienen cupo; sobre un borrador esto
+  // resuelve a cero y no toca nada.
+  const reservaNueva = reservaSegunEstado(campana.status, contactosIds.length);
+  const reserva = await reservarCreditosCampana(
+    campanaId,
+    reservaNueva,
+    Boolean(gate.membership?.orgId),
+  );
+  if (!reserva.ok) return { error: reserva.error };
+
   const { error } = await supabase
     .from("yamas_send_campanas")
     .update({
@@ -1236,7 +1263,16 @@ export async function updateCampaignAudienceAction(
     .eq("id", campanaId)
     .eq("tenant_id", tenantId);
 
-  if (error) return { error: error.message };
+  if (error) {
+    // Devolver la reserva al valor anterior: la campaña sigue apuntando a la
+    // audiencia vieja, así que no puede quedar apartando créditos por la nueva.
+    await reservarCreditosCampana(
+      campanaId,
+      reservaSegunEstado(campana.status, campana.contactosCount),
+      Boolean(gate.membership?.orgId),
+    );
+    return { error: error.message };
+  }
 
   logActivity(
     tenantId,
@@ -1279,13 +1315,34 @@ export async function rescheduleCampaignAction(
     };
   }
 
+  // Programar es comprometer la campaña, así que acá se apartan los créditos.
+  // Importa sobre todo cuando venía de "borrador": cancelar una programación
+  // devuelve el cupo al saldo, y volver a programarla tiene que volver a
+  // pedirlo. Si ya estaba programada, la reserva es la misma y el delta es
+  // cero.
+  const reserva = await reservarCreditosCampana(
+    campanaId,
+    reservaSegunEstado("programada", campana.contactosCount),
+    Boolean(gate.membership?.orgId),
+  );
+  if (!reserva.ok) return { error: reserva.error };
+
   const { error } = await supabase
     .from("yamas_send_campanas")
     .update({ fecha_programada: fecha.toISOString(), status: "programada" })
     .eq("id", campanaId)
     .eq("tenant_id", tenantId);
 
-  if (error) return { error: error.message };
+  if (error) {
+    // La campaña quedó como estaba, así que la reserva también tiene que volver
+    // a lo que correspondía a su estado anterior.
+    await reservarCreditosCampana(
+      campanaId,
+      reservaSegunEstado(campana.status, campana.contactosCount),
+      Boolean(gate.membership?.orgId),
+    );
+    return { error: error.message };
+  }
 
   logActivity(
     tenantId,

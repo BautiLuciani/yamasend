@@ -114,6 +114,12 @@ export interface AppUser {
   trialEnd: string; // ISO date
   credito?: number;
   /**
+   * Total de créditos cargados alguna vez en la cuenta. Es el denominador del
+   * KPI del dashboard ("quedan X de Y"). null cuando la cuenta todavía no
+   * tiene cupo administrado y no hay un total contra el cual comparar.
+   */
+  creditosAsignados?: number | null;
+  /**
    * Autorización del empleado. Se resuelve server-side desde
    * yamas_send_miembros y se baja al cliente solo para esconder botones:
    * el gate real vive en assertPermiso() dentro de cada server action.
@@ -558,6 +564,8 @@ export interface Membership {
   permisos: Permisos;
   creditosAsignados: number;
   creditosUsados: number;
+  /** Créditos apartados para campañas programadas o en curso. */
+  creditosReservados: number;
 }
 
 /**

@@ -272,6 +272,7 @@ export default function AppShell({
             estado: MemberEstado;
             creditos_asignados: number;
             creditos_usados: number;
+            creditos_reservados: number;
             org_id: string | null;
           };
 
@@ -281,8 +282,16 @@ export default function AppShell({
             estado: row.estado,
             orgId: row.org_id,
             credito: row.org_id
-              ? Math.max(row.creditos_asignados - row.creditos_usados, 0)
+              ? Math.max(
+                  row.creditos_asignados -
+                    row.creditos_usados -
+                    (row.creditos_reservados ?? 0),
+                  0,
+                )
               : prev.credito,
+            creditosAsignados: row.org_id
+              ? row.creditos_asignados
+              : prev.creditosAsignados,
           }));
 
           // Si te suspenden o te quitan del equipo en este mismo momento,
@@ -1522,6 +1531,8 @@ export default function AppShell({
             campaigns={campaigns}
             insight={dashboardInsight}
             insightLoading={dashboardInsightLoading}
+            creditosDisponibles={user.credito ?? 0}
+            creditosAsignados={user.creditosAsignados ?? null}
             onViewAllCampaigns={() => setActiveSection("campanas")}
             onNewCampaign={() => {
               setWizardInitial(null);

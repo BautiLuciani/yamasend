@@ -25,6 +25,10 @@ interface DashboardProps {
   // hoy ya se había mostrado antes en esta misma sesión.
   insight: string | null;
   insightLoading: boolean;
+  /** Créditos que todavía se pueden comprometer (ya descontadas las reservas). */
+  creditosDisponibles: number;
+  /** Total cargado alguna vez, para mostrar "quedan X de Y". null si no aplica. */
+  creditosAsignados: number | null;
   onViewAllCampaigns: () => void;
   onNewCampaign: () => void;
 }
@@ -201,9 +205,18 @@ export default function Dashboard({
   campaigns,
   insight,
   insightLoading,
+  creditosDisponibles,
+  creditosAsignados,
   onViewAllCampaigns,
   onNewCampaign,
 }: DashboardProps) {
+  // Qué porción del cupo cargado sigue disponible. Sin cupo asignado la barra
+  // queda vacía en vez de dividir por cero.
+  const porcentajeCreditos =
+    creditosAsignados && creditosAsignados > 0
+      ? Math.min(100, Math.max(0, (creditosDisponibles / creditosAsignados) * 100))
+      : 0;
+
   const [periodo, setPeriodo] = useState<DashboardPeriodo>("7d");
   const [actividad, setActividad] = useState<ActivityLogEntry[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -442,15 +455,24 @@ export default function Dashboard({
             </div>
             <div className="flex flex-col gap-0.5 min-w-0">
               <div className="flex items-baseline gap-1.5 flex-wrap">
-                <div className="font-mono text-xl md:text-2xl font-medium tracking-[-0.03em] text-ys-text">3.200</div>
-                <div className="font-mono text-xs md:text-[13px] text-ys-dimmer">/ 50.000</div>
+                <div className="font-mono text-xl md:text-2xl font-medium tracking-[-0.03em] text-ys-text">
+                  {creditosDisponibles.toLocaleString("es-AR")}
+                </div>
+                {creditosAsignados !== null && creditosAsignados > 0 && (
+                  <div className="font-mono text-xs md:text-[13px] text-ys-dimmer">
+                    / {creditosAsignados.toLocaleString("es-AR")}
+                  </div>
+                )}
               </div>
               <div className="text-[12.5px] text-ys-muted font-semibold truncate">Créditos disponibles</div>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex-1 h-[5px] rounded-sm bg-ys-border-softest overflow-hidden">
-              <div className="h-full bg-ys-green rounded-sm" style={{ width: "6.4%" }} />
+              <div
+                className="h-full bg-ys-green rounded-sm transition-[width]"
+                style={{ width: `${porcentajeCreditos}%` }}
+              />
             </div>
             <button
               disabled
