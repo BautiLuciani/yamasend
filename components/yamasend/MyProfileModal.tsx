@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { AppUser, EmpresaUser } from "@/lib/types";
 import { useLang } from "./LangContext";
+import CreditosSection from "./CreditosSection";
 import {
   updateProfileAction,
   updateEmpresaPerfilAction,
@@ -746,20 +747,7 @@ export default function MyProfileModal({
                 </div>
               </div>
 
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 border border-dashed border-ys-border2 rounded-2xl py-10 px-6 text-center">
-                <div className="w-11 h-11 rounded-full bg-ys-el2 flex items-center justify-center">
-                  <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 5.2v3.3M8 10.8h.01" stroke="#8a908c" strokeWidth="1.6" strokeLinecap="round" />
-                    <circle cx="8" cy="8" r="6" stroke="#8a908c" strokeWidth="1.4" />
-                  </svg>
-                </div>
-                <div className="text-[15px] font-extrabold text-ys-text">
-                  {t("myprofile_creditos_construction_title")}
-                </div>
-                <div className="text-[13px] text-ys-muted font-medium leading-[1.5] max-w-[320px]">
-                  {t("myprofile_creditos_construction_desc")}
-                </div>
-              </div>
+              <CreditosSection />
             </>
           )}
         </div>
