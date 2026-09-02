@@ -17,6 +17,11 @@ import {
   type EmpresaInvitacion,
 } from "@/lib/actions/empresa";
 import InvitarEmpleadoModal from "./InvitarEmpleadoModal";
+import PacksCompra from "./PacksCompra";
+import {
+  getPreciosCompraAction,
+  type PreciosCompra,
+} from "@/lib/actions/creditos";
 
 interface Props {
   empleados: EmpleadoResumen[];
@@ -107,6 +112,27 @@ export default function EmpresaEmpleadosSection({
   const [error, setError] = useState<string | null>(null);
   const [confirmarQuitar, setConfirmarQuitar] = useState<EmpleadoResumen | null>(null);
   const [comprarAbierto, setComprarAbierto] = useState(false);
+  // Precios de los packs. Se piden recién al abrir el modal y no al montar la
+  // sección: la mayoría de las visitas a "Empleados" son para ver permisos o
+  // repartir créditos, no para comprar, y pedirlos siempre significaría
+  // pegarle a dolarapi de más sin que nadie mire el resultado.
+  const [preciosCompra, setPreciosCompra] = useState<PreciosCompra | null>(null);
+
+  function abrirCompra() {
+    setComprarAbierto(true);
+    if (preciosCompra === null) {
+      getPreciosCompraAction()
+        .then(setPreciosCompra)
+        .catch(() =>
+          setPreciosCompra({
+            precios: null,
+            error: "No pudimos calcular el precio en este momento.",
+            puedeComprar: false,
+            compraParaPool: true,
+          }),
+        );
+    }
+  }
   // Colapsado por defecto y no expandido: con muchos empleados, ver todas las
   // tarjetas abiertas de entrada es lo que Bauti pidió evitar. Se guarda un
   // Set de ids expandidos en vez de un booleano por tarjeta para no tener que
@@ -268,7 +294,7 @@ export default function EmpresaEmpleadosSection({
             1 crédito = 1 mensaje enviado.
           </span>
           <button
-            onClick={() => setComprarAbierto(true)}
+            onClick={abrirCompra}
             className="flex-none flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover"
           >
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
@@ -634,21 +660,22 @@ export default function EmpresaEmpleadosSection({
             <h2 className="text-[17px] font-extrabold text-ys-text">
               Comprar créditos
             </h2>
-            <div className="flex flex-col items-center gap-3 border border-dashed border-ys-border2 rounded-2xl py-8 px-5 text-center">
-              <div className="w-11 h-11 rounded-full bg-ys-el2 flex items-center justify-center">
-                <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
-                  <path d="M8 5.2v3.3M8 10.8h.01" stroke="#8a908c" strokeWidth="1.6" strokeLinecap="round" />
-                  <circle cx="8" cy="8" r="6" stroke="#8a908c" strokeWidth="1.4" />
-                </svg>
+            {preciosCompra === null ? (
+              <div className="py-8 text-center text-[13px] text-ys-muted font-medium">
+                Cargando precios…
               </div>
-              <div className="text-[15px] font-extrabold text-ys-text">
-                Todavía no está disponible
+            ) : preciosCompra.precios ? (
+              <PacksCompra
+                packs={preciosCompra.precios.packs}
+                habilitado={preciosCompra.precios.habilitado && preciosCompra.puedeComprar}
+                paraPool
+              />
+            ) : (
+              <div className="border border-dashed border-ys-border2 rounded-2xl py-8 px-5 text-center text-[13px] text-ys-muted font-medium leading-[1.5]">
+                {preciosCompra.error ??
+                  "No pudimos calcular el precio en este momento."}
               </div>
-              <div className="text-[13px] text-ys-muted font-medium leading-[1.5]">
-                Estamos armando el pago. Cuando esté, vas a poder cargar
-                créditos al pool desde acá y repartirlos entre tus empleados.
-              </div>
-            </div>
+            )}
             <button
               onClick={() => setComprarAbierto(false)}
               className="self-end text-[13.5px] font-bold text-[#3f4844] bg-white border border-ys-border rounded-[10px] px-4 py-[11px] cursor-pointer hover:bg-[#f7f9f8]"

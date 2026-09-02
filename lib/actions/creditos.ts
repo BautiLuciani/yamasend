@@ -93,7 +93,11 @@ export async function iniciarCompraCreditosAction(
     return { ok: false, error: "No hay sesión activa.", initPoint: null };
   }
 
-  if (membership.rol === "empresa" || !membership.permisos.comprar_creditos) {
+  // Una empresa siempre puede comprar: sus créditos van al pool, y el permiso
+  // comprar_creditos existe para decidir si un EMPLEADO compra por su cuenta,
+  // no para limitar a quien lo otorga. El destino final (pool o saldo propio)
+  // lo resuelve la RPC según el rol, nunca el cliente.
+  if (membership.rol !== "empresa" && !membership.permisos.comprar_creditos) {
     return {
       ok: false,
       error: "Tu cuenta no tiene permiso para comprar créditos.",
@@ -153,4 +157,39 @@ export async function iniciarCompraCreditosAction(
   }
 
   return { ok: true, error: null, initPoint: preferencia.initPoint };
+}
+
+export interface PreciosCompra {
+  precios: PreciosCreditos | null;
+  error: string | null;
+  puedeComprar: boolean;
+  /** true cuando los créditos van al pool de la organización. */
+  compraParaPool: boolean;
+}
+
+/**
+ * Precios para la pantalla de compra de una cuenta EMPRESA.
+ *
+ * Existe aparte de getMisCreditosAction porque una empresa no tiene saldo
+ * propio ni envía campañas: no tiene sentido devolverle disponible/usados/
+ * reservados, que en su caso siempre serían cero y confundirían.
+ */
+export async function getPreciosCompraAction(): Promise<PreciosCompra> {
+  const membership = await getCurrentMembership();
+
+  if (!membership) {
+    return { precios: null, error: "No hay sesión activa.", puedeComprar: false, compraParaPool: false };
+  }
+
+  const esEmpresa = membership.rol === "empresa";
+  const precios = await getPreciosCreditos();
+
+  return {
+    precios: precios.precios,
+    error: precios.error,
+    puedeComprar:
+      membership.estado === "activo" &&
+      (esEmpresa ? Boolean(membership.orgId) : membership.permisos.comprar_creditos),
+    compraParaPool: esEmpresa,
+  };
 }

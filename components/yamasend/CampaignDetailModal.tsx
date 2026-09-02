@@ -42,9 +42,21 @@ function formatDuracion(min: number | null): string {
   return m > 0 ? `${h}h ${m}min` : `${h}h`;
 }
 
-function formatCreditos(costoUsd: number | null): string {
-  if (costoUsd === null) return "—";
-  return costoUsd.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+/**
+ * Créditos consumidos por la campaña.
+ *
+ * Antes esto mostraba costo_usd, que es el costo en dólares que nos cobró Meta
+ * — un dato interno que el cliente no debe ver, y que además no es lo que el
+ * campo decía. Un crédito equivale a un mensaje enviado, así que los créditos
+ * usados son exactamente los mensajes que salieron bien: los que fallaron no
+ * se cobran.
+ */
+function formatCreditosUsados(mensajesOk: number, status: string): string {
+  const s = (status ?? "").toLowerCase();
+  // Una campaña que todavía no salió no consumió nada; mostrar 0 sería
+  // ambiguo con una que salió y falló entera.
+  if (s === "borrador" || s === "programada") return "—";
+  return mensajesOk.toLocaleString("es-AR");
 }
 
 function pct(part: number, total: number): string {
@@ -265,7 +277,7 @@ export default function CampaignDetailModal({
                   Créditos usados
                 </div>
                 <div className="font-mono text-[12.5px] text-[#3f4844]">
-                  {formatCreditos(detail.costoUsd)}
+                  {formatCreditosUsados(detail.mensajesOk, detail.status)}
                 </div>
               </div>
             </div>

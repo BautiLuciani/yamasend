@@ -9,7 +9,19 @@ interface CampaignWizardModalProps {
   open: boolean;
   lists: ContactList[];
   templates: Template[];
-  costPerMsg: number;
+  /**
+   * Créditos que la cuenta todavía puede comprometer. Es el saldo real ya
+   * descontadas las reservas de campañas programadas: si se usara el saldo
+   * bruto, una segunda campaña parecería enviable con créditos que ya están
+   * apartados para la primera.
+   */
+  creditosDisponibles: number;
+  /** false cuando la cuenta no tiene cupo administrado (cobro apagado). */
+  creditosAplican: boolean;
+  /** true para empleados de una empresa: no compran, les asignan. */
+  tieneEmpresa: boolean;
+  /** Abre Mi Perfil en la sección de créditos, para comprar sin perder el paso. */
+  onComprarCreditos?: () => void;
   onClose: () => void;
   onFetchInsight: () => Promise<{ insight: string | null; error: string | null }>;
   /**
@@ -52,7 +64,10 @@ export default function CampaignWizardModal({
   open,
   lists,
   templates,
-  costPerMsg,
+  creditosDisponibles,
+  creditosAplican,
+  tieneEmpresa,
+  onComprarCreditos,
   onClose,
   onFetchInsight,
   onFetchSugerenciaHorario,
@@ -157,7 +172,12 @@ export default function CampaignWizardModal({
   const lista = lists.find((l) => l.id === listaId) ?? null;
   const template = templates.find((t) => t.id === templateId) ?? null;
   const destinatarios = lista?.contactosIds.length ?? 0;
-  const costo = destinatarios * costPerMsg;
+
+  // 1 crédito = 1 mensaje. El gate real vive en Postgres (reserva atómica);
+  // esto es la versión visible, para que la persona se entere antes de armar
+  // toda la campaña y no recién al apretar enviar.
+  const creditosFaltantes = Math.max(destinatarios - creditosDisponibles, 0);
+  const sinCreditos = creditosAplican && creditosFaltantes > 0;
 
   const audienciasFiltradas = lists.filter((l) =>
     l.nombre.toLowerCase().includes(buscarAudiencia.toLowerCase()),
@@ -648,16 +668,56 @@ export default function CampaignWizardModal({
                 </div>
               </div>
 
-              <div className="border border-ys-border rounded-2xl px-4 py-4 flex flex-col gap-2.5">
-                <div className="text-[13px] font-extrabold text-ys-text">Costo</div>
+              <div
+                className={`border rounded-2xl px-4 py-4 flex flex-col gap-2.5 ${
+                  sinCreditos ? "border-ys-warn-border bg-ys-warn-bg" : "border-ys-border"
+                }`}
+              >
+                <div className="text-[13px] font-extrabold text-ys-text">Créditos</div>
+
                 <div className="flex items-center justify-between text-[13px] text-ys-muted font-semibold">
-                  <span>Costo estimado</span>
-                  <span className="font-mono text-ys-text">USD {costo.toFixed(2)}</span>
+                  <span>Créditos que se van a usar</span>
+                  <span className="font-mono text-ys-text">
+                    {destinatarios.toLocaleString("es-AR")}
+                  </span>
                 </div>
+
+                {creditosAplican && (
+                  <div className="flex items-center justify-between text-[13px] text-ys-muted font-semibold">
+                    <span>Te quedan disponibles</span>
+                    <span
+                      className={`font-mono ${sinCreditos ? "text-ys-warn-text" : "text-ys-text"}`}
+                    >
+                      {creditosDisponibles.toLocaleString("es-AR")}
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between text-[13px] font-bold text-ys-text border-t border-ys-border-soft pt-2.5">
                   <span>Total a enviar</span>
                   <span className="font-mono">{destinatarios} mensajes</span>
                 </div>
+
+                {sinCreditos && (
+                  <div className="flex flex-col gap-2 border-t border-ys-warn-border pt-2.5">
+                    <div className="text-[12.5px] font-semibold text-ys-warn-text leading-[1.5]">
+                      Te faltan {creditosFaltantes.toLocaleString("es-AR")} créditos para
+                      enviarle a los {destinatarios.toLocaleString("es-AR")} contactos de
+                      esta audiencia.
+                      {tieneEmpresa
+                        ? " Pedile más a tu empresa o elegí una audiencia más chica."
+                        : " Comprá más créditos o elegí una audiencia más chica."}
+                    </div>
+                    {!tieneEmpresa && onComprarCreditos && (
+                      <button
+                        onClick={onComprarCreditos}
+                        className="self-start text-[12.5px] font-bold text-white bg-ys-green rounded-[10px] px-3.5 py-2 cursor-pointer transition-colors hover:bg-ys-green-hover"
+                      >
+                        Comprar créditos
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -688,7 +748,12 @@ export default function CampaignWizardModal({
                 onBack={() => setPaso(3)}
                 backLabel="Atrás"
                 onNext={() => setConfirmando(true)}
-                nextLabel="Enviar campaña"
+                // Bloquear acá evita que la persona pase por la pantalla de
+                // confirmación para recién ahí comerse el error del servidor.
+                // El gate autoritativo sigue siendo la reserva en Postgres:
+                // esto es la advertencia temprana, no la barrera.
+                nextDisabled={sinCreditos}
+                nextLabel={sinCreditos ? "Créditos insuficientes" : "Enviar campaña"}
               />
             )}
           </>

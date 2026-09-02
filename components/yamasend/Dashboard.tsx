@@ -29,6 +29,14 @@ interface DashboardProps {
   creditosDisponibles: number;
   /** Total cargado alguna vez, para mostrar "quedan X de Y". null si no aplica. */
   creditosAsignados: number | null;
+  /**
+   * false para un empleado sin permiso de compra: a ese le asigna créditos su
+   * empresa, así que ofrecerle comprar lo mandaría a una pantalla donde no
+   * puede hacer nada.
+   */
+  puedeComprarCreditos: boolean;
+  /** Abre Mi Perfil directo en la sección de créditos. */
+  onComprarCreditos: () => void;
   onViewAllCampaigns: () => void;
   onNewCampaign: () => void;
 }
@@ -102,6 +110,7 @@ const ACTIVITY_STYLES: Record<
   ia_analisis: { bg: "bg-ys-dark", stroke: "#3ddb8f" },
   whatsapp_conectado: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
   whatsapp_desconectado: { bg: "bg-ys-warn-bg", stroke: "#b42318" },
+  creditos_comprados: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
 };
 
 function ActivityIcon({ tipo }: { tipo: ActivityTipo }) {
@@ -131,6 +140,18 @@ function ActivityIcon({ tipo }: { tipo: ActivityTipo }) {
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
           <path d="M4 2.5h5.5L12 5v8.5a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V3.3a.8.8 0 0 1 .8-.8Z" stroke={stroke} strokeWidth="1.4" strokeLinejoin="round" />
           <path d="M5.8 7h4.4M5.8 9.4h4.4" stroke={stroke} strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      );
+    case "creditos_comprados":
+      return (
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="5.5" stroke={stroke} strokeWidth="1.5" />
+          <path
+            d="M8 4.8v6.4M6.3 6.4h3.1a1.3 1.3 0 0 1 0 2.6H6.6a1.3 1.3 0 0 0 0 2.6h3.1"
+            stroke={stroke}
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
         </svg>
       );
     case "campana_creada":
@@ -207,6 +228,8 @@ export default function Dashboard({
   insightLoading,
   creditosDisponibles,
   creditosAsignados,
+  puedeComprarCreditos,
+  onComprarCreditos,
   onViewAllCampaigns,
   onNewCampaign,
 }: DashboardProps) {
@@ -474,13 +497,14 @@ export default function Dashboard({
                 style={{ width: `${porcentajeCreditos}%` }}
               />
             </div>
-            <button
-              disabled
-              title="Disponible próximamente"
-              className="text-[12.5px] font-bold text-ys-green-text whitespace-nowrap cursor-not-allowed opacity-70"
-            >
-              Comprar créditos
-            </button>
+            {puedeComprarCreditos && (
+              <button
+                onClick={onComprarCreditos}
+                className="text-[12.5px] font-bold text-ys-green-text whitespace-nowrap cursor-pointer transition-opacity hover:opacity-70"
+              >
+                Comprar créditos
+              </button>
+            )}
           </div>
         </div>
       </div>

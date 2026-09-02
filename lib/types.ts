@@ -120,6 +120,12 @@ export interface AppUser {
    */
   creditosAsignados?: number | null;
   /**
+   * true cuando la cuenta está sujeta al cobro por créditos. false mientras el
+   * cobro esté apagado para cuentas sin empresa: en ese caso el saldo se
+   * muestra pero no bloquea ningún envío.
+   */
+  creditosAplican?: boolean;
+  /**
    * Autorización del empleado. Se resuelve server-side desde
    * yamas_send_miembros y se baja al cliente solo para esconder botones:
    * el gate real vive en assertPermiso() dentro de cada server action.
@@ -644,7 +650,8 @@ export type ActivityTipo =
   | "campana_editada"
   | "ia_analisis"
   | "whatsapp_conectado"
-  | "whatsapp_desconectado";
+  | "whatsapp_desconectado"
+  | "creditos_comprados";
 
 export interface ActivityLogEntry {
   id: string;

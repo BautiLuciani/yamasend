@@ -58,6 +58,12 @@ interface MyProfileModalProps {
   user: AppUser | EmpresaUser;
   onClose: () => void;
   onUserUpdate: (patch: Partial<AppUser>) => void;
+  /**
+   * Sección en la que abrir el modal. Permite que "Comprar créditos" del
+   * dashboard lleve directo al lugar donde se compra, en vez de dejar a la
+   * persona buscándolo en el menú lateral.
+   */
+  seccionInicial?: Section;
 }
 
 type Section = "personal" | "security" | "agency" | "creditos";
@@ -232,14 +238,32 @@ export default function MyProfileModal({
   user,
   onClose,
   onUserUpdate,
+  seccionInicial,
 }: MyProfileModalProps) {
   const { t } = useLang();
   const identidad = identidadDe(user);
-  const [section, setSection] = useState<Section>("personal");
+  const [section, setSection] = useState<Section>(seccionInicial ?? "personal");
   // Solo tiene efecto en mobile: controla si se muestra el menú de
   // secciones o el contenido de la sección elegida (pantallas separadas,
   // una a la vez). En desktop ambas conviven siempre lado a lado.
   const [mobileView, setMobileView] = useState<"menu" | "content">("menu");
+
+  // Saltar a la sección pedida cada vez que el modal se abre. Es el patrón de
+  // setState en render que recomienda React para "ajustar estado cuando cambia
+  // una prop", el mismo que ya usa AppShell: con useEffect habría un frame
+  // mostrando la sección anterior antes de corregirse.
+  //
+  // En mobile además hay que saltar la pantalla de menú, porque si no la
+  // persona toca "Comprar créditos" y aterriza igual en el listado de
+  // secciones, sin haber avanzado nada.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setSection(seccionInicial ?? "personal");
+      setMobileView(seccionInicial ? "content" : "menu");
+    }
+  }
 
   // Perfil personal
   const [nombre, setNombre] = useState(identidad.contactoNombre);

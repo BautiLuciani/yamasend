@@ -117,8 +117,6 @@ interface AppShellProps {
   onLogout: () => void | Promise<void>;
 }
 
-const COST_PER_MSG = 0.0618;
-
 export default function AppShell({
   user: userProp,
   contacts,
@@ -465,6 +463,18 @@ export default function AppShell({
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileView, setProfileView] = useState<"profile" | "settings">("profile");
   const [myProfileOpen, setMyProfileOpen] = useState(false);
+  // Sección con la que abrir Mi Perfil. "creditos" cuando se llega desde un
+  // botón de comprar; undefined cuando se abre normal desde el menú.
+  const [myProfileSeccion, setMyProfileSeccion] = useState<
+    "personal" | "security" | "agency" | "creditos" | undefined
+  >(undefined);
+
+  // Atajo compartido por el dashboard y el wizard: llevar a comprar créditos
+  // sin que la persona tenga que ir a buscar dónde se hace.
+  const abrirCompraCreditos = useCallback(() => {
+    setMyProfileSeccion("creditos");
+    setMyProfileOpen(true);
+  }, []);
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
@@ -1513,7 +1523,13 @@ export default function AppShell({
       <MyProfileModal
         open={myProfileOpen}
         user={user}
-        onClose={() => setMyProfileOpen(false)}
+        seccionInicial={myProfileSeccion}
+        onClose={() => {
+          setMyProfileOpen(false);
+          // Se limpia al cerrar para que la próxima apertura desde el menú
+          // no siga aterrizando en créditos.
+          setMyProfileSeccion(undefined);
+        }}
         onUserUpdate={(patch) => setUser((prev) => ({ ...prev, ...patch }))}
       />
 
@@ -1533,6 +1549,10 @@ export default function AppShell({
             insightLoading={dashboardInsightLoading}
             creditosDisponibles={user.credito ?? 0}
             creditosAsignados={user.creditosAsignados ?? null}
+            puedeComprarCreditos={
+              !user.orgId || user.permisos.comprar_creditos
+            }
+            onComprarCreditos={abrirCompraCreditos}
             onViewAllCampaigns={() => setActiveSection("campanas")}
             onNewCampaign={() => {
               setWizardInitial(null);
@@ -1850,7 +1870,10 @@ export default function AppShell({
         open={wizardOpen}
         lists={lists}
         templates={templatesAprobados}
-        costPerMsg={COST_PER_MSG}
+        creditosDisponibles={user.credito ?? 0}
+        creditosAplican={user.creditosAplican ?? false}
+        tieneEmpresa={Boolean(user.orgId)}
+        onComprarCreditos={abrirCompraCreditos}
         initial={wizardInitial ?? undefined}
         onClose={() => setWizardOpen(false)}
         onFetchInsight={obtenerInsightCacheado}

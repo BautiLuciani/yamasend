@@ -23,6 +23,17 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
   const membership = await getCurrentMembership();
   if (!membership || membership.rol === "empresa") return null;
 
+  // El saldo autoritativo sale de la RPC, que es la que sabe si el cobro
+  // aplica a esta cuenta: un empleado de empresa siempre tiene cupo, y un
+  // individual solo desde que se encendió el cobro. Replicar esa condición
+  // acá dejaría dos fuentes de verdad que se desincronizan sola.
+  const { data: saldoData } = await supabase.rpc("yamas_send_mi_saldo");
+  const saldo = (saldoData ?? {}) as {
+    aplica?: boolean;
+    saldo?: number;
+    asignados?: number;
+  };
+
   const { data: row, error } = await supabase
     .from("yamas_inmo_clientes")
     .select(
@@ -53,17 +64,16 @@ export async function getCurrentAppUser(): Promise<AppUser | null> {
     // Se restan también los reservados: un crédito apartado para una campaña
     // programada ya está comprometido y mostrarlo como disponible haría que el
     // usuario arme una segunda campaña que después no va a poder enviar.
-    credito: membership.orgId
-      ? Math.max(
-          membership.creditosAsignados -
-            membership.creditosUsados -
-            membership.creditosReservados,
-          0,
-        )
+    // Con el cobro activo el saldo sale siempre de la RPC, tenga empresa o no.
+    // El campo legacy de yamas_inmo_clientes solo sobrevive para cuentas a las
+    // que el cobro todavía no alcanza, y desaparece cuando se apague ese caso.
+    credito: saldo.aplica
+      ? (saldo.saldo ?? 0)
       : row.credito
         ? parseFloat(row.credito)
         : 0,
-    creditosAsignados: membership.orgId ? membership.creditosAsignados : null,
+    creditosAsignados: saldo.aplica ? (saldo.asignados ?? 0) : null,
+    creditosAplican: Boolean(saldo.aplica),
   };
 }
 
