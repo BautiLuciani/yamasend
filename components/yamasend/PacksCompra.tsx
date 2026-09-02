@@ -56,9 +56,15 @@ export default function PacksCompra({
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      {/* Una columna en mobile, tres en desktop */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    // @container habilita que el grid de abajo reaccione al ancho real de
+    // este contenedor y no al de la pantalla. Este componente vive en dos
+    // lugares con anchos muy distintos: el panel ancho de Mi Perfil y el
+    // modal angosto (440px) de la cuenta empresa. Con un breakpoint de
+    // viewport (md:) las tres columnas se activaban en cualquier pantalla
+    // desktop sin importar cuánto lugar hubiera de verdad, y en el modal
+    // angosto eso apretaba el contenido hasta cortarlo.
+    <div className="@container flex flex-col gap-3">
+      <div className="grid grid-cols-1 @[560px]:grid-cols-2 @[820px]:grid-cols-3 gap-3">
         {packs.map((pack) => (
           <div
             key={pack.codigo}
@@ -69,13 +75,15 @@ export default function PacksCompra({
             }`}
           >
             {pack.descuentoPct > 0 && (
-              <div className="absolute top-3 right-3 text-[10.5px] font-extrabold text-ys-green-text bg-white border border-ys-green-border rounded-full px-2 py-0.5">
+              <div className="absolute top-3 right-3 text-[10.5px] font-extrabold text-ys-green-text bg-white border border-ys-green-border rounded-full px-2 py-0.5 whitespace-nowrap">
                 -{Math.round(pack.descuentoPct)}%
               </div>
             )}
 
-            <div className="flex flex-col gap-0.5 pr-12">
-              <div className="text-[14px] font-extrabold text-ys-text">{pack.nombre}</div>
+            <div className="flex flex-col gap-0.5 pr-14">
+              <div className="text-[14px] font-extrabold text-ys-text truncate">
+                {pack.nombre}
+              </div>
               <div className="font-mono text-[13px] text-ys-muted">
                 {numero(pack.creditos)} mensajes
               </div>
