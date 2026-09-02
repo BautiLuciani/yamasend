@@ -176,6 +176,21 @@ function TextArea({
   );
 }
 
+/** Cartel de resultado (ok/error) reusado por las distintas secciones. */
+function StatusMsg({ msg }: { msg: { type: "ok" | "err"; text: string } }) {
+  return (
+    <div
+      className={`text-[13px] font-medium rounded-lg px-3.5 py-2.5 border ${
+        msg.type === "ok"
+          ? "bg-ys-green-bg text-ys-green-text border-ys-green-border"
+          : "bg-ys-red-bg text-ys-red-text border-ys-red-border"
+      }`}
+    >
+      {msg.text}
+    </div>
+  );
+}
+
 /**
  * Lista editable de productos/servicios. Se guarda como array jsonb en la
  * columna `productos`, no como texto libre: la IA (generación de templates,
@@ -193,12 +208,14 @@ function ProductosEditor({
   readOnly,
   onSubirArchivo,
   analizando,
+  msg,
 }: {
   productos: Producto[];
   onChange: (p: Producto[]) => void;
   readOnly?: boolean;
   onSubirArchivo: (file: File) => void;
   analizando: boolean;
+  msg: { type: "ok" | "err"; text: string } | null;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -254,7 +271,7 @@ function ProductosEditor({
                 type="button"
                 onClick={() => onChange(productos.filter((_, idx) => idx !== i))}
                 aria-label="Quitar producto"
-                className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-ys-muted hover:text-ys-text hover:bg-ys-el2 transition-colors text-lg leading-none"
+                className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-ys-muted hover:text-ys-text hover:bg-ys-el2 transition-colors cursor-pointer text-lg leading-none"
               >
                 ×
               </button>
@@ -277,7 +294,7 @@ function ProductosEditor({
             onClick={() =>
               onChange([...productos, { nombre: "", precio: "", descripcion: "" }])
             }
-            className="px-3 py-2 rounded-[10px] border text-[13px] font-extrabold text-ys-text hover:bg-ys-el2 transition-colors"
+            className="px-3 py-2 rounded-[10px] border text-[13px] font-extrabold text-ys-text hover:bg-ys-el2 transition-colors cursor-pointer"
             style={{ borderColor: "#e8ebe9" }}
           >
             + Agregar producto
@@ -287,8 +304,7 @@ function ProductosEditor({
             type="button"
             disabled={analizando}
             onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-2 rounded-[10px] text-[13px] font-extrabold text-white transition-opacity disabled:opacity-60"
-            style={{ background: "#12B76A" }}
+            className="px-3 py-2 rounded-[10px] text-[13px] font-extrabold text-white bg-ys-green cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-default disabled:hover:translate-y-0"
           >
             {analizando ? "Analizando archivo..." : "Subir catálogo con IA"}
           </button>
@@ -309,6 +325,8 @@ function ProductosEditor({
           />
         </div>
       )}
+
+      {msg && <StatusMsg msg={msg} />}
 
       {!readOnly && (
         <div className="text-[12px] font-semibold text-ys-muted">
@@ -433,6 +451,21 @@ export default function MyProfileModal({
   // dos operaciones distintas: se puede estar analizando un archivo sin
   // haber guardado, y guardar sin haber analizado nunca.
   const [analizandoCatalogo, setAnalizandoCatalogo] = useState(false);
+  // Mensaje del análisis del archivo. Va aparte de agencyMsg y se pinta al
+  // lado de la lista de productos: si compartieran estado, el resultado de
+  // subir un catálogo aparecía al final del formulario, lejos del botón que
+  // lo disparó, y era muy fácil no verlo.
+  const [catalogoMsg, setCatalogoMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  /**
+   * Copia de los datos tal como vinieron del servidor (y tal como quedaron
+   * después de guardar). Es la referencia contra la que se compara para saber
+   * si hay cambios sin guardar: sin esto, la única forma de saberlo sería
+   * marcar un flag en cada onChange, que se desincroniza apenas alguien
+   * escribe y vuelve a borrar lo que escribió.
+   */
+  const [negocioGuardado, setNegocioGuardado] = useState<DatosNegocio>(DATOS_NEGOCIO_VACIOS);
+  /** Confirmación de salida cuando quedaron cambios sin guardar. */
+  const [confirmarSalida, setConfirmarSalida] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -440,6 +473,7 @@ export default function MyProfileModal({
     getDatosNegocioAction().then((res) => {
       if (!vivo) return;
       setDatosNegocio(res ?? DATOS_NEGOCIO_VACIOS);
+      setNegocioGuardado(res ?? DATOS_NEGOCIO_VACIOS);
       setCargandoNegocio(false);
     });
     return () => {
@@ -470,7 +504,24 @@ export default function MyProfileModal({
     setMobileView("content");
   }
 
-  function handleClose() {
+  /**
+   * true si el formulario tiene cambios que todavía no se guardaron. Cubre
+   * los datos de la empresa y el perfil personal; la contraseña no cuenta
+   * porque no es un dato que se "pierda" (no hay nada cargado que rehacer).
+   *
+   * Se compara contra el último estado conocido del servidor en vez de
+   * llevar un flag por campo: así, si alguien escribe algo y lo vuelve a
+   * dejar como estaba, no se lo molesta con una advertencia que no aplica.
+   */
+  const hayCambiosSinGuardar =
+    !cargandoNegocio &&
+    (JSON.stringify(datosNegocio) !== JSON.stringify(negocioGuardado) ||
+      nombre.trim() !== identidad.contactoNombre.trim() ||
+      tel.trim() !== (identidad.ventasTel ?? "").trim());
+
+  /** Cierra de verdad y limpia el formulario. */
+  function cerrarYLimpiar() {
+    setConfirmarSalida(false);
     onClose();
     setTimeout(() => {
       setSection("personal");
@@ -481,7 +532,74 @@ export default function MyProfileModal({
       setPwMsg(null);
       setProfileMsg(null);
       setAgencyMsg(null);
+      setCatalogoMsg(null);
+      // Se descartan los cambios no guardados volviendo al último estado
+      // real del servidor. Si no, al reabrir el modal seguirían ahí y
+      // parecerían guardados sin estarlo.
+      setDatosNegocio(negocioGuardado);
+      setNombre(identidad.contactoNombre);
+      setTel(identidad.ventasTel ?? "");
     }, 200);
+  }
+
+  function handleClose() {
+    // No se cierra de una si hay trabajo sin guardar: mucha gente no sabe
+    // que tiene que apretar "Guardar cambios", y cerrar sin avisar les hace
+    // perder todo lo que acaban de cargar (un catálogo entero, por ejemplo).
+    if (hayCambiosSinGuardar) {
+      setConfirmarSalida(true);
+      return;
+    }
+    cerrarYLimpiar();
+  }
+
+  /**
+   * Guarda lo que efectivamente cambió y recién ahí cierra. Se guarda cada
+   * sección por separado porque son endpoints distintos: tocar solo el
+   * nombre no debería disparar un update de los datos de negocio.
+   *
+   * Si algo falla no se cierra: se deja el modal abierto en la sección del
+   * problema, con el error a la vista, para que la persona pueda corregir
+   * en vez de perder los cambios igual.
+   */
+  async function handleGuardarYCerrar() {
+    const negocioCambio =
+      JSON.stringify(datosNegocio) !== JSON.stringify(negocioGuardado);
+    const perfilCambio =
+      nombre.trim() !== identidad.contactoNombre.trim() ||
+      tel.trim() !== (identidad.ventasTel ?? "").trim();
+
+    if (perfilCambio) {
+      const res =
+        identidad.rol === "empresa"
+          ? await updateEmpresaPerfilAction(nombre)
+          : await updateProfileAction({ contactoNombre: nombre, ventasTel: tel });
+      if (res.error) {
+        setConfirmarSalida(false);
+        setSection("personal");
+        setMobileView("content");
+        setProfileMsg({ type: "err", text: res.error });
+        return;
+      }
+      onUserUpdate({ contactoNombre: nombre.trim(), ventasTel: tel.trim() });
+    }
+
+    if (negocioCambio && datosNegocio.editable) {
+      const res = await actualizarDatosNegocioAction(
+        datosNegocio,
+        identidad.orgId !== null,
+      );
+      if (res.error) {
+        setConfirmarSalida(false);
+        setSection("agency");
+        setMobileView("content");
+        setAgencyMsg({ type: "err", text: res.error });
+        return;
+      }
+      setNegocioGuardado(datosNegocio);
+    }
+
+    cerrarYLimpiar();
   }
 
   async function handleSaveProfile() {
@@ -517,6 +635,11 @@ export default function MyProfileModal({
       setAgencyMsg({ type: "err", text: res.error });
     } else {
       setAgencyMsg({ type: "ok", text: t("myprofile_saved") });
+      // Lo guardado pasa a ser la nueva referencia: si no, el formulario
+      // seguiría considerándose "sucio" y advertiría al cerrar aunque el
+      // usuario ya haya guardado.
+      setNegocioGuardado(datosNegocio);
+      setCatalogoMsg(null);
     }
   }
 
@@ -565,7 +688,7 @@ export default function MyProfileModal({
    */
   async function handleSubirCatalogo(file: File) {
     setAnalizandoCatalogo(true);
-    setAgencyMsg(null);
+    setCatalogoMsg(null);
     try {
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -587,19 +710,19 @@ export default function MyProfileModal({
       );
 
       if (res.error) {
-        setAgencyMsg({ type: "err", text: res.error });
+        setCatalogoMsg({ type: "err", text: res.error });
       } else {
         setDatosNegocio((d) => ({
           ...d,
           productos: [...d.productos, ...res.productos],
         }));
-        setAgencyMsg({
+        setCatalogoMsg({
           type: "ok",
           text: `Se detectaron ${res.productos.length} producto(s). Revisalos y guardá los cambios.`,
         });
       }
     } catch {
-      setAgencyMsg({ type: "err", text: "No se pudo leer el archivo." });
+      setCatalogoMsg({ type: "err", text: "No se pudo leer el archivo." });
     } finally {
       setAnalizandoCatalogo(false);
     }
@@ -756,7 +879,7 @@ export default function MyProfileModal({
                   disabled={savingProfile}
                   className="self-start text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-default disabled:hover:translate-y-0"
                 >
-                  {savingProfile ? "..." : t("myprofile_save")}
+                  {savingProfile ? t("myprofile_saving") : t("myprofile_save")}
                 </button>
               </div>
             </>
@@ -817,7 +940,7 @@ export default function MyProfileModal({
                   }
                   className="self-start text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-default disabled:hover:translate-y-0"
                 >
-                  {savingPw ? "..." : t("myprofile_password_change")}
+                  {savingPw ? t("myprofile_saving") : t("myprofile_password_change")}
                 </button>
               </div>
             </>
@@ -889,6 +1012,7 @@ export default function MyProfileModal({
                     readOnly={!datosNegocio.editable}
                     onSubirArchivo={handleSubirCatalogo}
                     analizando={analizandoCatalogo}
+                    msg={catalogoMsg}
                   />
                 </div>
 
@@ -946,17 +1070,7 @@ export default function MyProfileModal({
                   />
                 </div>
 
-                {agencyMsg && (
-                  <div
-                    className={`text-[13px] font-medium rounded-lg px-3.5 py-2.5 border ${
-                      agencyMsg.type === "ok"
-                        ? "bg-ys-green-bg text-ys-green-text border-ys-green-border"
-                        : "bg-ys-red-bg text-ys-red-text border-ys-red-border"
-                    }`}
-                  >
-                    {agencyMsg.text}
-                  </div>
-                )}
+                {agencyMsg && <StatusMsg msg={agencyMsg} />}
 
                 {datosNegocio.editable && (
                   <button
@@ -964,7 +1078,7 @@ export default function MyProfileModal({
                     disabled={savingAgency}
                     className="self-start text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-60 disabled:cursor-default disabled:hover:translate-y-0"
                   >
-                    {savingAgency ? "..." : t("myprofile_save")}
+                    {savingAgency ? t("myprofile_saving") : t("myprofile_save")}
                   </button>
                 )}
               </div>
@@ -987,6 +1101,53 @@ export default function MyProfileModal({
           )}
         </div>
       </div>
+
+      {/*
+        Confirmación de salida con cambios pendientes. Va DENTRO del overlay
+        del modal y con un z-index mayor, para que quede por encima del panel
+        de perfil en vez de detrás. El stopPropagation evita que el click en
+        este cartel cuente como "click afuera" del modal de perfil y dispare
+        otra vez el cierre.
+      */}
+      {confirmarSalida && (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            setConfirmarSalida(false);
+          }}
+          className="fixed inset-0 z-[9500] bg-[rgba(16,24,20,0.4)] flex items-center justify-center px-6 py-8"
+          style={{ animation: "ys-fade .16s ease both" }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[430px] bg-ys-card rounded-[18px] px-7 pt-[26px] pb-[22px] flex flex-col gap-4 shadow-[var(--shadow-modal)]"
+            style={{ animation: "ys-modal .19s cubic-bezier(.4,0,.2,1) both" }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <div className="text-lg font-extrabold tracking-[-0.02em] text-ys-text">
+                {t("myprofile_discard_title")}
+              </div>
+              <div className="text-[13.5px] text-ys-muted font-medium leading-[1.5]">
+                {t("myprofile_discard_desc")}
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2.5">
+              <button
+                onClick={cerrarYLimpiar}
+                className="text-[13.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8]"
+              >
+                {t("myprofile_discard_cancel")}
+              </button>
+              <button
+                onClick={handleGuardarYCerrar}
+                className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px"
+              >
+                {t("myprofile_discard_confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

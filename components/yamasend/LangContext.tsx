@@ -23,6 +23,11 @@ const i18n = {
     logout_desc: "Vas a volver a la pantalla de inicio de sesión.",
     logout_cancel: "Cancelar",
     logout_confirm: "Cerrar sesión",
+    myprofile_discard_title: "Tenés cambios sin guardar",
+    myprofile_discard_desc:
+      "Si salís ahora se pierden los cambios que hiciste. ¿Querés guardarlos antes de cerrar?",
+    myprofile_discard_cancel: "Salir sin guardar",
+    myprofile_discard_confirm: "Guardar y cerrar",
 
     // ── ProfileDrawer ──
     profile_subscription: "Suscripción",
@@ -58,6 +63,7 @@ const i18n = {
     myprofile_field_email_readonly: "El email no se puede modificar por ahora.",
     myprofile_field_phone: "Teléfono",
     myprofile_save: "Guardar cambios",
+    myprofile_saving: "Guardando...",
     myprofile_saved: "Cambios guardados.",
     myprofile_save_error: "No se pudieron guardar los cambios.",
 
@@ -179,6 +185,11 @@ const i18n = {
     logout_desc: "You'll be taken back to the sign-in screen.",
     logout_cancel: "Cancel",
     logout_confirm: "Log out",
+    myprofile_discard_title: "You have unsaved changes",
+    myprofile_discard_desc:
+      "If you leave now your changes will be lost. Do you want to save them before closing?",
+    myprofile_discard_cancel: "Leave without saving",
+    myprofile_discard_confirm: "Save and close",
 
     profile_subscription: "Subscription",
     profile_active: "Active",
@@ -212,6 +223,7 @@ const i18n = {
     myprofile_field_email_readonly: "Email can't be changed yet.",
     myprofile_field_phone: "Phone",
     myprofile_save: "Save changes",
+    myprofile_saving: "Saving...",
     myprofile_saved: "Changes saved.",
     myprofile_save_error: "Couldn't save the changes.",
 
