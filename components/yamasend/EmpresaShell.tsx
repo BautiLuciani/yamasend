@@ -102,9 +102,23 @@ export default function EmpresaShell({
   const [templateOcupado, setTemplateOcupado] = useState<string | null>(null);
   const [sumarEmpleadosA, setSumarEmpleadosA] = useState<EmpresaTemplatePropio | null>(null);
 
+  // true mientras se navega a Empleados desde el KPI de créditos, para que esa
+  // sección arranque con el modal de compra abierto. Se apaga en cualquier otra
+  // navegación: si no, volver a Empleados por el menú reabriría la compra sola.
+  const [abrirCompraAlEntrar, setAbrirCompraAlEntrar] = useState(false);
+
+  function irAComprarCreditos() {
+    // El orden importa: setSection apaga el flag para que ninguna otra
+    // navegación reabra la compra, así que encenderlo después es lo que hace
+    // que solo este camino la abra.
+    setSection("empleados");
+    setAbrirCompraAlEntrar(true);
+  }
+
   function setSection(next: EmpresaSection) {
     setSectionState(next);
     setDrawerOpen(false);
+    setAbrirCompraAlEntrar(false);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
       if (next === "dashboard") url.searchParams.delete("section");
@@ -485,6 +499,7 @@ export default function EmpresaShell({
             stats={stats}
             empleados={empleados}
             onVerEmpleado={verEmpleado}
+            onComprarCreditos={irAComprarCreditos}
           />
         )}
 
@@ -493,6 +508,7 @@ export default function EmpresaShell({
             empleados={empleados}
             invitaciones={invitaciones}
             creditosPool={stats?.creditosPool ?? empresa.creditosPool}
+            abrirCompraAlEntrar={abrirCompraAlEntrar}
             onVerEmpleado={verEmpleado}
             onRefrescar={refrescar}
           />

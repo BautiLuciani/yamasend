@@ -7,6 +7,8 @@ interface Props {
   stats: EmpresaDashboard | null;
   empleados: EmpleadoResumen[];
   onVerEmpleado: (tenantId: string) => void;
+  /** Lleva a Empleados con el modal de compra ya abierto. */
+  onComprarCreditos: () => void;
 }
 
 function Kpi({
@@ -14,11 +16,14 @@ function Kpi({
   valor,
   sub,
   acento,
+  accion,
 }: {
   label: string;
   valor: string | number;
   sub?: string;
   acento?: "verde" | "warn";
+  /** Acción opcional al pie de la card, como "Comprar créditos". */
+  accion?: { label: string; onClick: () => void };
 }) {
   return (
     <div className="bg-white border border-ys-border rounded-2xl px-4 md:px-[18px] py-4 flex flex-col gap-1.5">
@@ -35,6 +40,14 @@ function Kpi({
         {valor}
       </span>
       {sub && <span className="text-[12px] font-medium text-ys-dim">{sub}</span>}
+      {accion && (
+        <button
+          onClick={accion.onClick}
+          className="self-start text-[12px] font-bold text-ys-green-text cursor-pointer transition-opacity hover:opacity-70"
+        >
+          {accion.label}
+        </button>
+      )}
     </div>
   );
 }
@@ -95,6 +108,7 @@ export default function EmpresaDashboardSection({
   stats,
   empleados,
   onVerEmpleado,
+  onComprarCreditos,
 }: Props) {
   const maximo = Math.max(1, ...empleados.map((e) => e.mensajesOk));
   const ordenados = [...empleados].sort((a, b) => b.mensajesOk - a.mensajesOk);
@@ -152,6 +166,7 @@ export default function EmpresaDashboardSection({
           valor={stats?.creditosPool ?? 0}
           sub={`${stats?.creditosAsignados ?? 0} repartidos`}
           acento={stats && stats.creditosPool === 0 ? "warn" : undefined}
+          accion={{ label: "Comprar créditos", onClick: onComprarCreditos }}
         />
       </div>
 

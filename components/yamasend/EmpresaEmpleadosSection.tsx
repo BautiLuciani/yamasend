@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   PERMISO_KEYS,
   type EmpleadoResumen,
@@ -27,6 +27,11 @@ interface Props {
   empleados: EmpleadoResumen[];
   invitaciones: EmpresaInvitacion[];
   creditosPool: number;
+  /**
+   * true cuando se llega desde el KPI "Créditos en el pool" del dashboard:
+   * el modal de compra arranca abierto en vez de obligar a buscar el botón.
+   */
+  abrirCompraAlEntrar?: boolean;
   onVerEmpleado: (tenantId: string) => void;
   onRefrescar: () => void;
 }
@@ -102,6 +107,7 @@ export default function EmpresaEmpleadosSection({
   empleados,
   invitaciones,
   creditosPool,
+  abrirCompraAlEntrar = false,
   onVerEmpleado,
   onRefrescar,
 }: Props) {
@@ -111,28 +117,36 @@ export default function EmpresaEmpleadosSection({
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmarQuitar, setConfirmarQuitar] = useState<EmpleadoResumen | null>(null);
-  const [comprarAbierto, setComprarAbierto] = useState(false);
+  // Arranca abierto cuando se llega desde el KPI de créditos del dashboard,
+  // para no obligar a buscar el botón después de haber tocado "Comprar".
+  const [comprarAbierto, setComprarAbierto] = useState(abrirCompraAlEntrar);
+
   // Precios de los packs. Se piden recién al abrir el modal y no al montar la
   // sección: la mayoría de las visitas a "Empleados" son para ver permisos o
   // repartir créditos, no para comprar, y pedirlos siempre significaría
   // pegarle a dolarapi de más sin que nadie mire el resultado.
   const [preciosCompra, setPreciosCompra] = useState<PreciosCompra | null>(null);
 
-  function abrirCompra() {
-    setComprarAbierto(true);
-    if (preciosCompra === null) {
-      getPreciosCompraAction()
-        .then(setPreciosCompra)
-        .catch(() =>
-          setPreciosCompra({
-            precios: null,
-            error: "No pudimos calcular el precio en este momento.",
-            puedeComprar: false,
-            compraParaPool: true,
-          }),
-        );
-    }
-  }
+  useEffect(() => {
+    if (!comprarAbierto || preciosCompra !== null) return;
+    let vivo = true;
+    getPreciosCompraAction()
+      .then((r) => {
+        if (vivo) setPreciosCompra(r);
+      })
+      .catch(() => {
+        if (!vivo) return;
+        setPreciosCompra({
+          precios: null,
+          error: "No pudimos calcular el precio en este momento.",
+          puedeComprar: false,
+          compraParaPool: true,
+        });
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [comprarAbierto, preciosCompra]);
   // Colapsado por defecto y no expandido: con muchos empleados, ver todas las
   // tarjetas abiertas de entrada es lo que Bauti pidió evitar. Se guarda un
   // Set de ids expandidos en vez de un booleano por tarjeta para no tener que
@@ -294,7 +308,7 @@ export default function EmpresaEmpleadosSection({
             1 crédito = 1 mensaje enviado.
           </span>
           <button
-            onClick={abrirCompra}
+            onClick={() => setComprarAbierto(true)}
             className="flex-none flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover"
           >
             <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
