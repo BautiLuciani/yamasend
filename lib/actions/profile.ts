@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import type { Producto } from "@/lib/types";
 
 export interface ProfileActionResult {
   error: string | null;
@@ -96,6 +97,7 @@ export interface DatosNegocio {
   zonaCobertura: string;
   diferenciales: string;
   reglasEvitar: string;
+  productos: Producto[];
 }
 
 export async function getDatosNegocioAction(): Promise<DatosNegocio | null> {
@@ -105,7 +107,7 @@ export async function getDatosNegocioAction(): Promise<DatosNegocio | null> {
   );
   if (error || !data) return null;
 
-  const r = data as Record<string, string | boolean | null>;
+  const r = data as Record<string, string | boolean | Producto[] | null>;
   return {
     editable: r.editable === true,
     nombreEmpresa: (r.nombreEmpresa as string) ?? "",
@@ -116,6 +118,7 @@ export async function getDatosNegocioAction(): Promise<DatosNegocio | null> {
     zonaCobertura: (r.zonaCobertura as string) ?? "",
     diferenciales: (r.diferenciales as string) ?? "",
     reglasEvitar: (r.reglasEvitar as string) ?? "",
+    productos: Array.isArray(r.productos) ? (r.productos as Producto[]) : [],
   };
 }
 
@@ -143,6 +146,7 @@ export async function actualizarDatosNegocioAction(
         p_zona_cobertura: data.zonaCobertura,
         p_diferenciales: data.diferenciales,
         p_reglas_evitar: data.reglasEvitar,
+        p_productos: data.productos,
       },
     );
     if (error) return { error: "No se pudieron guardar los cambios." };
@@ -174,6 +178,7 @@ export async function actualizarDatosNegocioAction(
       zona_cobertura: data.zonaCobertura.trim(),
       diferenciales: data.diferenciales.trim(),
       reglas_evitar: data.reglasEvitar.trim(),
+      productos: data.productos,
     })
     .eq("auth_user_id", user.id);
 
@@ -182,6 +187,133 @@ export async function actualizarDatosNegocioAction(
     return { error: "No se pudieron guardar los cambios. Probá de nuevo." };
   }
   return { error: null };
+}
+
+// Webhook del workflow "YamaSend — Analizar Catálogo de Productos con IA"
+// en n8n. Recibe { fileBase64, fileName, mimeType } y devuelve
+// { ok, productos, error }. El workflow clasifica el archivo por tipo,
+// extrae su contenido (texto de PDF, filas de planilla, o visión para
+// imágenes) y normaliza todo a la misma lista de productos.
+const CATALOGO_IA_WEBHOOK_URL =
+  "https://yamasai.app.n8n.cloud/webhook/yamasend-analizar-catalogo";
+
+/** Tope de tamaño del archivo subido. Igual al límite del bucket de Storage. */
+const CATALOGO_MAX_BYTES = 15 * 1024 * 1024;
+
+export interface AnalizarCatalogoResult {
+  productos: Producto[];
+  error: string | null;
+}
+
+/**
+ * Analiza un archivo de catálogo (PDF, Excel/CSV o imagen) y devuelve los
+ * productos que encontró, para prellenar el campo "Productos" de Datos de
+ * la empresa.
+ *
+ * NO guarda los productos: solo los propone. El usuario los revisa y
+ * corrige en la UI, y recién al tocar "Guardar" se persisten vía
+ * actualizarDatosNegocioAction. Eso es a propósito — la extracción por IA
+ * puede equivocarse (sobre todo leyendo imágenes) y sobrescribir el
+ * catálogo del usuario sin que lo vea sería destructivo.
+ *
+ * El archivo original sí se guarda en el bucket privado
+ * catalogos-productos, particionado por usuario, para poder reprocesarlo
+ * después sin pedirle a la persona que lo vuelva a subir.
+ */
+export async function analizarCatalogoProductosAction(
+  fileBase64: string,
+  fileName: string,
+  mimeType: string,
+): Promise<AnalizarCatalogoResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { productos: [], error: "No hay sesión activa." };
+
+  if (!fileBase64) {
+    return { productos: [], error: "No se recibió el archivo. Probá de nuevo." };
+  }
+
+  // base64 infla ~4/3 respecto del binario: se estima el tamaño real antes
+  // de mandar nada, para no subir 20MB a Storage y que rebote allá.
+  const bytesAprox = Math.floor((fileBase64.length * 3) / 4);
+  if (bytesAprox > CATALOGO_MAX_BYTES) {
+    return { productos: [], error: "El archivo es muy grande (máximo 15 MB)." };
+  }
+
+  // Se guarda el original antes de analizarlo. Si falla el guardado no se
+  // corta el flujo: el respaldo es un extra, y perderlo no justifica
+  // negarle al usuario el análisis que vino a pedir.
+  try {
+    const binario = Buffer.from(fileBase64, "base64");
+    const nombreLimpio = fileName.replace(/[^\w.\-]/g, "_").slice(-120);
+    await supabase.storage
+      .from("catalogos-productos")
+      .upload(`${user.id}/${Date.now()}_${nombreLimpio}`, binario, {
+        contentType: mimeType || "application/octet-stream",
+        upsert: false,
+      });
+  } catch (e) {
+    console.error("analizarCatalogoProductosAction storage error:", e);
+  }
+
+  try {
+    const res = await fetch(CATALOGO_IA_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileBase64, fileName, mimeType }),
+    });
+
+    if (!res.ok) {
+      return {
+        productos: [],
+        error: `El analizador de catálogos respondió con error (${res.status}).`,
+      };
+    }
+
+    const data = (await res.json()) as {
+      ok?: boolean;
+      productos?: Producto[];
+      error?: string | null;
+    };
+
+    if (!data.ok) {
+      return {
+        productos: [],
+        error: data.error ?? "No se pudo analizar el archivo.",
+      };
+    }
+
+    const productos = Array.isArray(data.productos) ? data.productos : [];
+    if (!productos.length) {
+      return {
+        productos: [],
+        error:
+          "No se encontraron productos en el archivo. Revisá que sea una lista o catálogo, o cargalos a mano.",
+      };
+    }
+
+    // Se normaliza acá y no se confía en la forma que devuelva el modelo:
+    // un nombre faltante rompería la lista editable en la UI.
+    return {
+      productos: productos
+        .filter((p) => p && typeof p.nombre === "string" && p.nombre.trim())
+        .map((p) => ({
+          nombre: String(p.nombre).trim(),
+          precio: typeof p.precio === "string" ? p.precio.trim() : "",
+          descripcion:
+            typeof p.descripcion === "string" ? p.descripcion.trim() : "",
+        })),
+      error: null,
+    };
+  } catch (e) {
+    console.error("analizarCatalogoProductosAction error:", e);
+    return {
+      productos: [],
+      error: "No se pudo conectar con el analizador. Reintentá en unos segundos.",
+    };
+  }
 }
 
 /**

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { AppUser, EmpresaUser } from "@/lib/types";
+import { useEffect, useRef, useState } from "react";
+import type { AppUser, EmpresaUser, Producto } from "@/lib/types";
 import { useLang } from "./LangContext";
 import CreditosSection from "./CreditosSection";
 import {
@@ -10,6 +10,7 @@ import {
   changePasswordAction,
   getDatosNegocioAction,
   actualizarDatosNegocioAction,
+  analizarCatalogoProductosAction,
   type DatosNegocio,
 } from "@/lib/actions/profile";
 
@@ -175,6 +176,150 @@ function TextArea({
   );
 }
 
+/**
+ * Lista editable de productos/servicios. Se guarda como array jsonb en la
+ * columna `productos`, no como texto libre: la IA (generación de templates,
+ * agente conversacional) consume esto y una lista estructurada es mucho
+ * más confiable de extraer y de reinyectar en un prompt que un párrafo.
+ *
+ * El botón de subir archivo delega en analizarCatalogoProductosAction, que
+ * NO persiste nada: los productos extraídos reemplazan lo que hay en
+ * pantalla y quedan editables hasta que la persona toque "Guardar". Es
+ * deliberado — la extracción puede equivocarse, sobre todo leyendo fotos.
+ */
+function ProductosEditor({
+  productos,
+  onChange,
+  readOnly,
+  onSubirArchivo,
+  analizando,
+}: {
+  productos: Producto[];
+  onChange: (p: Producto[]) => void;
+  readOnly?: boolean;
+  onSubirArchivo: (file: File) => void;
+  analizando: boolean;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function actualizar(i: number, campo: keyof Producto, valor: string) {
+    onChange(
+      productos.map((p, idx) => (idx === i ? { ...p, [campo]: valor } : p)),
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5">
+      {productos.map((p, i) => (
+        <div
+          key={i}
+          className="flex flex-col gap-2 border rounded-[10px] p-[11px]"
+          style={{ borderColor: "#e8ebe9" }}
+        >
+          <div className="flex items-start gap-2">
+            <div className="flex-1 min-w-0 flex flex-col gap-2">
+              <input
+                value={p.nombre}
+                readOnly={readOnly}
+                onChange={(e) => actualizar(i, "nombre", e.target.value)}
+                placeholder="Nombre del producto o servicio"
+                autoComplete="off"
+                className={`w-full border-none outline-none bg-transparent text-sm font-bold text-ys-text ${
+                  readOnly ? "cursor-not-allowed text-ys-muted" : ""
+                }`}
+              />
+              <input
+                value={p.precio ?? ""}
+                readOnly={readOnly}
+                onChange={(e) => actualizar(i, "precio", e.target.value)}
+                placeholder="Precio (opcional)"
+                autoComplete="off"
+                className={`w-full border-none outline-none bg-transparent text-[13px] font-semibold text-ys-muted ${
+                  readOnly ? "cursor-not-allowed" : ""
+                }`}
+              />
+              <input
+                value={p.descripcion ?? ""}
+                readOnly={readOnly}
+                onChange={(e) => actualizar(i, "descripcion", e.target.value)}
+                placeholder="Descripción (opcional)"
+                autoComplete="off"
+                className={`w-full border-none outline-none bg-transparent text-[13px] font-semibold text-ys-muted ${
+                  readOnly ? "cursor-not-allowed" : ""
+                }`}
+              />
+            </div>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={() => onChange(productos.filter((_, idx) => idx !== i))}
+                aria-label="Quitar producto"
+                className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-ys-muted hover:text-ys-text hover:bg-ys-el2 transition-colors text-lg leading-none"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </div>
+      ))}
+
+      {!productos.length && (
+        <div className="text-[13px] font-semibold text-ys-muted py-1">
+          Todavía no cargaste productos. Agregalos a mano o subí un archivo con
+          tu catálogo.
+        </div>
+      )}
+
+      {!readOnly && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() =>
+              onChange([...productos, { nombre: "", precio: "", descripcion: "" }])
+            }
+            className="px-3 py-2 rounded-[10px] border text-[13px] font-extrabold text-ys-text hover:bg-ys-el2 transition-colors"
+            style={{ borderColor: "#e8ebe9" }}
+          >
+            + Agregar producto
+          </button>
+
+          <button
+            type="button"
+            disabled={analizando}
+            onClick={() => fileInputRef.current?.click()}
+            className="px-3 py-2 rounded-[10px] text-[13px] font-extrabold text-white transition-opacity disabled:opacity-60"
+            style={{ background: "#12B76A" }}
+          >
+            {analizando ? "Analizando archivo..." : "Subir catálogo con IA"}
+          </button>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.csv,.xls,.xlsx,image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              // Se limpia el value para que volver a elegir el MISMO archivo
+              // dispare onChange de nuevo (si no, el input lo considera sin
+              // cambios y el segundo intento no hace nada).
+              e.target.value = "";
+              if (file) onSubirArchivo(file);
+            }}
+          />
+        </div>
+      )}
+
+      {!readOnly && (
+        <div className="text-[12px] font-semibold text-ys-muted">
+          Aceptamos PDF, Excel/CSV o una foto del catálogo. La IA completa la
+          lista y después la podés corregir.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PasswordInput({
   value,
   onChange,
@@ -231,6 +376,7 @@ const DATOS_NEGOCIO_VACIOS: DatosNegocio = {
   zonaCobertura: "",
   diferenciales: "",
   reglasEvitar: "",
+  productos: [],
 };
 
 export default function MyProfileModal({
@@ -283,6 +429,10 @@ export default function MyProfileModal({
   const [cargandoNegocio, setCargandoNegocio] = useState(true);
   const [savingAgency, setSavingAgency] = useState(false);
   const [agencyMsg, setAgencyMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  // Análisis del archivo de catálogo. Vive aparte de savingAgency porque son
+  // dos operaciones distintas: se puede estar analizando un archivo sin
+  // haber guardado, y guardar sin haber analizado nunca.
+  const [analizandoCatalogo, setAnalizandoCatalogo] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -405,6 +555,54 @@ export default function MyProfileModal({
     key: K,
   ) {
     return (v: string) => setDatosNegocio((d) => ({ ...d, [key]: v }));
+  }
+
+  /**
+   * Lee el archivo elegido, lo manda a analizar y vuelca el resultado en el
+   * editor de productos. Los productos extraídos se AGREGAN a los que ya
+   * había en vez de reemplazarlos: alguien puede subir dos archivos (ej: un
+   * catálogo por rubro), y pisar lo anterior sin avisar sería destructivo.
+   */
+  async function handleSubirCatalogo(file: File) {
+    setAnalizandoCatalogo(true);
+    setAgencyMsg(null);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        // readAsDataURL devuelve "data:<mime>;base64,<contenido>"; el
+        // workflow espera solo el contenido, sin el prefijo.
+        reader.onload = () => {
+          const r = reader.result;
+          if (typeof r !== "string") return reject(new Error("read failed"));
+          resolve(r.split(",")[1] ?? "");
+        };
+        reader.onerror = () => reject(new Error("read failed"));
+        reader.readAsDataURL(file);
+      });
+
+      const res = await analizarCatalogoProductosAction(
+        base64,
+        file.name,
+        file.type,
+      );
+
+      if (res.error) {
+        setAgencyMsg({ type: "err", text: res.error });
+      } else {
+        setDatosNegocio((d) => ({
+          ...d,
+          productos: [...d.productos, ...res.productos],
+        }));
+        setAgencyMsg({
+          type: "ok",
+          text: `Se detectaron ${res.productos.length} producto(s). Revisalos y guardá los cambios.`,
+        });
+      }
+    } catch {
+      setAgencyMsg({ type: "err", text: "No se pudo leer el archivo." });
+    } finally {
+      setAnalizandoCatalogo(false);
+    }
   }
 
 
@@ -678,6 +876,19 @@ export default function MyProfileModal({
                     placeholder={t("myprofile_field_descripcion_negocio_placeholder")}
                     rows={3}
                     readOnly={!datosNegocio.editable}
+                  />
+                </div>
+
+                <div className="flex flex-col gap-[7px]">
+                  <FieldLabel>{t("myprofile_field_productos")}</FieldLabel>
+                  <ProductosEditor
+                    productos={datosNegocio.productos}
+                    onChange={(productos) =>
+                      setDatosNegocio((d) => ({ ...d, productos }))
+                    }
+                    readOnly={!datosNegocio.editable}
+                    onSubirArchivo={handleSubirCatalogo}
+                    analizando={analizandoCatalogo}
                   />
                 </div>
 

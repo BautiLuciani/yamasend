@@ -81,6 +81,7 @@ const i18n = {
     myprofile_field_descripcion_negocio: "Descripción del negocio",
     myprofile_field_descripcion_negocio_placeholder:
       "Ej: Inmobiliaria especializada en alquileres y ventas de departamentos en zona norte del GBA, con más de 10 años en el rubro.",
+    myprofile_field_productos: "Productos y servicios",
     myprofile_field_publico_objetivo: "Público objetivo",
     myprofile_field_publico_objetivo_placeholder:
       "Ej: Parejas jóvenes y familias buscando su primera vivienda, principalmente entre 28 y 45 años.",
@@ -234,6 +235,7 @@ const i18n = {
     myprofile_field_descripcion_negocio: "Business description",
     myprofile_field_descripcion_negocio_placeholder:
       "E.g.: Real estate agency specialized in rentals and sales in the north of Buenos Aires, with over 10 years in the industry.",
+    myprofile_field_productos: "Products and services",
     myprofile_field_publico_objetivo: "Target audience",
     myprofile_field_publico_objetivo_placeholder:
       "E.g.: Young couples and families looking for their first home, mostly between 28 and 45 years old.",

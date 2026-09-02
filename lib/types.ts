@@ -1,3 +1,16 @@
+/**
+ * Un producto/servicio cargado en "Datos de la empresa". Se guarda como
+ * array jsonb en yamas_inmo_clientes.productos / yamas_send_organizaciones.productos
+ * (columna reusada, ya existía vacía en ambas tablas). precio y descripcion
+ * son opcionales porque no todo negocio maneja precio fijo o quiere
+ * detallar cada ítem.
+ */
+export interface Producto {
+  nombre: string;
+  precio?: string;
+  descripcion?: string;
+}
+
 export type ScoreTemp = "caliente" | "tibio" | "frio" | "";
 
 export interface Contact {

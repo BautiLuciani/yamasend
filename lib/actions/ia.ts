@@ -37,6 +37,7 @@ import type {
   Contact,
   IAFlowState,
   IAHistoryTurn,
+  Producto,
 } from "@/lib/types";
 import { IA_FLOW_IDLE } from "@/lib/types";
 
@@ -203,6 +204,12 @@ interface ContextoNegocio {
   publicoObjetivo: string;
   tonoComunicacion: string;
   diferenciales: string;
+  /**
+   * Catálogo cargado en "Datos de la empresa". Se formatea como lista de
+   * texto antes de entrar al prompt: el modelo razona mejor sobre una lista
+   * legible que sobre JSON crudo.
+   */
+  productos: Producto[];
 }
 
 async function resolverContextoNegocio(): Promise<ContextoNegocio | null> {
@@ -220,16 +227,35 @@ async function resolverContextoNegocio(): Promise<ContextoNegocio | null> {
   const { data, error } = await supabase.rpc("yamas_send_contexto_negocio");
   if (error || !data) return null;
 
-  const r = data as Record<string, string | null>;
+  const r = data as Record<string, string | Producto[] | null>;
   return {
-    nombreUsuario: r.nombreUsuario ?? null,
-    nombreEmpresa: r.nombreEmpresa ?? null,
-    rubro: r.rubro ?? "",
-    descripcionNegocio: r.descripcionNegocio ?? "",
-    publicoObjetivo: r.publicoObjetivo ?? "",
-    tonoComunicacion: r.tonoComunicacion ?? "",
-    diferenciales: r.diferenciales ?? "",
+    nombreUsuario: (r.nombreUsuario as string) ?? null,
+    nombreEmpresa: (r.nombreEmpresa as string) ?? null,
+    rubro: (r.rubro as string) ?? "",
+    descripcionNegocio: (r.descripcionNegocio as string) ?? "",
+    publicoObjetivo: (r.publicoObjetivo as string) ?? "",
+    tonoComunicacion: (r.tonoComunicacion as string) ?? "",
+    diferenciales: (r.diferenciales as string) ?? "",
+    productos: Array.isArray(r.productos) ? (r.productos as Producto[]) : [],
   };
+}
+
+/**
+ * Convierte el catálogo en una lista de texto para meter en un prompt.
+ * Se corta en 40 ítems: un catálogo enorme se comería el context window y
+ * los primeros productos suelen ser los representativos del negocio.
+ */
+function formatearProductos(productos: Producto[]): string {
+  if (!productos.length) return "";
+  const lineas = productos.slice(0, 40).map((p) => {
+    const partes = [p.nombre];
+    if (p.precio) partes.push(p.precio);
+    if (p.descripcion) partes.push(p.descripcion);
+    return `- ${partes.join(" — ")}`;
+  });
+  const resto =
+    productos.length > 40 ? `\n- (y ${productos.length - 40} más)` : "";
+  return lineas.join("\n") + resto;
 }
 
 async function contarContactos(): Promise<number> {
@@ -3263,6 +3289,8 @@ async function responderConAgente(
         contexto.publicoObjetivo && `Público objetivo: ${contexto.publicoObjetivo}.`,
         contexto.tonoComunicacion && `Tono que prefiere la marca: ${contexto.tonoComunicacion}.`,
         contexto.diferenciales && `Diferenciales del negocio: ${contexto.diferenciales}.`,
+        contexto.productos.length &&
+          `Productos y servicios que ofrece:\n${formatearProductos(contexto.productos)}`,
       ].filter(Boolean)
     : [];
 
