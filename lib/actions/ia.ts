@@ -41,12 +41,6 @@ import type {
 } from "@/lib/types";
 import { IA_FLOW_IDLE } from "@/lib/types";
 
-// Mismo costo por mensaje que usa CampaignWizardModal.tsx (COST_PER_MSG en
-// AppShell.tsx) — se mantiene acá como constante propia porque ese valor
-// vive hoy hardcodeado en el componente, no exportado desde ningún lado
-// reusable. Si alguna vez se centraliza, actualizar ambos lugares.
-const COST_PER_MSG = 0.0618;
-
 // -----------------------------------------------------------------------
 // Cliente OpenAI. Se instancia perezosamente adentro de cada función (no a
 // nivel de módulo) para que, si falta OPENAI_API_KEY en el entorno, el error
@@ -2655,7 +2649,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "listar_campanas",
       description:
-        "Lista campañas con sus métricas reales (enviados, entregados, leídos, respondidos, costo, tasa de respuesta). Usar para 'cuál campaña rindió mejor', 'cuál fue la primera/última campaña', 'cuántas campañas tengo', 'listame las campañas de este mes'. Las fechas son opcionales: omitilas para buscar en todo el historial.",
+        "Lista campañas con sus métricas reales (enviados, entregados, leídos, respondidos, créditos usados, tasa de respuesta). Usar para 'cuál campaña rindió mejor', 'cuál fue la primera/última campaña', 'cuántas campañas tengo', 'listame las campañas de este mes'. Las fechas son opcionales: omitilas para buscar en todo el historial.",
       parameters: {
         type: "object",
         properties: {
@@ -2700,12 +2694,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           presupuesto_mensajes: {
             type: "integer",
             description:
-              "Cantidad máxima de contactos que el usuario puede costear, cuando dio un presupuesto en MENSAJES o CRÉDITOS (1 crédito = 1 mensaje). Se devuelven los mejor rankeados hasta ese tope. Si el presupuesto vino en dinero, usá presupuesto_usd en su lugar.",
-          },
-          presupuesto_usd: {
-            type: "number",
-            description:
-              "Presupuesto en DÓLARES. Se convierte a cantidad de contactos dividiendo por el costo por mensaje de la plataforma. No lo uses para montos en pesos ni en otra moneda.",
+              "Cantidad máxima de contactos que el usuario puede costear, cuando dio un presupuesto en MENSAJES o CRÉDITOS (1 crédito = 1 mensaje). Se devuelven los mejor rankeados hasta ese tope. Si el presupuesto vino en dinero (pesos, dólares u otra moneda), no lo conviertas: preguntale a cuántos créditos equivale.",
           },
           limite: { type: "integer", description: "Máximo de contactos a devolver (1-100). Por defecto 15." },
         },
@@ -2718,7 +2707,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "metricas_periodo",
       description:
-        "Métricas agregadas de mensajería en un rango de fechas: mensajes enviados/entregados/leídos/respondidos, tasas y gasto total en dólares. Usar para 'cuánto gasté', 'cómo me fue este mes', 'cuál es mi tasa de respuesta'.",
+        "Métricas agregadas de mensajería en un rango de fechas: mensajes enviados/entregados/leídos/respondidos, tasas y créditos usados (1 crédito = 1 mensaje). Usar para 'cuánto gasté', 'cuántos créditos usé', 'cómo me fue este mes', 'cuál es mi tasa de respuesta'.",
       parameters: {
         type: "object",
         properties: {
@@ -2935,8 +2924,25 @@ async function ejecutarHerramientaAgente(
       nombre: string; status: string; enviado_at: string; contactos_count: number;
       mensajes_ok: number; leidos: number; respondidos: number; tasa_respuesta: number; costo_usd: number | null;
     }[];
+
+    // costo_usd es el costo real que nos cobra Meta por campaña — dato
+    // interno, nunca al modelo. Cada fila que ve el modelo lleva
+    // creditos_usados en su lugar (mensajes_ok ya representa exactamente eso:
+    // 1 crédito por cada mensaje efectivamente enviado).
+    const filasParaModelo = filas.map((f) => ({
+      nombre: f.nombre,
+      status: f.status,
+      enviado_at: f.enviado_at,
+      contactos_count: f.contactos_count,
+      mensajes_ok: f.mensajes_ok,
+      leidos: f.leidos,
+      respondidos: f.respondidos,
+      tasa_respuesta: f.tasa_respuesta,
+      creditos_usados: f.mensajes_ok,
+    }));
+
     return {
-      datos: filas,
+      datos: filasParaModelo,
       tabla: filas.length
         ? {
             titulo: "Tus campañas",
@@ -2990,27 +2996,19 @@ async function ejecutarHerramientaAgente(
         ? Math.max(1, Math.min(100, Math.round(args.limite)))
         : 15;
 
-    // 2. Corte por presupuesto. Se calcula en CANTIDAD DE MENSAJES porque
-    //    es la unidad que el usuario va a comprar (1 crédito = 1 mensaje).
-    //    El camino en dólares queda como respaldo, dividiendo por el costo
-    //    por mensaje que ya usa el wizard de campañas.
-    const cupoPorCreditos =
+    // 2. Corte por presupuesto. Se calcula en CRÉDITOS (1 crédito = 1
+    //    mensaje), la única unidad que el usuario compra y ve. El costo real
+    //    en dólares que nos cobra Meta es un dato interno que nunca debe
+    //    llegar a esta herramienta ni al mensaje que arma el modelo.
+    const cupoPresupuesto =
       typeof args.presupuesto_mensajes === "number" && args.presupuesto_mensajes > 0
         ? Math.floor(args.presupuesto_mensajes)
         : null;
-    const cupoPorDolares =
-      typeof args.presupuesto_usd === "number" && args.presupuesto_usd > 0
-        ? Math.floor(args.presupuesto_usd / COST_PER_MSG)
-        : null;
-    const cupoPresupuesto =
-      cupoPorCreditos != null && cupoPorDolares != null
-        ? Math.min(cupoPorCreditos, cupoPorDolares)
-        : (cupoPorCreditos ?? cupoPorDolares);
 
     if (cupoPresupuesto != null && cupoPresupuesto < 1) {
       return {
         datos: {
-          error: `Ese presupuesto no alcanza ni para un mensaje. Cada envío cuesta USD ${COST_PER_MSG.toFixed(4)}.`,
+          error: "Ese presupuesto no alcanza ni para un mensaje.",
         },
       };
     }
@@ -3125,7 +3123,38 @@ async function ejecutarHerramientaAgente(
       })
       .maybeSingle();
     if (error) return { datos: { error: error.message } };
-    return { datos: data ?? {} };
+
+    // analytics_resumen_periodo trae costo_total_usd (el costo real que nos
+    // cobra Meta) para uso interno. Nunca se lo pasamos al modelo: se arma un
+    // objeto nuevo con solo lo que corresponde ver, más creditos_usados, que
+    // es la unidad que el cliente entiende (1 crédito = 1 mensaje, y cada
+    // mensaje insertado en yamas_send_mensajes ya consumió exactamente uno).
+    const metricas = (data ?? {}) as {
+      campanas_enviadas?: number;
+      mensajes_enviados?: number;
+      mensajes_entregados?: number;
+      mensajes_leidos?: number;
+      mensajes_respondidos?: number;
+      mensajes_error?: number;
+      tasa_entrega?: number;
+      tasa_lectura?: number;
+      tasa_respuesta?: number;
+    };
+
+    return {
+      datos: {
+        campanas_enviadas: metricas.campanas_enviadas ?? 0,
+        mensajes_enviados: metricas.mensajes_enviados ?? 0,
+        mensajes_entregados: metricas.mensajes_entregados ?? 0,
+        mensajes_leidos: metricas.mensajes_leidos ?? 0,
+        mensajes_respondidos: metricas.mensajes_respondidos ?? 0,
+        mensajes_error: metricas.mensajes_error ?? 0,
+        tasa_entrega: metricas.tasa_entrega ?? 0,
+        tasa_lectura: metricas.tasa_lectura ?? 0,
+        tasa_respuesta: metricas.tasa_respuesta ?? 0,
+        creditos_usados: metricas.mensajes_enviados ?? 0,
+      },
+    };
   }
 
   if (nombre === "mejor_horario_envio") {
@@ -3341,8 +3370,8 @@ BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 - Cada resultado trae un "motivo". Cuando respaldado_por_mensaje es true, ese motivo es un MENSAJE REAL que escribió el contacto y podés citarlo con confianza. Cuando es false, la coincidencia sale del análisis del contacto y es una señal más floja: en ese caso NO digas que el contacto dijo o mencionó algo, decí que por su perfil podría encajar.
 - Si NINGÚN resultado tiene respaldado_por_mensaje en true, no presentes la lista como si hubieran hablado del tema: decí con franqueza que no encontraste a nadie que lo haya mencionado, y ofrecé los que podrían encajar por perfil como una segunda opción.
 - Nunca hables de embeddings, vectores ni "búsqueda semántica". En criollo: "por lo que venía hablando".
-- La plataforma cobra por mensaje enviado. Si el usuario da un presupuesto en CANTIDAD DE MENSAJES o CRÉDITOS (1 crédito = 1 mensaje), pasalo en presupuesto_mensajes. Si lo da en DÓLARES, pasalo en presupuesto_usd.
-- Si el presupuesto viene en pesos o en cualquier otra moneda, NO lo conviertas ni lo estimes: todavía no hay tipo de cambio en la plataforma. Decilo con franqueza y preguntale a cuántos mensajes equivale o cuánto es en dólares, y con esa respuesta hacé la búsqueda.
+- La plataforma cobra en CRÉDITOS: 1 crédito = 1 mensaje. Si el usuario da un presupuesto en cantidad de mensajes o créditos, pasalo en presupuesto_mensajes.
+- Nunca hables de dólares, ni del costo real que nos cobra Meta por mensaje: eso es información interna, el usuario solo debe pensar en créditos. Si el presupuesto viene en pesos, en dólares o en cualquier otra moneda, NO lo conviertas ni lo estimes vos. Decile con franqueza que la plataforma trabaja en créditos (1 crédito = 1 mensaje) y preguntale a cuántos créditos equivale su presupuesto, y con esa respuesta hacé la búsqueda.
 - Cuando recortaste por presupuesto, aclaralo: cuántos entran y cuántos quedaron afuera.
 
 ACCIONES QUE PODÉS EJECUTAR
