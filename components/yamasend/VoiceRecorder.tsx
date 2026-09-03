@@ -5,11 +5,6 @@ import { transcribirAudioIAAction } from "@/lib/actions/ia_audio";
 
 export type EstadoGrabacion = "idle" | "recording" | "transcribing";
 
-// Umbral de arrastre (px) para el gesto "deslizar para cancelar" en mobile,
-// igual que WhatsApp: si soltás habiendo arrastrado más de esto hacia la
-// izquierda, se descarta en vez de enviarse.
-const UMBRAL_CANCELAR_PX = 70;
-
 // Candidatos de mimeType en orden de preferencia. Chrome/Firefox/Android
 // soportan opus en webm; Safari e iOS solo soportan mp4/aac. Si ninguno
 // está disponible, se deja que el navegador elija el default (undefined).
@@ -27,22 +22,13 @@ function elegirMimeType(): string | undefined {
 interface UseVoiceRecorderResult {
   estado: EstadoGrabacion;
   duracionSeg: number;
-  cancelando: boolean;
   error: string | null;
-  esMobile: boolean;
-  // Desktop: click único para arrancar a grabar.
-  iniciarClick: () => void;
-  // Desktop: botones explícitos de enviar/descartar.
+  // Un solo tap arranca a grabar (igual en mobile y desktop). Enviar y
+  // descartar son botones explícitos en la barra de grabación — no hace
+  // falta mantener nada presionado.
+  iniciar: () => void;
   detenerYEnviar: () => void;
   descartar: () => void;
-  // Mobile: mantener presionado para grabar, soltar para enviar, arrastrar
-  // para cancelar — se pasan directo como handlers de pointer events.
-  pointerHandlers: {
-    onPointerDown: (e: React.PointerEvent) => void;
-    onPointerMove: (e: React.PointerEvent) => void;
-    onPointerUp: (e: React.PointerEvent) => void;
-    onPointerCancel: (e: React.PointerEvent) => void;
-  };
 }
 
 export function useVoiceRecorder(
@@ -50,40 +36,12 @@ export function useVoiceRecorder(
 ): UseVoiceRecorderResult {
   const [estado, setEstado] = useState<EstadoGrabacion>("idle");
   const [duracionSeg, setDuracionSeg] = useState(0);
-  const [cancelando, setCancelando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startXRef = useRef(0);
-  // Evita el doble disparo del gesto mobile: pointerup dispara la lógica de
-  // envío/descarte, pero un click sintético puede llegar después.
-  const resueltoRef = useRef(false);
-  // Cubre la carrera con el permiso de micrófono: getUserMedia es async y,
-  // la primera vez, dispara el diálogo nativo del navegador — el dedo del
-  // usuario se despega del botón para tocar "Permitir" y ese pointerup no
-  // le llega nunca al elemento. Si eso pasa, guardamos la intención acá y
-  // la resolvemos apenas la grabación arranca de verdad.
-  const iniciandoRef = useRef(false);
-  const pendingAccionRef = useRef<"enviar" | "descartar" | null>(null);
-
-  // (pointer: coarse) = el input principal del dispositivo es táctil. Es más
-  // confiable que el ancho de pantalla para decidir el gesto correcto.
-  // Lazy initializer (no useEffect) para el valor inicial: evita el render
-  // en cascada de setState síncrono dentro de un efecto.
-  const [esMobile, setEsMobile] = useState(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(pointer: coarse)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(pointer: coarse)");
-    const onChange = () => setEsMobile(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
 
   const limpiarStream = useCallback(() => {
     if (timerRef.current) {
@@ -117,14 +75,12 @@ export function useVoiceRecorder(
     await detenerGrabacion();
     limpiarStream();
     setEstado("idle");
-    setCancelando(false);
     setDuracionSeg(0);
   }, [detenerGrabacion, limpiarStream]);
 
   const detenerYEnviar = useCallback(async () => {
     const blob = await detenerGrabacion();
     limpiarStream();
-    setCancelando(false);
 
     if (!blob) {
       setEstado("idle");
@@ -154,10 +110,9 @@ export function useVoiceRecorder(
     onTranscribed(texto);
   }, [detenerGrabacion, duracionSeg, limpiarStream, onTranscribed]);
 
-  const empezarGrabacion = useCallback(async () => {
+  const iniciar = useCallback(async () => {
+    if (estado !== "idle") return;
     setError(null);
-    resueltoRef.current = false;
-    iniciandoRef.current = true;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -176,108 +131,18 @@ export function useVoiceRecorder(
       recorder.start();
       setEstado("recording");
       setDuracionSeg(0);
-      setCancelando(false);
       timerRef.current = setInterval(() => {
         setDuracionSeg((d) => d + 1);
       }, 1000);
-      iniciandoRef.current = false;
-
-      // El usuario ya soltó (o canceló) mientras esperábamos el permiso del
-      // micrófono / el arranque del MediaRecorder — resolvemos ahora la
-      // intención que había quedado pendiente, así nunca queda grabando
-      // sin ninguna salida.
-      if (pendingAccionRef.current === "enviar") {
-        pendingAccionRef.current = null;
-        void detenerYEnviar();
-      } else if (pendingAccionRef.current === "descartar") {
-        pendingAccionRef.current = null;
-        void descartar();
-      }
     } catch {
-      iniciandoRef.current = false;
-      pendingAccionRef.current = null;
       setError(
         "No pude acceder al micrófono. Revisá los permisos del navegador.",
       );
       limpiarStream();
     }
-  }, [limpiarStream, detenerYEnviar, descartar]);
+  }, [estado, limpiarStream]);
 
-  // ---- Desktop: click para iniciar ----
-  const iniciarClick = useCallback(() => {
-    if (estado !== "idle") return;
-    void empezarGrabacion();
-  }, [estado, empezarGrabacion]);
-
-  // ---- Mobile: mantener presionado ----
-  const onPointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.pointerType === "mouse" || estado !== "idle") return;
-      startXRef.current = e.clientX;
-      resueltoRef.current = false;
-      // Pointer capture: si el dedo se mueve un poco mientras mantiene
-      // presionado (natural en un hold largo), sin esto el navegador puede
-      // interpretar el movimiento como scroll y disparar pointercancel en
-      // vez de pointerup/pointermove sobre este mismo elemento.
-      try {
-        e.currentTarget.setPointerCapture(e.pointerId);
-      } catch {
-        // Algunos navegadores viejos no lo soportan — no es bloqueante.
-      }
-      void empezarGrabacion();
-    },
-    [estado, empezarGrabacion],
-  );
-
-  const onPointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (estado !== "recording") return;
-      const delta = e.clientX - startXRef.current;
-      setCancelando(delta < -UMBRAL_CANCELAR_PX);
-    },
-    [estado],
-  );
-
-  const resolverSoltar = useCallback(
-    (intento: "enviar" | "descartar") => {
-      if (resueltoRef.current) return;
-      if (estado === "recording") {
-        resueltoRef.current = true;
-        if (intento === "descartar") void descartar();
-        else void detenerYEnviar();
-      } else if (iniciandoRef.current) {
-        // Todavía esperando el permiso / arranque del MediaRecorder: se
-        // guarda la intención y se resuelve sola cuando termine de arrancar.
-        resueltoRef.current = true;
-        pendingAccionRef.current = intento;
-      }
-    },
-    [estado, descartar, detenerYEnviar],
-  );
-
-  const onPointerUp = useCallback(
-    (e: React.PointerEvent) => {
-      const delta = e.clientX - startXRef.current;
-      resolverSoltar(delta < -UMBRAL_CANCELAR_PX ? "descartar" : "enviar");
-    },
-    [resolverSoltar],
-  );
-
-  const onPointerCancel = useCallback(() => {
-    resolverSoltar("descartar");
-  }, [resolverSoltar]);
-
-  return {
-    estado,
-    duracionSeg,
-    cancelando,
-    error,
-    esMobile,
-    iniciarClick,
-    detenerYEnviar,
-    descartar,
-    pointerHandlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel },
-  };
+  return { estado, duracionSeg, error, iniciar, detenerYEnviar, descartar };
 }
 
 function formatearDuracion(seg: number): string {
@@ -330,13 +195,12 @@ export function VoiceRecorderMicButton({
     <button
       type="button"
       disabled={disabled}
-      onClick={recorder.esMobile ? undefined : recorder.iniciarClick}
-      {...(recorder.esMobile ? recorder.pointerHandlers : {})}
+      onClick={recorder.iniciar}
       aria-label="Grabar audio"
-      title="Mantené presionado o tocá para grabar un audio"
+      title="Grabar un audio"
       className={
         className ??
-        "flex-none w-[38px] h-[38px] rounded-xl bg-white border border-ys-border flex items-center justify-center cursor-pointer transition-all hover:bg-[#f7f9f8] disabled:opacity-40 disabled:cursor-not-allowed touch-none select-none"
+        "flex-none w-[38px] h-[38px] rounded-xl bg-white border border-ys-border flex items-center justify-center cursor-pointer transition-all hover:bg-[#f7f9f8] disabled:opacity-40 disabled:cursor-not-allowed"
       }
     >
       <MicIcon className="text-[#3f4844]" />
@@ -369,14 +233,8 @@ export function VoiceRecorderActiveBar({ recorder }: { recorder: UseVoiceRecorde
       <span className="text-sm font-semibold text-ys-text tabular-nums">
         {formatearDuracion(recorder.duracionSeg)}
       </span>
-      <span className="flex-1 text-[12.5px] font-medium text-ys-dim truncate">
-        {recorder.cancelando ? "Soltá para cancelar" : "Grabando..."}
-      </span>
+      <span className="flex-1 text-[12.5px] font-medium text-ys-dim truncate">Grabando...</span>
 
-      {/* Siempre hay botones táctiles, en mobile y desktop: el gesto de
-          soltar/arrastrar es el camino rápido, pero no puede ser la única
-          forma de resolver la grabación (el permiso del micrófono, por
-          ejemplo, puede interrumpir el gesto de touch). */}
       <button
         type="button"
         onClick={recorder.descartar}

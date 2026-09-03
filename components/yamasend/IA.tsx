@@ -526,7 +526,7 @@ export default function IA({
               <VoiceRecorderMicButton
                 recorder={recorder}
                 disabled={sending}
-                className="flex-none w-[38px] h-[38px] rounded-xl bg-transparent flex items-center justify-center cursor-pointer transition-all hover:bg-[#f2f4f3] disabled:opacity-40 disabled:cursor-not-allowed touch-none select-none text-[#3f4844]"
+                className="flex-none w-[38px] h-[38px] rounded-xl bg-transparent flex items-center justify-center cursor-pointer transition-all hover:bg-[#f2f4f3] disabled:opacity-40 disabled:cursor-not-allowed text-[#3f4844]"
               />
               <button
                 onClick={handleSend}

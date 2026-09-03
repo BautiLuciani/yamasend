@@ -185,7 +185,7 @@ export default function EmpresaIA({ orgNombre }: { orgNombre: string }) {
             <VoiceRecorderMicButton
               recorder={recorder}
               disabled={enviando}
-              className="flex-none w-[42px] h-[42px] rounded-[10px] bg-white border border-ys-border flex items-center justify-center cursor-pointer transition-all hover:bg-[#f7f9f8] disabled:opacity-40 disabled:cursor-not-allowed touch-none select-none text-[#3f4844]"
+              className="flex-none w-[42px] h-[42px] rounded-[10px] bg-white border border-ys-border flex items-center justify-center cursor-pointer transition-all hover:bg-[#f7f9f8] disabled:opacity-40 disabled:cursor-not-allowed text-[#3f4844]"
             />
             <button
               onClick={() => enviar(input)}
