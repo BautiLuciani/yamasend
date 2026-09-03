@@ -5,6 +5,11 @@ import type { ChatMessage, Contact, IAConversacionResumen } from "@/lib/types";
 import { renderChatCard } from "./IAChatCards";
 import IAAyudaModal from "./IAAyudaModal";
 import { listarConversacionesIAAction } from "@/lib/actions/ia_conversaciones";
+import {
+  useVoiceRecorder,
+  VoiceRecorderMicButton,
+  VoiceRecorderActiveBar,
+} from "./VoiceRecorder";
 
 interface IAProps {
   userName: string;
@@ -153,6 +158,13 @@ export default function IA({
     onSend(text);
     setValue("");
   }
+
+  // El audio transcripto se manda igual que un mensaje tipeado: onSend no
+  // distingue el origen del texto.
+  const recorder = useVoiceRecorder((texto) => {
+    if (sending) return;
+    onSend(texto);
+  });
 
   // Los avisos externos (aprobación/rechazo de Meta) quedan EXCLUIDOS a
   // propósito: son eventos que le pasan a la cuenta, no turnos de la
@@ -496,30 +508,44 @@ export default function IA({
             </div>
           )}
 
-          <div className="flex items-end gap-2.5 bg-white border border-ys-border rounded-2xl pl-4 pr-2.5 py-2.5 transition-colors focus-within:!border-ys-green">
-            <textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="Preguntale algo a YamaSend..."
-              rows={1}
-              className="flex-1 min-h-[26px] max-h-[132px] border-none outline-none resize-none bg-transparent text-sm leading-[1.5] font-medium text-ys-text py-1.5"
-            />
-            <button
-              onClick={handleSend}
-              disabled={!value.trim() || sending}
-              className="flex-none w-[38px] h-[38px] rounded-xl bg-ys-green flex items-center justify-center cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
-                <path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5 14 2Z" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" />
-              </svg>
-            </button>
-          </div>
+          {recorder.estado === "idle" ? (
+            <div className="flex items-end gap-2.5 bg-white border border-ys-border rounded-2xl pl-4 pr-2.5 py-2.5 transition-colors focus-within:!border-ys-green">
+              <textarea
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Preguntale algo a YamaSend..."
+                rows={1}
+                className="flex-1 min-h-[26px] max-h-[132px] border-none outline-none resize-none bg-transparent text-sm leading-[1.5] font-medium text-ys-text py-1.5"
+              />
+              <VoiceRecorderMicButton
+                recorder={recorder}
+                disabled={sending}
+                className="flex-none w-[38px] h-[38px] rounded-xl bg-transparent flex items-center justify-center cursor-pointer transition-all hover:bg-[#f2f4f3] disabled:opacity-40 disabled:cursor-not-allowed touch-none select-none text-[#3f4844]"
+              />
+              <button
+                onClick={handleSend}
+                disabled={!value.trim() || sending}
+                className="flex-none w-[38px] h-[38px] rounded-xl bg-ys-green flex items-center justify-center cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
+              >
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+                  <path d="M14 2 7 9M14 2l-4.5 12L7 9 2 6.5 14 2Z" stroke="#fff" strokeWidth="1.5" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-end gap-2.5">
+              <VoiceRecorderActiveBar recorder={recorder} />
+            </div>
+          )}
+          {recorder.error && (
+            <div className="text-[12px] text-ys-red-text font-medium">{recorder.error}</div>
+          )}
           <div className="text-[11.5px] text-ys-dimmer font-medium">
             Enter para enviar · Shift + Enter para nueva línea. YamaSend nunca envía una campaña sin tu confirmación.
           </div>

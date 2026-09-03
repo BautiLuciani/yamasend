@@ -5,6 +5,11 @@ import {
   sendEmpresaIAMessageAction,
   type EmpresaIAMensaje,
 } from "@/lib/actions/empresa_ia";
+import {
+  useVoiceRecorder,
+  VoiceRecorderMicButton,
+  VoiceRecorderActiveBar,
+} from "./VoiceRecorder";
 
 const SUGERENCIAS = [
   "¿Qué empleado está rindiendo mejor?",
@@ -30,6 +35,11 @@ export default function EmpresaIA({ orgNombre }: { orgNombre: string }) {
   useEffect(() => {
     finRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [mensajes, enviando]);
+
+  // El audio transcripto se manda igual que un mensaje tipeado.
+  const recorder = useVoiceRecorder((texto) => {
+    void enviar(texto);
+  });
 
   async function enviar(texto: string) {
     const limpio = texto.trim();
@@ -156,38 +166,54 @@ export default function EmpresaIA({ orgNombre }: { orgNombre: string }) {
           <div ref={finRef} />
         </div>
 
-        <div className="border-t border-ys-border-softest p-3 md:p-4 flex items-end gap-2.5">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter envía, Shift+Enter hace salto de línea.
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                enviar(input);
-              }
-            }}
-            rows={1}
-            placeholder="Preguntá algo sobre tu equipo..."
-            className="flex-1 min-w-0 resize-none bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13.5px] font-medium text-ys-text outline-none focus:border-ys-green-border max-h-[120px]"
-          />
-          <button
-            onClick={() => enviar(input)}
-            disabled={enviando || input.trim().length === 0}
-            className="flex-none w-[42px] h-[42px] flex items-center justify-center bg-ys-green text-white rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label="Enviar"
-          >
-            <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
-              <path
-                d="M2.5 8h11M9 3.5 13.5 8 9 12.5"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        </div>
+        {recorder.estado === "idle" ? (
+          <div className="border-t border-ys-border-softest p-3 md:p-4 flex items-end gap-2.5">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter envía, Shift+Enter hace salto de línea.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  enviar(input);
+                }
+              }}
+              rows={1}
+              placeholder="Preguntá algo sobre tu equipo..."
+              className="flex-1 min-w-0 resize-none bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13.5px] font-medium text-ys-text outline-none focus:border-ys-green-border max-h-[120px]"
+            />
+            <VoiceRecorderMicButton
+              recorder={recorder}
+              disabled={enviando}
+              className="flex-none w-[42px] h-[42px] rounded-[10px] bg-white border border-ys-border flex items-center justify-center cursor-pointer transition-all hover:bg-[#f7f9f8] disabled:opacity-40 disabled:cursor-not-allowed touch-none select-none text-[#3f4844]"
+            />
+            <button
+              onClick={() => enviar(input)}
+              disabled={enviando || input.trim().length === 0}
+              className="flex-none w-[42px] h-[42px] flex items-center justify-center bg-ys-green text-white rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Enviar"
+            >
+              <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M2.5 8h11M9 3.5 13.5 8 9 12.5"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <div className="border-t border-ys-border-softest p-3 md:p-4 flex items-end gap-2.5">
+            <VoiceRecorderActiveBar recorder={recorder} />
+          </div>
+        )}
+        {recorder.error && (
+          <div className="px-3 md:px-4 pb-2 -mt-2 text-[12px] text-ys-red-text font-medium">
+            {recorder.error}
+          </div>
+        )}
       </div>
     </div>
   );
