@@ -30,6 +30,7 @@ interface IAProps {
   onElegirMomentoCampana: (momento: "ahora" | "programar") => void;
   onElegirFechaCampana: (fechaIso: string) => void;
   onConfirmarCampana: () => void;
+  onComprarCreditos: () => void;
   onVerCampana: (campanaId: string) => void;
   onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
   onCrearAudienciaDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
@@ -89,6 +90,7 @@ export default function IA({
   onElegirMomentoCampana,
   onElegirFechaCampana,
   onConfirmarCampana,
+  onComprarCreditos,
   onVerCampana,
   onConfirmarImportarContactos,
   onCrearAudienciaDesdeBusqueda,
@@ -420,6 +422,7 @@ export default function IA({
                       onElegirMomentoCampana,
                       onElegirFechaCampana,
                       onConfirmarCampana,
+                      onComprarCreditos,
                       onVerCampana,
                       onConfirmarImportarContactos,
                       onCrearAudienciaDesdeBusqueda,

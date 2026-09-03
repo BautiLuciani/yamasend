@@ -2,7 +2,7 @@
 
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
-import { assertPermiso } from "@/lib/auth/permisos";
+import { assertPermiso, getCurrentMembership } from "@/lib/auth/permisos";
 import {
   syncAndAnalyzeAction,
   generarTemplateConIAAction,
@@ -2000,7 +2000,18 @@ async function mostrarConfirmacionCampana(
   }
 
   const totalContactos = audiencia.contactosIds.length;
-  const costoUsd = totalContactos * COST_PER_MSG;
+
+  // El costo en dólares que nos cobra Meta es un dato interno — el mismo que
+  // ya se sacó del wizard manual y del detalle de campaña. Acá se muestra en
+  // créditos, que es la unidad que el cliente compró y entiende, contra el
+  // saldo real de la cuenta (RPC, nunca calculado en el cliente).
+  const [{ data: saldoData }, membership] = await Promise.all([
+    createClient().then((supabase) => supabase.rpc("yamas_send_mi_saldo")),
+    getCurrentMembership(),
+  ]);
+  const saldo = (saldoData ?? {}) as { aplica?: boolean; saldo?: number };
+  const creditosAplican = Boolean(saldo.aplica);
+  const creditosDisponibles = saldo.saldo ?? 0;
 
   return {
     text: `Revisá cómo quedó "${draft.nombre}" antes de confirmar.`,
@@ -2012,7 +2023,9 @@ async function mostrarConfirmacionCampana(
       templateNombre: template.nombre,
       momento: draft.momento,
       fechaProgramada: draft.fechaProgramada ?? null,
-      costoUsd,
+      creditosDisponibles,
+      creditosAplican,
+      tieneEmpresa: Boolean(membership?.orgId),
     },
     flowState: {
       kind: "crear_campana",
@@ -2076,9 +2089,23 @@ export async function confirmarCreacionCampanaAction(
   );
 
   if (saveResult.error || !saveResult.id) {
+    // Esto normalmente no debería pasar: la tarjeta de confirmación ya
+    // bloquea el botón cuando el saldo no alcanza. Pero el saldo mostrado ahí
+    // es una foto del momento en que se armó la tarjeta, y entre eso y que la
+    // persona confirma puede haber pasado tiempo (otra campaña que consumió
+    // el mismo cupo, por ejemplo). Acá está el gate real: la reserva atómica
+    // en Postgres, que es la que de verdad no deja pasar el envío.
+    //
+    // "Reintentar" no aplica a un problema de créditos — hay que comprar o
+    // achicar la audiencia, no repetir la misma acción. Y a diferencia del
+    // resto de errores, acá no se conserva flowState: seguir en el paso de
+    // confirmación con la misma audiencia solo llevaría al mismo rechazo.
+    const esFaltaDeCreditos = saveResult.error?.includes("crédito");
     return {
-      text: `No pude crear la campaña: ${saveResult.error ?? "error desconocido"}. ¿Querés reintentar?`,
-      flowState,
+      text: esFaltaDeCreditos
+        ? saveResult.error!
+        : `No pude crear la campaña: ${saveResult.error ?? "error desconocido"}. ¿Querés reintentar?`,
+      flowState: esFaltaDeCreditos ? IA_FLOW_IDLE : flowState,
     };
   }
 

@@ -1682,6 +1682,7 @@ export default function AppShell({
           onElegirMomentoCampana={handleIAElegirMomentoCampana}
           onElegirFechaCampana={handleIAElegirFechaCampana}
           onConfirmarCampana={handleIAConfirmarCampana}
+          onComprarCreditos={abrirCompraCreditos}
           onVerCampana={handleIAVerCampana}
           onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
           onCrearAudienciaDesdeBusqueda={handleIACrearAudienciaDesdeBusqueda}

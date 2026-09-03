@@ -243,6 +243,7 @@ export function renderChatCard(
     onElegirMomentoCampana: (momento: "ahora" | "programar") => void;
     onElegirFechaCampana: (fechaIso: string) => void;
     onConfirmarCampana: () => void;
+    onComprarCreditos: () => void;
     onVerCampana: (campanaId: string) => void;
     onConfirmarImportarContactos: (diasAnalisis: number, limiteContactos: number) => void;
     onCrearAudienciaDesdeBusqueda: (consulta: string, contactosIds: string[]) => void;
@@ -365,8 +366,11 @@ export function renderChatCard(
         templateNombre={payload.templateNombre}
         momento={payload.momento}
         fechaProgramada={payload.fechaProgramada}
-        costoUsd={payload.costoUsd}
+        creditosDisponibles={payload.creditosDisponibles}
+        creditosAplican={payload.creditosAplican}
+        tieneEmpresa={payload.tieneEmpresa}
         onConfirmar={handlers.onConfirmarCampana}
+        onComprarCreditos={handlers.onComprarCreditos}
         disabled={!isLatest}
       />
     );
@@ -1042,8 +1046,11 @@ interface ConfirmarCampanaCardProps {
   templateNombre: string;
   momento: "ahora" | "programar";
   fechaProgramada: string | null;
-  costoUsd: number;
+  creditosDisponibles: number;
+  creditosAplican: boolean;
+  tieneEmpresa: boolean;
   onConfirmar: () => void;
+  onComprarCreditos?: () => void;
   disabled?: boolean;
 }
 
@@ -1054,11 +1061,21 @@ export function ConfirmarCampanaCard({
   templateNombre,
   momento,
   fechaProgramada,
-  costoUsd,
+  creditosDisponibles,
+  creditosAplican,
+  tieneEmpresa,
   onConfirmar,
+  onComprarCreditos,
   disabled,
 }: ConfirmarCampanaCardProps) {
   const [confirmado, setConfirmado] = useState(false);
+
+  // Mismo criterio que el paso REVISAR del wizard manual: 1 crédito = 1
+  // mensaje, y el aviso temprano compara contra el saldo ya conocido. El gate
+  // que de verdad no deja pasar el envío es la reserva atómica en Postgres —
+  // esto evita que la persona llegue hasta acá para recién ahí enterarse.
+  const creditosFaltantes = Math.max(totalContactos - creditosDisponibles, 0);
+  const sinCreditos = creditosAplican && creditosFaltantes > 0;
 
   const fechaLabel =
     momento === "ahora"
@@ -1091,19 +1108,61 @@ export function ConfirmarCampanaCard({
           <div className="font-mono text-[12.5px] text-ys-text">{templateNombre}</div>
         </div>
       </div>
-      <div className="flex items-center justify-between text-[12.5px] font-bold text-ys-text border-t border-ys-border-soft pt-2.5">
-        <span className="font-semibold text-ys-muted">Costo estimado</span>
-        <span className="font-mono">USD {costoUsd.toFixed(2)}</span>
+      <div
+        className={`flex flex-col gap-2 border-t pt-2.5 ${
+          sinCreditos ? "border-ys-warn-border" : "border-ys-border-soft"
+        }`}
+      >
+        <div className="flex items-center justify-between text-[12.5px] font-bold text-ys-text">
+          <span className="font-semibold text-ys-muted">Créditos que se van a usar</span>
+          <span className="font-mono">{totalContactos.toLocaleString("es-AR")}</span>
+        </div>
+
+        {creditosAplican && (
+          <div className="flex items-center justify-between text-[12.5px] font-bold text-ys-text">
+            <span className="font-semibold text-ys-muted">Te quedan disponibles</span>
+            <span className={`font-mono ${sinCreditos ? "text-ys-warn-text" : ""}`}>
+              {creditosDisponibles.toLocaleString("es-AR")}
+            </span>
+          </div>
+        )}
+
+        {sinCreditos && (
+          <div className="flex flex-col gap-2 bg-ys-warn-bg border border-ys-warn-border rounded-xl px-3 py-2.5">
+            <div className="text-[12px] font-semibold text-ys-warn-text leading-[1.5]">
+              Te faltan {creditosFaltantes.toLocaleString("es-AR")} créditos para
+              enviarle a los {totalContactos.toLocaleString("es-AR")} contactos de esta
+              audiencia.
+              {tieneEmpresa
+                ? " Pedile más a tu empresa o elegí una audiencia más chica."
+                : " Comprá más créditos o elegí una audiencia más chica."}
+            </div>
+            {!tieneEmpresa && onComprarCreditos && (
+              <button
+                onClick={onComprarCreditos}
+                className="self-start text-[12px] font-bold text-white bg-ys-green rounded-lg px-3 py-1.5 cursor-pointer transition-colors hover:bg-ys-green-hover"
+              >
+                Comprar créditos
+              </button>
+            )}
+          </div>
+        )}
       </div>
       <button
         onClick={() => {
           setConfirmado(true);
           onConfirmar();
         }}
-        disabled={confirmado || disabled}
+        disabled={confirmado || disabled || sinCreditos}
         className="text-[13px] font-bold text-white bg-ys-green rounded-[10px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {confirmado ? (disabled ? "Campaña creada ✓" : "Creando...") : "Crear campaña"}
+        {sinCreditos
+          ? "Créditos insuficientes"
+          : confirmado
+            ? disabled
+              ? "Campaña creada ✓"
+              : "Creando..."
+            : "Crear campaña"}
       </button>
     </div>
   );

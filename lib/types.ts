@@ -267,7 +267,12 @@ export type ChatPayload =
       templateNombre: string;
       momento: "ahora" | "programar";
       fechaProgramada: string | null;
-      costoUsd: number;
+      /** Créditos que le quedan a la cuenta ANTES de esta campaña. */
+      creditosDisponibles: number;
+      /** false mientras el cobro esté apagado para esta cuenta. */
+      creditosAplican: boolean;
+      /** true para un empleado de empresa: no compra, le asignan. */
+      tieneEmpresa: boolean;
     }
   | {
       kind: "campana_creada";
