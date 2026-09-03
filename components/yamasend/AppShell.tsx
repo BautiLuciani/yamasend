@@ -108,6 +108,27 @@ import { createClient } from "@/lib/supabase/client";
 const WAHA_QR_WEBHOOK_URL =
   "https://yamasai.app.n8n.cloud/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
 
+// Intervalo de polling del QR, adaptativo según hace cuánto está abierto el modal.
+//
+// Antes era fijo en 4s, lo que agregaba hasta 4 segundos de tiempo muerto entre
+// que WAHA tenía el QR listo y que el frontend lo pedía. Los primeros segundos
+// son los que definen la percepción de velocidad, así que ahí polleamos rápido
+// y después aflojamos para no castigar a la instancia de WAHA (compartida con
+// ValleX) cuando el usuario deja el modal abierto sin escanear.
+//
+// Pollear cada 1s es seguro: el QR de WhatsApp rota cada ~20s, muy por encima
+// de este intervalo.
+function qrPollDelay(openedAt: number): number {
+  const transcurrido = Date.now() - openedAt;
+  if (transcurrido < 12_000) return 1_000;
+  if (transcurrido < 30_000) return 2_000;
+  return 4_000;
+}
+
+// Pasados estos ms sin conectar, se le pide a n8n que reinicie la sesión WAHA.
+// Cubre el caso en que WAHA queda pegado en SCAN_QR_CODE después de escanear.
+const QR_REFRESH_AFTER_MS = 60_000;
+
 interface AppShellProps {
   user: AppUser;
   contacts: Contact[];
@@ -499,6 +520,13 @@ export default function AppShell({
   const [qrImageUrl, setQrImageUrl] = useState<string | null>(null);
   const qrPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const qrObjectUrlRef = useRef<string | null>(null);
+  // Momento en que se abrió el modal del QR. Se usa para el polling adaptativo
+  // (rápido al principio, lento después) y para decidir cuándo pedirle a n8n
+  // que reinicie una sesión que quedó colgada.
+  const qrOpenedAtRef = useRef<number>(0);
+  // Último momento en que se pidió un reinicio forzado de la sesión WAHA.
+  // Evita que se pidan reinicios en cadena si la sesión sigue sin conectar.
+  const qrLastRefreshRef = useRef<number>(0);
   const [syncModalOpen, setSyncModalOpen] = useState(false);
   const [wahaRequiredOpen, setWahaRequiredOpen] = useState(false);
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
@@ -518,6 +546,14 @@ export default function AppShell({
   } | null>(null);
 
   const fetchQrStatus = useCallback(async () => {
+    // Reprograma el próximo poll con el intervalo adaptativo vigente.
+    const programarProximoPoll = () => {
+      qrPollTimeoutRef.current = setTimeout(
+        fetchQrStatus,
+        qrPollDelay(qrOpenedAtRef.current),
+      );
+    };
+
     try {
       const supabase = createClient();
       const {
@@ -529,7 +565,27 @@ export default function AppShell({
         return;
       }
 
-      const res = await fetch(WAHA_QR_WEBHOOK_URL, {
+      // Si ya pasó bastante tiempo sin conectar, le pedimos a n8n que reinicie
+      // la sesión WAHA. Antes esa decisión la tomaba n8n comparando contra
+      // yamas_send_waha_sessions.updated_at, pero ese campo se pisa en cada
+      // poll, así que reiniciaba SIEMPRE al abrir el modal (tirando un QR
+      // válido) y NUNCA durante el polling activo. El frontend es el único que
+      // sabe realmente hace cuánto el usuario está mirando el mismo QR.
+      const ahora = Date.now();
+      const pedirReinicio =
+        ahora - qrOpenedAtRef.current > QR_REFRESH_AFTER_MS &&
+        ahora - qrLastRefreshRef.current > QR_REFRESH_AFTER_MS;
+      if (pedirReinicio) {
+        qrLastRefreshRef.current = ahora;
+      }
+
+      // El flag va como query param y no como header/body JSON a propósito:
+      // así no se dispara un preflight OPTIONS, que n8n Cloud no maneja bien.
+      const url = pedirReinicio
+        ? `${WAHA_QR_WEBHOOK_URL}?refresh=1`
+        : WAHA_QR_WEBHOOK_URL;
+
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           // text/plain evita que el navegador dispare un preflight OPTIONS
@@ -542,7 +598,7 @@ export default function AppShell({
       if (!res.ok) {
         setQrStatus("error");
         // reintentar igual, puede ser un error transitorio de WAHA
-        qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+        programarProximoPoll();
         return;
       }
 
@@ -555,7 +611,7 @@ export default function AppShell({
           return; // conectado: dejamos de pollear, el usuario cierra el modal cuando quiera
         }
         // otro estado no contemplado, seguimos consultando
-        qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+        programarProximoPoll();
         return;
       }
 
@@ -570,10 +626,10 @@ export default function AppShell({
       setQrStatus("waiting");
 
       // seguimos consultando para detectar cuándo se escanea y pasa a WORKING
-      qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+      programarProximoPoll();
     } catch {
       setQrStatus("error");
-      qrPollTimeoutRef.current = setTimeout(fetchQrStatus, 4000);
+      programarProximoPoll();
     }
   }, []);
 
@@ -585,6 +641,10 @@ export default function AppShell({
 
     setQrStatus("loading");
     setQrImageUrl(null);
+    // Se reinician en cada apertura para que el polling adaptativo arranque
+    // rápido de nuevo y no se arrastre el estado de una apertura anterior.
+    qrOpenedAtRef.current = Date.now();
+    qrLastRefreshRef.current = Date.now();
     fetchQrStatus();
 
     return () => {
