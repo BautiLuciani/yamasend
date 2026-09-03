@@ -61,6 +61,13 @@ export function useVoiceRecorder(
   // Evita el doble disparo del gesto mobile: pointerup dispara la lógica de
   // envío/descarte, pero un click sintético puede llegar después.
   const resueltoRef = useRef(false);
+  // Cubre la carrera con el permiso de micrófono: getUserMedia es async y,
+  // la primera vez, dispara el diálogo nativo del navegador — el dedo del
+  // usuario se despega del botón para tocar "Permitir" y ese pointerup no
+  // le llega nunca al elemento. Si eso pasa, guardamos la intención acá y
+  // la resolvemos apenas la grabación arranca de verdad.
+  const iniciandoRef = useRef(false);
+  const pendingAccionRef = useRef<"enviar" | "descartar" | null>(null);
 
   // (pointer: coarse) = el input principal del dispositivo es táctil. Es más
   // confiable que el ancho de pantalla para decidir el gesto correcto.
@@ -89,39 +96,6 @@ export function useVoiceRecorder(
   }, []);
 
   useEffect(() => () => limpiarStream(), [limpiarStream]);
-
-  const empezarGrabacion = useCallback(async () => {
-    setError(null);
-    resueltoRef.current = false;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      chunksRef.current = [];
-
-      const mimeType = elegirMimeType();
-      const recorder = mimeType
-        ? new MediaRecorder(stream, { mimeType })
-        : new MediaRecorder(stream);
-      mediaRecorderRef.current = recorder;
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      recorder.start();
-      setEstado("recording");
-      setDuracionSeg(0);
-      setCancelando(false);
-      timerRef.current = setInterval(() => {
-        setDuracionSeg((d) => d + 1);
-      }, 1000);
-    } catch {
-      setError(
-        "No pude acceder al micrófono. Revisá los permisos del navegador.",
-      );
-      limpiarStream();
-    }
-  }, [limpiarStream]);
 
   const detenerGrabacion = useCallback((): Promise<Blob | null> => {
     return new Promise((resolve) => {
@@ -180,6 +154,55 @@ export function useVoiceRecorder(
     onTranscribed(texto);
   }, [detenerGrabacion, duracionSeg, limpiarStream, onTranscribed]);
 
+  const empezarGrabacion = useCallback(async () => {
+    setError(null);
+    resueltoRef.current = false;
+    iniciandoRef.current = true;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+
+      const mimeType = elegirMimeType();
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+
+      recorder.start();
+      setEstado("recording");
+      setDuracionSeg(0);
+      setCancelando(false);
+      timerRef.current = setInterval(() => {
+        setDuracionSeg((d) => d + 1);
+      }, 1000);
+      iniciandoRef.current = false;
+
+      // El usuario ya soltó (o canceló) mientras esperábamos el permiso del
+      // micrófono / el arranque del MediaRecorder — resolvemos ahora la
+      // intención que había quedado pendiente, así nunca queda grabando
+      // sin ninguna salida.
+      if (pendingAccionRef.current === "enviar") {
+        pendingAccionRef.current = null;
+        void detenerYEnviar();
+      } else if (pendingAccionRef.current === "descartar") {
+        pendingAccionRef.current = null;
+        void descartar();
+      }
+    } catch {
+      iniciandoRef.current = false;
+      pendingAccionRef.current = null;
+      setError(
+        "No pude acceder al micrófono. Revisá los permisos del navegador.",
+      );
+      limpiarStream();
+    }
+  }, [limpiarStream, detenerYEnviar, descartar]);
+
   // ---- Desktop: click para iniciar ----
   const iniciarClick = useCallback(() => {
     if (estado !== "idle") return;
@@ -192,6 +215,15 @@ export function useVoiceRecorder(
       if (e.pointerType === "mouse" || estado !== "idle") return;
       startXRef.current = e.clientX;
       resueltoRef.current = false;
+      // Pointer capture: si el dedo se mueve un poco mientras mantiene
+      // presionado (natural en un hold largo), sin esto el navegador puede
+      // interpretar el movimiento como scroll y disparar pointercancel en
+      // vez de pointerup/pointermove sobre este mismo elemento.
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // Algunos navegadores viejos no lo soportan — no es bloqueante.
+      }
       void empezarGrabacion();
     },
     [estado, empezarGrabacion],
@@ -206,25 +238,34 @@ export function useVoiceRecorder(
     [estado],
   );
 
-  const resolverSoltar = useCallback(() => {
-    if (resueltoRef.current || estado !== "recording") return;
-    resueltoRef.current = true;
-    if (cancelando) {
-      void descartar();
-    } else {
-      void detenerYEnviar();
-    }
-  }, [estado, cancelando, descartar, detenerYEnviar]);
+  const resolverSoltar = useCallback(
+    (intento: "enviar" | "descartar") => {
+      if (resueltoRef.current) return;
+      if (estado === "recording") {
+        resueltoRef.current = true;
+        if (intento === "descartar") void descartar();
+        else void detenerYEnviar();
+      } else if (iniciandoRef.current) {
+        // Todavía esperando el permiso / arranque del MediaRecorder: se
+        // guarda la intención y se resuelve sola cuando termine de arrancar.
+        resueltoRef.current = true;
+        pendingAccionRef.current = intento;
+      }
+    },
+    [estado, descartar, detenerYEnviar],
+  );
 
-  const onPointerUp = useCallback(() => {
-    resolverSoltar();
-  }, [resolverSoltar]);
+  const onPointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const delta = e.clientX - startXRef.current;
+      resolverSoltar(delta < -UMBRAL_CANCELAR_PX ? "descartar" : "enviar");
+    },
+    [resolverSoltar],
+  );
 
   const onPointerCancel = useCallback(() => {
-    if (resueltoRef.current || estado !== "recording") return;
-    resueltoRef.current = true;
-    void descartar();
-  }, [estado, descartar]);
+    resolverSoltar("descartar");
+  }, [resolverSoltar]);
 
   return {
     estado,
@@ -329,35 +370,29 @@ export function VoiceRecorderActiveBar({ recorder }: { recorder: UseVoiceRecorde
         {formatearDuracion(recorder.duracionSeg)}
       </span>
       <span className="flex-1 text-[12.5px] font-medium text-ys-dim truncate">
-        {recorder.esMobile
-          ? recorder.cancelando
-            ? "Soltá para cancelar"
-            : "Deslizá a la izquierda para cancelar"
-          : "Grabando..."}
+        {recorder.cancelando ? "Soltá para cancelar" : "Grabando..."}
       </span>
 
-      {/* En desktop se necesitan botones explícitos; en mobile, soltar
-          resuelve todo (enviar o cancelar según si arrastró). */}
-      {!recorder.esMobile && (
-        <>
-          <button
-            type="button"
-            onClick={recorder.descartar}
-            aria-label="Descartar audio"
-            className="flex-none w-[34px] h-[34px] rounded-lg bg-ys-red-bg border border-ys-red-border text-ys-red-text flex items-center justify-center cursor-pointer transition-all hover:-translate-y-px"
-          >
-            <TrashIcon />
-          </button>
-          <button
-            type="button"
-            onClick={recorder.detenerYEnviar}
-            aria-label="Enviar audio"
-            className="flex-none w-[38px] h-[38px] rounded-xl bg-ys-green flex items-center justify-center cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px text-white"
-          >
-            <CheckIcon />
-          </button>
-        </>
-      )}
+      {/* Siempre hay botones táctiles, en mobile y desktop: el gesto de
+          soltar/arrastrar es el camino rápido, pero no puede ser la única
+          forma de resolver la grabación (el permiso del micrófono, por
+          ejemplo, puede interrumpir el gesto de touch). */}
+      <button
+        type="button"
+        onClick={recorder.descartar}
+        aria-label="Descartar audio"
+        className="flex-none w-[34px] h-[34px] rounded-lg bg-ys-red-bg border border-ys-red-border text-ys-red-text flex items-center justify-center cursor-pointer transition-all hover:-translate-y-px"
+      >
+        <TrashIcon />
+      </button>
+      <button
+        type="button"
+        onClick={recorder.detenerYEnviar}
+        aria-label="Enviar audio"
+        className="flex-none w-[38px] h-[38px] rounded-xl bg-ys-green flex items-center justify-center cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px text-white"
+      >
+        <CheckIcon />
+      </button>
     </div>
   );
 }
