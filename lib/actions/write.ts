@@ -486,7 +486,12 @@ export async function sendCampaignAction(
   try {
     const res = await fetch(CAMPAIGN_SEND_WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // Secreto server-to-server: nunca se hardcodea ni llega al cliente.
+        // Si la env var no está seteada, se manda vacío (n8n rechaza igual).
+        "X-Yamasend-Signature": process.env.YAMASEND_SENDER_SECRET ?? "",
+      },
       body: JSON.stringify({
         tenant_id: cliente.tenant_id,
         campaign_id: campaignId,
