@@ -363,7 +363,6 @@ export async function saveCampaignAction(
       template_nombre: template?.nombre ?? null,
       contactos_ids: contactosIds,
       contactos_count: contactosIds.length,
-      ycloud_api: cliente.ycloud_api,
       waba_id: cliente.wabaid,
       status: fechaProgramada ? "programada" : "enviando",
       fecha_programada: fechaProgramada,
