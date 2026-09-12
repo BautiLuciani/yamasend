@@ -2727,6 +2727,57 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: { type: "object", properties: {} },
     },
   },
+  // --- Herramientas del Motor (Fase 1 — solo lectura) -------------------
+  // Consultan directamente lo que el Motor de Decisión ya procesó
+  // (episodios, evidencia verificada, candidatos). Son RPCs de solo SELECT
+  // (STABLE) con el mismo mecanismo de tenant isolation que usa el resto
+  // del Motor (motor.assert_tenant contra auth.uid()). No pueden crear,
+  // aprobar ni ejecutar nada — eso es Fase 3, todavía no existe.
+  {
+    type: "function",
+    function: {
+      name: "motor_oportunidades",
+      description:
+        "Trae evidencia comercial REAL y VERIFICADA que el Motor de Decisión extrajo de las conversaciones de WhatsApp: quién preguntó precio, quién mostró interés en un producto, consultas de disponibilidad o condiciones, etc. Cada resultado es una cita textual de un mensaje real, con quién la dijo y cuándo. Usar para 'qué conversaciones importantes tuve', 'quién preguntó por precios', 'qué oportunidades detectaste', 'hay conversaciones que necesiten seguimiento'. Si no hay resultados, decilo con franqueza: puede ser que el Motor todavía no haya encontrado evidencia comercial en las conversaciones de esta cuenta.",
+      parameters: {
+        type: "object",
+        properties: {
+          tipo: {
+            type: "string",
+            enum: [
+              "consulta_precio", "interes_producto", "consulta_disponibilidad",
+              "consulta_condiciones", "consulta_logistica", "especificacion_demanda",
+              "datos_reserva", "descarte",
+            ],
+            description: "Filtro opcional por tipo de evidencia. Omitir para traer todos los tipos ('qué oportunidades detectaste' en general).",
+          },
+          telefono: {
+            type: "string",
+            description: "Filtro opcional: solo evidencia de un contacto puntual (para 'por qué debería contactar a este cliente'). Usar el teléfono que devolvió listar_contactos/buscar_contactos en este mismo turno.",
+          },
+          desde: { type: "string", description: "Fecha inicio ISO 8601 (YYYY-MM-DD). Omitir para no filtrar por fecha." },
+          hasta: { type: "string", description: "Fecha fin ISO 8601 (YYYY-MM-DD), exclusiva." },
+          limite: { type: "integer", description: "Máximo de resultados (1-100). Por defecto 20." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "motor_prioridad_contactos",
+      description:
+        "Trae la priorización que calculó el Motor de Decisión: qué contactos son elegibles para contactar ahora, con su score y motivo (o, si no hay ninguno elegible todavía, por qué el Motor los excluyó — por ejemplo, falta de evidencia comercial verificada). Usar para 'quién mostró interés y no avanzó', 'qué clientes debería priorizar', 'a quién le escribo primero'. Nunca inventes una lista si esta herramienta devuelve vacío o todos no-elegibles: explicá el motivo real que trae el resultado.",
+      parameters: {
+        type: "object",
+        properties: {
+          limite: { type: "integer", description: "Máximo de contactos a traer (1-100). Por defecto 20." },
+        },
+        required: [],
+      },
+    },
+  },
   // --- Herramientas de ACCIÓN ------------------------------------------
   // A diferencia de las de arriba (que devuelven datos y dejan que el
   // agente siga razonando), estas ENTREGAN el control a la máquina de
@@ -2958,6 +3009,67 @@ async function ejecutarHerramientaAgente(
               ];
             }),
             totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "motor_oportunidades") {
+    const { data, error } = await supabase.rpc("chat_oportunidades", {
+      p_tenant_id: tenantId,
+      p_tipo: typeof args.tipo === "string" ? args.tipo : null,
+      p_telefono: typeof args.telefono === "string" ? args.telefono : null,
+      p_desde: typeof args.desde === "string" ? args.desde : null,
+      p_hasta: typeof args.hasta === "string" ? args.hasta : null,
+      p_limite: typeof args.limite === "number" ? args.limite : 20,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as {
+      contacto_nombre: string; telefono: string; tipo: string; cita: string;
+      fecha: string; episodio_id: string; mensaje_id: string;
+    }[];
+    return {
+      datos: filas,
+      tabla: filas.length
+        ? {
+            titulo: "Oportunidades detectadas por el Motor",
+            columnas: ["Contacto", "Qué dijo", "Cuándo"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.contacto_nombre,
+              f.cita,
+              fechaCorta(f.fecha),
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "motor_prioridad_contactos") {
+    const { data, error } = await supabase.rpc("chat_prioridad_contactos", {
+      p_tenant_id: tenantId,
+      p_limite: typeof args.limite === "number" ? args.limite : 20,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as {
+      contacto_nombre: string; telefono: string; elegible: boolean;
+      score_normalizado: number | null; motivos_exclusion: unknown; calculado_at: string;
+    }[];
+    const elegibles = filas.filter((f) => f.elegible);
+    return {
+      // El modelo ve todo (elegibles y no-elegibles con su motivo) para
+      // poder explicar honestamente por qué alguien no entra en la
+      // priorización, en vez de mostrar una lista vacía sin contexto.
+      datos: filas,
+      tabla: elegibles.length
+        ? {
+            titulo: "Prioridad de contacto (Motor)",
+            columnas: ["Contacto", "Score"],
+            filas: elegibles.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.contacto_nombre,
+              String(f.score_normalizado ?? "—"),
+            ]),
+            totalDisponible: elegibles.length,
           }
         : undefined,
     };
@@ -3373,6 +3485,12 @@ BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 - La plataforma cobra en CRÉDITOS: 1 crédito = 1 mensaje. Si el usuario da un presupuesto en cantidad de mensajes o créditos, pasalo en presupuesto_mensajes.
 - Nunca hables de dólares, ni del costo real que nos cobra Meta por mensaje: eso es información interna, el usuario solo debe pensar en créditos. Si el presupuesto viene en pesos, en dólares o en cualquier otra moneda, NO lo conviertas ni lo estimes vos. Decile con franqueza que la plataforma trabaja en créditos (1 crédito = 1 mensaje) y preguntale a cuántos créditos equivale su presupuesto, y con esa respuesta hacé la búsqueda.
 - Cuando recortaste por presupuesto, aclaralo: cuántos entran y cuántos quedaron afuera.
+
+EL MOTOR DE DECISIÓN (oportunidades y prioridad)
+- motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "qué conversaciones importantes tuve", "quién preguntó por precios", "qué oportunidades detectaste", "quién debería priorizar", "por qué contactar a este cliente".
+- Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo (podés parafrasear la cita, pero el hecho de que lo dijo tiene que salir de un resultado real, nunca inventado).
+- Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
+- Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
 
 ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
