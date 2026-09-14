@@ -2768,7 +2768,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "motor_prioridad_contactos",
       description:
-        "Trae la priorización que calculó el Motor de Decisión: qué contactos son elegibles para contactar ahora, con su score y motivo (o, si no hay ninguno elegible todavía, por qué el Motor los excluyó — por ejemplo, falta de evidencia comercial verificada). Usar para 'quién mostró interés y no avanzó', 'qué clientes debería priorizar', 'a quién le escribo primero'. Nunca inventes una lista si esta herramienta devuelve vacío o todos no-elegibles: explicá el motivo real que trae el resultado.",
+        "Trae la priorización que calculó el Motor de Decisión, con dos cosas DISTINTAS por contacto: 'elegible' (si el Motor lo considera comercialmente prioritario, en base a evidencia verificada) y 'contactable' (si AHORA MISMO conviene escribirle, según el análisis de momento/supresiones — puede ser false aunque elegible sea true, por ejemplo si escribió hace poco y conviene esperar). NUNCA trates 'elegible' como sinónimo de 'contactar ahora': un contacto puede ser elegible y no contactable todavía ('when_estado' trae por qué, y 'earliest_contact_at' desde cuándo sí). Si no hay ningún elegible, explicá el motivo real (ej. falta de evidencia comercial verificada) en vez de inventar una lista. Usar para 'quién mostró interés y no avanzó', 'qué clientes debería priorizar', 'a quién le escribo primero'.",
       parameters: {
         type: "object",
         properties: {
@@ -3053,21 +3053,28 @@ async function ejecutarHerramientaAgente(
     if (error) return { datos: { error: error.message } };
     const filas = (data ?? []) as {
       contacto_nombre: string; telefono: string; elegible: boolean;
-      score_normalizado: number | null; motivos_exclusion: unknown; calculado_at: string;
+      score_normalizado: number | null; motivos_exclusion: unknown;
+      suprimido_ahora: boolean | null; when_estado: string | null;
+      contactable: boolean | null; earliest_contact_at: string | null;
+      calculado_at: string;
     }[];
     const elegibles = filas.filter((f) => f.elegible);
     return {
       // El modelo ve todo (elegibles y no-elegibles con su motivo) para
       // poder explicar honestamente por qué alguien no entra en la
       // priorización, en vez de mostrar una lista vacía sin contexto.
+      // Incluye contactable/when_estado/earliest_contact_at para que el
+      // modelo pueda distinguir "elegible" (WHO) de "conviene escribirle
+      // ahora" (WHEN) — nunca son lo mismo.
       datos: filas,
       tabla: elegibles.length
         ? {
             titulo: "Prioridad de contacto (Motor)",
-            columnas: ["Contacto", "Score"],
+            columnas: ["Contacto", "Score", "¿Contactable ahora?"],
             filas: elegibles.slice(0, MAX_FILAS_TABLA).map((f) => [
               f.contacto_nombre,
               String(f.score_normalizado ?? "—"),
+              f.contactable ? "Sí" : "No (ver detalle)",
             ]),
             totalDisponible: elegibles.length,
           }
@@ -3491,6 +3498,7 @@ EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo (podés parafrasear la cita, pero el hecho de que lo dijo tiene que salir de un resultado real, nunca inventado).
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
+- motor_prioridad_contactos trae DOS cosas que NUNCA hay que confundir: "elegible" (prioridad comercial, decidida por WHO) y "contactable" (si conviene escribirle AHORA, decidido por WHEN — puede ser distinto de elegible). Al recomendar a quién contactar primero, priorizá siempre "contactable": a un elegible con contactable=false hay que presentarlo como "es prioritario, pero conviene esperar" (usando when_estado para explicar por qué, y earliest_contact_at para decir desde cuándo), nunca como "contactalo ahora".
 
 ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
