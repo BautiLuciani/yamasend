@@ -2753,7 +2753,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           },
           telefono: {
             type: "string",
-            description: "Filtro opcional: solo evidencia de un contacto puntual (para 'por qué debería contactar a este cliente'). Usar el teléfono que devolvió listar_contactos/buscar_contactos en este mismo turno.",
+            description: "Filtro opcional: solo evidencia de un contacto puntual. Usar el teléfono que ya devolvió motor_prioridad_contactos, listar_contactos o buscar_contactos en esta conversación — no hace falta que sea del mismo turno: es la forma correcta de responder preguntas de seguimiento sobre un contacto ya identificado antes, como '¿por qué debería contactar a esa persona?', '¿qué dijo?', '¿qué evidencia hay?' o '¿por qué tiene esa prioridad?'.",
           },
           desde: { type: "string", description: "Fecha inicio ISO 8601 (YYYY-MM-DD). Omitir para no filtrar por fecha." },
           hasta: { type: "string", description: "Fecha fin ISO 8601 (YYYY-MM-DD), exclusiva." },
@@ -3499,6 +3499,7 @@ EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
 - motor_prioridad_contactos trae DOS cosas que NUNCA hay que confundir: "elegible" (prioridad comercial, decidida por WHO) y "contactable" (si conviene escribirle AHORA, decidido por WHEN — puede ser distinto de elegible). Al recomendar a quién contactar primero, priorizá siempre "contactable": a un elegible con contactable=false hay que presentarlo como "es prioritario, pero conviene esperar" (usando when_estado para explicar por qué, y earliest_contact_at para decir desde cuándo), nunca como "contactalo ahora".
+- Una recomendación de prioridad siempre tiene que poder respaldarse con evidencia verificable, nunca solo con el score: el score por sí solo no es una explicación. motor_prioridad_contactos ya trae evidencias_utilizadas con tipo y cita real por contacto — usalo para explicar el "por qué" si alcanza. Si necesitás más detalle o más contexto del que trae esa lista, llamá motor_oportunidades filtrando por ese mismo teléfono.
 
 ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
