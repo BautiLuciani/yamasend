@@ -2884,6 +2884,24 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "motor_plan_preview",
+      description:
+        "Arma una propuesta de qué hacer con las oportunidades de la cuenta: prioridad (WHO), momento de contacto (WHEN) y, solo si el catálogo comercial está verificado, qué ofrecerle a cada uno (WHAT) y a quién seleccionar según presupuesto. Es de SOLO LECTURA: no crea ni envía nada, es una propuesta para conversar con el usuario. Usar cuando pida un plan de acción o una selección priorizada, no solo un listado — ej: '¿qué harías con mis oportunidades?', 'armame un plan', '¿a quién contactarías primero y por qué?', '¿qué debería hacer con estos leads?'. Para preguntas puramente informativas seguir usando motor_oportunidades o motor_prioridad_contactos.",
+      parameters: {
+        type: "object",
+        properties: {
+          presupuesto_creditos: {
+            type: "integer",
+            description: "Tope de créditos a considerar en la selección, SOLO si el usuario lo menciona explícitamente (ej: 'con máximo 20 créditos'). Omitir el campo por completo si no lo mencionó — no inventar ni asumir un presupuesto.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
   // --- Herramientas de ACCIÓN ------------------------------------------
   // A diferencia de las de arriba (que devuelven datos y dejan que el
   // agente siga razonando), estas ENTREGAN el control a la máquina de
@@ -3250,6 +3268,64 @@ async function ejecutarHerramientaAgente(
             },
           }
         : undefined,
+    };
+  }
+
+  if (nombre === "motor_plan_preview") {
+    // Fase 2.2: RPC de SOLO LECTURA (motor.calcular_plan_preview vía el
+    // wrapper public.chat_plan_preview). No persiste ningún plan, no crea
+    // drafts, no reserva créditos ni crea execution intents — es un cálculo
+    // en memoria sobre lo que el Motor ya analizó (WHO/WHEN/WHAT). Mismo
+    // patrón de tenant_id resuelto server-side que el resto de las
+    // herramientas del Motor.
+    const presupuestoCreditos =
+      typeof args.presupuesto_creditos === "number" ? args.presupuesto_creditos : null;
+    const { data, error } = await supabase.rpc("chat_plan_preview", {
+      p_tenant_id: tenantId,
+      p_presupuesto_creditos: presupuestoCreditos,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = (data ?? []) as {
+      plan_estado: string; plan_candidatos_evaluados: number; plan_n_seleccionados: number;
+      plan_n_futuros: number; plan_n_excluidos: number; plan_costo_estimado_creditos: number | null;
+      plan_catalogo_verificado_count: number;
+      contacto_key: string; contacto_nombre: string; estado_candidato: string;
+      seleccionado: boolean; orden: number | null;
+      who_score: number | null; who_elegible: boolean; who_suprimido: boolean;
+      when_estado: string | null; when_nivel_evidencia: string | null; contactable: boolean | null;
+      earliest_contact_at: string | null;
+      what_oferta_nombre: string | null; what_match: number | null; what_cobertura: number | null;
+      what_ambiguedad: boolean;
+      bucket_calidad: string | null;
+      costo_creditos: number | null; costo_estado: string | null;
+      motivo: unknown; snapshot_who: unknown; snapshot_when: unknown;
+    }[];
+    // No se propone contactoId/memoria para audiencia todavía: esta tool
+    // es narración de una propuesta, no el punto de entrada a crear una
+    // campaña. Eso queda para cuando conectemos plan -> draft (Fase 3).
+    // plan_catalogo_verificado_count viaja en cada fila de "datos": el
+    // modelo lo usa para saber si puede hablar de WHAT (oferta) o solo de
+    // WHO/WHEN — no se calcula ni se decide nada acá, solo se expone.
+    return {
+      datos: filas,
+      tabla: filas.length
+        ? {
+            titulo: "Propuesta del Motor",
+            columnas: ["Contacto", "Estado", "Score", "¿Contactable ahora?"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.contacto_nombre,
+              f.estado_candidato,
+              String(f.who_score ?? "—"),
+              f.contactable ? "Sí" : "No (ver detalle)",
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+      // No es dato de la tabla en sí, pero el modelo lo necesita para saber
+      // si puede hablar de "a quién ofrecerle qué" (WHAT) o solo de
+      // prioridad/momento (WHO/WHEN). Nunca elige una oferta si esto es
+      // false, ni completa una moneda faltante.
+      memoria: undefined,
     };
   }
 
@@ -3671,6 +3747,15 @@ EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
 - motor_prioridad_contactos trae DOS cosas que NUNCA hay que confundir: "elegible" (prioridad comercial, decidida por WHO) y "contactable" (si conviene escribirle AHORA, decidido por WHEN — puede ser distinto de elegible). Al recomendar a quién contactar primero, priorizá siempre "contactable": a un elegible con contactable=false hay que presentarlo como "es prioritario, pero conviene esperar" (usando when_estado para explicar por qué, y earliest_contact_at para decir desde cuándo), nunca como "contactalo ahora".
 - Una recomendación de prioridad siempre tiene que poder respaldarse con evidencia verificable, nunca solo con el score: el score por sí solo no es una explicación. motor_prioridad_contactos ya trae evidencias_utilizadas con tipo y cita real por contacto — usalo para explicar el "por qué" si alcanza. Si necesitás más detalle o más contexto del que trae esa lista, llamá motor_oportunidades filtrando por ese mismo teléfono.
+
+EL MOTOR DE DECISIÓN — PROPUESTA DE PLAN (motor_plan_preview)
+- Usala cuando te pidan un plan de acción o una selección priorizada, no solo un listado: "¿qué harías con mis oportunidades?", "armame un plan", "¿a quién contactarías primero y por qué?", "¿qué debería hacer con estos leads?". Para preguntas puramente informativas seguí usando motor_oportunidades / motor_prioridad_contactos como hasta ahora.
+- Es de SOLO LECTURA: no crea audiencias, campañas ni nada — es una propuesta calculada para que la charlemos con el usuario, nunca la presentes como una acción ya hecha.
+- Fijate primero en plan_catalogo_verificado_count. Si es 0 (es el estado real de la cuenta hoy), el catálogo comercial todavía no está verificado: podés hablar de prioridad (WHO) y de cuándo conviene escribirle (WHEN), pero NO de qué ofrecerle a cada uno. Decilo con franqueza, por ejemplo: "Puedo decirte a quién priorizar y cuándo conviene escribirle, pero todavía no puedo recomendarte qué ofrecerle a cada uno porque el catálogo comercial no está verificado." Nunca elijas vos una oferta ni completes una moneda faltante para simular que sí hay catálogo.
+- Basate ÚNICAMENTE en los campos que trae el resultado (who_score, who_elegible, who_suprimido, when_estado, contactable, earliest_contact_at, what_oferta_nombre, what_match, what_cobertura, bucket_calidad, costo_creditos, seleccionado, motivo, snapshot_who, snapshot_when). Nunca inventes una oferta, un costo, un timing, un score o un motivo que no esté ahí.
+- Para explicar el "por qué" de cada contacto, apoyate en el campo motivo (trae el código y los valores que llevaron a esa clasificación) y en snapshot_who/snapshot_when si necesitás más contexto — nunca solo en el score.
+- No muestres el JSON crudo, los códigos internos (LISTO_AHORA, BAJO_CALIDAD_MINIMA, etc.) ni ningún id técnico al usuario: traducilo a lenguaje natural, cercano.
+- Si el usuario menciona un tope de créditos explícito, pasalo en presupuesto_creditos. Si no lo menciona, no le pongas presupuesto vos.
 
 ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
