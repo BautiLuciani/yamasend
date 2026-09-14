@@ -3303,11 +3303,51 @@ async function ejecutarHerramientaAgente(
     // No se propone contactoId/memoria para audiencia todavía: esta tool
     // es narración de una propuesta, no el punto de entrada a crear una
     // campaña. Eso queda para cuando conectemos plan -> draft (Fase 3).
-    // plan_catalogo_verificado_count viaja en cada fila de "datos": el
-    // modelo lo usa para saber si puede hablar de WHAT (oferta) o solo de
-    // WHO/WHEN — no se calcula ni se decide nada acá, solo se expone.
+    //
+    // "datos" NO manda las filas crudas de la RPC: cada fila trae
+    // snapshot_who/snapshot_when (volcados internos de motor.candidatos/
+    // when_resultados, ~2KB cada uno) que el propio prompt ya le prohíbe
+    // mostrar al usuario, y repite los campos de nivel-plan en cada fila.
+    // Con un tenant de 20+ contactos eso arma un JSON de 80K+ caracteres
+    // que superaba el límite de truncamiento del loop del agente — el
+    // modelo terminaba viendo un fragmento invalido de los primeros 1-2
+    // contactos y nunca los que en realidad hacían falta para responder.
+    // Acá se manda un resumen de plan (una vez) + un objeto compacto por
+    // candidato con solo los campos que la narración necesita — "motivo"
+    // sigue trayendo el detalle estructurado (who/match/cobertura/bucket/
+    // when) que reemplaza a los snapshots para explicar el "por qué".
+    const resumenPlan = filas[0]
+      ? {
+          plan_estado: filas[0].plan_estado,
+          plan_catalogo_verificado_count: filas[0].plan_catalogo_verificado_count,
+          plan_candidatos_evaluados: filas[0].plan_candidatos_evaluados,
+          plan_n_seleccionados: filas[0].plan_n_seleccionados,
+          plan_n_futuros: filas[0].plan_n_futuros,
+          plan_n_excluidos: filas[0].plan_n_excluidos,
+          plan_costo_estimado_creditos: filas[0].plan_costo_estimado_creditos,
+        }
+      : { plan_estado: null, plan_catalogo_verificado_count: 0 };
+    const candidatos = filas.map((f) => ({
+      contacto_nombre: f.contacto_nombre,
+      estado_candidato: f.estado_candidato,
+      seleccionado: f.seleccionado,
+      who_score: f.who_score,
+      who_elegible: f.who_elegible,
+      who_suprimido: f.who_suprimido,
+      when_estado: f.when_estado,
+      when_nivel_evidencia: f.when_nivel_evidencia,
+      contactable: f.contactable,
+      earliest_contact_at: f.earliest_contact_at,
+      what_oferta_nombre: f.what_oferta_nombre,
+      what_match: f.what_match,
+      what_cobertura: f.what_cobertura,
+      what_ambiguedad: f.what_ambiguedad,
+      bucket_calidad: f.bucket_calidad,
+      costo_creditos: f.costo_creditos,
+      motivo: f.motivo,
+    }));
     return {
-      datos: filas,
+      datos: { resumen_plan: resumenPlan, candidatos },
       tabla: filas.length
         ? {
             titulo: "Propuesta del Motor",
@@ -3751,9 +3791,18 @@ EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 EL MOTOR DE DECISIÓN — PROPUESTA DE PLAN (motor_plan_preview)
 - Usala cuando te pidan un plan de acción o una selección priorizada, no solo un listado: "¿qué harías con mis oportunidades?", "armame un plan", "¿a quién contactarías primero y por qué?", "¿qué debería hacer con estos leads?". Para preguntas puramente informativas seguí usando motor_oportunidades / motor_prioridad_contactos como hasta ahora.
 - Es de SOLO LECTURA: no crea audiencias, campañas ni nada — es una propuesta calculada para que la charlemos con el usuario, nunca la presentes como una acción ya hecha.
-- Fijate primero en plan_catalogo_verificado_count. Si es 0 (es el estado real de la cuenta hoy), el catálogo comercial todavía no está verificado: podés hablar de prioridad (WHO) y de cuándo conviene escribirle (WHEN), pero NO de qué ofrecerle a cada uno. Decilo con franqueza, por ejemplo: "Puedo decirte a quién priorizar y cuándo conviene escribirle, pero todavía no puedo recomendarte qué ofrecerle a cada uno porque el catálogo comercial no está verificado." Nunca elijas vos una oferta ni completes una moneda faltante para simular que sí hay catálogo.
-- Basate ÚNICAMENTE en los campos que trae el resultado (who_score, who_elegible, who_suprimido, when_estado, contactable, earliest_contact_at, what_oferta_nombre, what_match, what_cobertura, bucket_calidad, costo_creditos, seleccionado, motivo, snapshot_who, snapshot_when). Nunca inventes una oferta, un costo, un timing, un score o un motivo que no esté ahí.
-- Para explicar el "por qué" de cada contacto, apoyate en el campo motivo (trae el código y los valores que llevaron a esa clasificación) y en snapshot_who/snapshot_when si necesitás más contexto — nunca solo en el score.
+- El resultado trae "resumen_plan" (una vez) y "candidatos" (uno por contacto evaluado). Basate ÚNICAMENTE en esos campos. Nunca inventes una oferta, un costo, un timing, un score o un motivo que no esté ahí. No hay snapshots crudos que consultar: todo lo que necesitás para explicar el "por qué" ya está en "motivo" de cada candidato (trae el código y los valores — who/match/cobertura/bucket/when — que llevaron a esa clasificación).
+- "resumen_plan.plan_catalogo_verificado_count" te dice CUÁNTAS ofertas verificadas hay ahora mismo, no es un valor fijo — puede ser 0 o puede no serlo, depende de la cuenta y el momento:
+  - Si es 0: el catálogo comercial todavía no está verificado. Podés hablar de prioridad (WHO) y de cuándo conviene escribirle (WHEN), pero no de qué ofrecerle a cada uno. Nunca elijas vos una oferta ni completes una moneda faltante para simular que sí hay catálogo.
+  - Si es mayor a 0: el catálogo YA está verificado. Nunca digas "el catálogo no está verificado" ni "todavía no se verificó el catálogo" en ese caso — sería directamente falso.
+- El "estado_candidato" de cada contacto ya resume la razón real — nunca lo reinterpretes ni lo cambies por una explicación genérica de "falta evidencia":
+  - EXCLUIDO: no es prioritario ahora. Explicá el motivo real que traiga "motivo" (por ejemplo, falta de evidencia comercial verificada, o una supresión) — no asumas que es siempre por lo mismo.
+  - ESPERAR: SÍ hay una oportunidad real, pero el momento (WHEN) todavía no es el indicado — explicá que conviene esperar y, si "earliest_contact_at" trae una fecha, decila.
+  - SIN_OFERTA: el contacto superó prioridad y momento, pero NINGUNA de las ofertas verificadas es compatible con lo que pidió. Esto es un resultado del catálogo, no una falta de evidencia — nunca lo redactes como "no hay evidencia comercial suficiente", porque si llegó hasta acá es porque esa evidencia existe.
+  - OFERTA_NO_VERIFICADA: como SIN_OFERTA, pero porque el catálogo todavía no tiene ninguna oferta verificada (coherente con plan_catalogo_verificado_count=0) — ahí sí correspondía decir que falta verificar el catálogo.
+  - FUERA_DE_PRESUPUESTO: había una oferta compatible, pero no entra dentro del tope de créditos pedido — explicalo como tema de presupuesto, no como que falte oferta o evidencia.
+  - LISTO_AHORA / PROGRAMABLE con "seleccionado" en true: ahí sí hay una oferta real elegida por el Motor — nombrala usando "what_oferta_nombre" tal cual viene, sin agregar precio, condiciones ni ningún dato que el resultado no traiga.
+- Si la cuenta tiene varios contactos con estados distintos, contalo así: quiénes están listos, quiénes conviene esperar, y para quiénes no hay oferta que les sirva — no lo aplanes todo a una sola frase genérica.
 - No muestres el JSON crudo, los códigos internos (LISTO_AHORA, BAJO_CALIDAD_MINIMA, etc.) ni ningún id técnico al usuario: traducilo a lenguaje natural, cercano.
 - Si el usuario menciona un tope de créditos explícito, pasalo en presupuesto_creditos. Si no lo menciona, no le pongas presupuesto vos.
 
@@ -3842,10 +3891,17 @@ REGLAS ESTRICTAS
         memoriaHerramientas = { ...memoriaHerramientas, ...resultado.memoria };
       }
 
+      // Antes en 6000: con tenants de ~20+ contactos, motor_plan_preview
+      // (que manda un objeto por candidato) superaba ese límite y el JSON
+      // se cortaba a mitad de camino — el modelo terminaba viendo un
+      // fragmento invalido de los primeros 1-2 contactos nada más, sin
+      // llegar nunca a los que en realidad importaban para la pregunta.
+      // 20000 le da margen a esa herramienta (y a cualquier otra con varios
+      // contactos) sin disparar el costo de tokens de forma relevante.
       messages.push({
         role: "tool",
         tool_call_id: tc.id,
-        content: JSON.stringify(resultado.datos).slice(0, 6000),
+        content: JSON.stringify(resultado.datos).slice(0, 20000),
       });
     }
   }
