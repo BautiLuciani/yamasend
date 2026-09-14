@@ -513,16 +513,19 @@ async function iniciarAudienciaDesdePropuestaMotor(
   const resolubles = propuesta.contactos.filter((c) => c.contactoId);
   const noResolubles = propuesta.contactos.filter((c) => !c.contactoId);
 
+  const total = propuesta.contactos.length;
+  const nombres = (lista: typeof propuesta.contactos) => lista.map((c) => c.nombre || c.telefono).join(", ");
+
   if (resolubles.length === 0) {
     return {
-      text: `Ninguno de los contactos que trajo el Motor (${propuesta.contactos.map((c) => c.nombre || c.telefono).join(", ")}) tiene todavía un contacto asociado en tu cuenta, así que no puedo armar una audiencia con ellos todavía. Elegí una audiencia desde las opciones de arriba.`,
+      text: `Encontré ${total} contacto${total === 1 ? "" : "s"} (${nombres(propuesta.contactos)}), pero ninguno está disponible todavía como contacto de audiencia — no creo audiencias ni contactos nuevos automáticamente. Elegí una audiencia desde las opciones de arriba.`,
       payload: await payloadElegirAudienciaCampana(),
       flowState,
     };
   }
 
   const avisoExcluidos = noResolubles.length
-    ? ` (dejé afuera a ${noResolubles.map((c) => c.nombre || c.telefono).join(", ")}: todavía no ${noResolubles.length === 1 ? "tiene" : "tienen"} un contacto asociado en tu cuenta)`
+    ? ` ${nombres(noResolubles)} todavía no ${noResolubles.length === 1 ? "está disponible" : "están disponibles"} como contacto${noResolubles.length === 1 ? "" : "s"} de audiencia.`
     : "";
 
   // El draft de campaña actual (nombre, y lo que ya se haya cargado) queda
@@ -530,8 +533,13 @@ async function iniciarAudienciaDesdePropuestaMotor(
   // para no arrastrarla al subflujo de audiencia.
   const { propuestaMotor: _propuestaUsada, ...campanaDraftPendiente } = flowState.draft;
 
+  const mensajeDisponibilidad =
+    resolubles.length === total
+      ? `Encontré ${total} contacto${total === 1 ? "" : "s"} (${nombres(resolubles)}), y ${total === 1 ? "está disponible" : "todos están disponibles"} como contacto${total === 1 ? "" : "s"} de audiencia.`
+      : `Encontré ${total} oportunidad${total === 1 ? "" : "es"}, pero actualmente solo ${resolubles.length} de ${total} ${resolubles.length === 1 ? "está disponible" : "están disponibles"} como contacto de audiencia (${nombres(resolubles)}).${avisoExcluidos}`;
+
   return {
-    text: `Dale, armemos una audiencia con ${resolubles.length} contacto${resolubles.length === 1 ? "" : "s"}${avisoExcluidos}. ¿Cómo querés que se llame?`,
+    text: `${mensajeDisponibilidad} Armemos una audiencia con ${resolubles.length === total ? "ellos" : "los disponibles"}. ¿Cómo querés que se llame?`,
     flowState: {
       kind: "crear_audiencia",
       step: "audiencia_esperando_nombre",
@@ -2966,12 +2974,14 @@ function pct(v: number | null | undefined): string {
 }
 
 /**
- * Resuelve teléfonos a contactos reales de yamas_send_contactos (id + nombre),
- * de forma segura y mínima: un SELECT de solo lectura, acotado al tenant y a
- * contactos activos. Usado para convertir resultados del Motor (que solo
- * conocen el teléfono) en contacto_id utilizables por el flujo legacy de
- * audiencias. Nunca inventa un id: los teléfonos sin match simplemente no
- * aparecen en el mapa devuelto.
+ * Resuelve teléfonos al ID de yamas_send_leads (id + nombre) — el espacio de
+ * IDs que realmente usan audiencias y campañas (yamas_send_listas.contactos_ids,
+ * el selector de contactos, el detalle de audiencia). NO usar
+ * yamas_send_contactos.id acá: es una tabla distinta, con su propio id, y
+ * usarla producía audiencias con contactos_ids "válidos" pero que no
+ * correspondían a ningún lead real (bug encontrado en la prueba manual de G4).
+ * Un teléfono sin fila en yamas_send_leads simplemente no aparece en el mapa
+ * devuelto — no se crea ningún lead ni se inventa ningún id.
  */
 async function resolverContactoIdsPorTelefono(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -2981,13 +2991,13 @@ async function resolverContactoIdsPorTelefono(
   const mapa = new Map<string, { id: string; nombre: string | null }>();
   if (telefonos.length === 0) return mapa;
   const { data, error } = await supabase
-    .from("yamas_send_contactos")
+    .from("yamas_send_leads")
     .select("id, telefono, nombre")
     .eq("tenant_id", tenantId)
     .eq("activo", true)
     .in("telefono", telefonos);
   if (error) {
-    console.error("[IA] Error resolviendo teléfonos a contactos:", error);
+    console.error("[IA] Error resolviendo teléfonos a leads:", error);
     return mapa;
   }
   for (const fila of data ?? []) {
