@@ -462,6 +462,23 @@ export interface IAFlowState {
         temperatura: string | null;
       }[];
     };
+    // Última propuesta de contactos que trajo una herramienta del Motor de
+    // Decisión (motor_oportunidades / motor_prioridad_contactos), para poder
+    // resolver "sí, a esos" de forma determinística, sin depender de que el
+    // modelo recuerde ids que ya no tiene delante (mismo motivo que
+    // ultimaBusqueda). El Motor solo conoce el teléfono: contactoId ya viene
+    // resuelto acá contra yamas_send_contactos, y queda en null cuando ese
+    // teléfono no tiene todavía un contacto asociado — se conserva igual
+    // (con nombre/teléfono) para poder avisarle al usuario cuáles quedaron
+    // afuera en vez de inventar un id o descartarlos en silencio.
+    propuestaMotor?: {
+      contactos: { telefono: string; nombre: string; contactoId: string | null }[];
+    };
+    // Cuando el usuario confirma una propuesta del Motor en medio de
+    // crear_campana, se abre un subflujo de crear_audiencia (mismo mecanismo
+    // legacy de siempre) y acá queda el draft de campaña pendiente, para
+    // retomarlo automáticamente apenas la audiencia quede creada.
+    campanaPendiente?: IAFlowState["draft"];
   };
 }
 

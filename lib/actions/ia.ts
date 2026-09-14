@@ -487,6 +487,63 @@ function intentaAudienciaDesdeUltimaImportacion(
   };
 }
 
+/**
+ * Se llama cuando el usuario confirma explícitamente una propuesta de
+ * contactos que trajo el Motor de Decisión (motor_oportunidades /
+ * motor_prioridad_contactos) mientras está en medio de crear_campana,
+ * esperando audiencia. Abre el flujo EXISTENTE de crear_audiencia con esos
+ * contactos preseleccionados (mismo mecanismo que "armá una audiencia con
+ * estos contactos"), y guarda el draft de campaña pendiente para retomarlo
+ * automáticamente apenas la audiencia quede creada (ver
+ * confirmarCreacionAudienciaAction). No crea ninguna audiencia acá: solo
+ * abre el flujo, igual que el resto de los "iniciar" de esta zona.
+ */
+async function iniciarAudienciaDesdePropuestaMotor(
+  flowState: IAFlowState,
+): Promise<IAResponse> {
+  const propuesta = flowState.draft.propuestaMotor;
+  if (!propuesta || propuesta.contactos.length === 0) {
+    return {
+      text: "No tengo contactos recientes de una consulta al Motor para armar la audiencia. Elegí una audiencia desde las opciones de arriba, o volvé a preguntarle al Motor.",
+      payload: await payloadElegirAudienciaCampana(),
+      flowState,
+    };
+  }
+
+  const resolubles = propuesta.contactos.filter((c) => c.contactoId);
+  const noResolubles = propuesta.contactos.filter((c) => !c.contactoId);
+
+  if (resolubles.length === 0) {
+    return {
+      text: `Ninguno de los contactos que trajo el Motor (${propuesta.contactos.map((c) => c.nombre || c.telefono).join(", ")}) tiene todavía un contacto asociado en tu cuenta, así que no puedo armar una audiencia con ellos todavía. Elegí una audiencia desde las opciones de arriba.`,
+      payload: await payloadElegirAudienciaCampana(),
+      flowState,
+    };
+  }
+
+  const avisoExcluidos = noResolubles.length
+    ? ` (dejé afuera a ${noResolubles.map((c) => c.nombre || c.telefono).join(", ")}: todavía no ${noResolubles.length === 1 ? "tiene" : "tienen"} un contacto asociado en tu cuenta)`
+    : "";
+
+  // El draft de campaña actual (nombre, y lo que ya se haya cargado) queda
+  // guardado tal cual para retomarlo después — sin la propuesta ya usada,
+  // para no arrastrarla al subflujo de audiencia.
+  const { propuestaMotor: _propuestaUsada, ...campanaDraftPendiente } = flowState.draft;
+
+  return {
+    text: `Dale, armemos una audiencia con ${resolubles.length} contacto${resolubles.length === 1 ? "" : "s"}${avisoExcluidos}. ¿Cómo querés que se llame?`,
+    flowState: {
+      kind: "crear_audiencia",
+      step: "audiencia_esperando_nombre",
+      draft: {
+        contactosIds: resolubles.map((c) => c.contactoId as string),
+        contactosIdsResueltos: true,
+        campanaPendiente: flowState.kind === "crear_campana" ? campanaDraftPendiente : undefined,
+      },
+    },
+  };
+}
+
 // -----------------------------------------------------------------------
 // Punto de entrada único del chat de IA. Recibe el mensaje del usuario, el
 // historial corto (para el clasificador) y el estado de flujo actual.
@@ -517,7 +574,8 @@ type DesvioFlujo =
   | { tipo: "continuar" }
   | { tipo: "modificar"; campo: CampoCorregible; valor: string }
   | { tipo: "pregunta" }
-  | { tipo: "cancelar" };
+  | { tipo: "cancelar" }
+  | { tipo: "aceptar_propuesta_motor" };
 
 function describirPasoActual(flowState: IAFlowState): string {
   const { kind, step, draft } = flowState;
@@ -553,6 +611,11 @@ async function interpretarDesvioEnFlujo(
   const openai = getOpenAI();
   const espera = flowState.step ? QUE_ESPERA_EL_PASO[flowState.step] ?? "un dato del flujo" : "un dato del flujo";
 
+  const propuestaMotor = flowState.draft.propuestaMotor;
+  const bloquePropuestaMotor = propuestaMotor?.contactos.length
+    ? `\n\nADEMÁS: hace poco una herramienta del Motor de Decisión propuso estos contactos: ${propuestaMotor.contactos.map((c) => c.nombre || c.telefono).join(", ")}. Si el usuario ahora confirma que quiere usarlos para armar algo (ej: "sí, a esos tres", "usá esos contactos", "armá la audiencia con ellos", "dale, con esos", "incluilos"), clasificá "aceptar_propuesta_motor" en vez de "continuar" o "modificar".`
+    : "";
+
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     temperature: 0,
@@ -563,10 +626,10 @@ async function interpretarDesvioEnFlujo(
         content: `Estás ayudando a un asistente que está en medio de un flujo guiado con el usuario.
 
 ${describirPasoActual(flowState)}
-En este paso el asistente espera: ${espera}.
+En este paso el asistente espera: ${espera}.${bloquePropuestaMotor}
 
 Clasificá el último mensaje del usuario y devolvé SOLO un JSON con esta forma:
-{"tipo": "continuar" | "modificar" | "pregunta" | "cancelar", "campo": "nombre" | "fecha" | "audiencia" | "template" | "categoria" | "contenido" | null, "valor": string | null}
+{"tipo": "continuar" | "modificar" | "pregunta" | "cancelar" | "aceptar_propuesta_motor", "campo": "nombre" | "fecha" | "audiencia" | "template" | "categoria" | "contenido" | null, "valor": string | null}
 
 - "continuar": el mensaje ES lo que el paso esperaba (ej: si espera un nombre, el usuario escribió un nombre).
 - "modificar": el usuario quiere CORREGIR o CAMBIAR un dato ya cargado. Indicá qué campo y el valor nuevo:
@@ -578,6 +641,7 @@ Clasificá el último mensaje del usuario y devolvé SOLO un JSON con esta forma
   - campo "contenido": "cambiá el texto del mensaje", "reescribilo diciendo que...". valor = lo que pide.
 - "pregunta": el usuario pregunta o comenta algo al margen del flujo (ej: "cuántos contactos calientes tengo?", "qué es un template?", "cuánto me sale esto?").
 - "cancelar": el usuario quiere abandonar el flujo (ej: "cancelá", "dejalo", "olvidate", "mejor no").
+- "aceptar_propuesta_motor": SOLO si el bloque de arriba menciona una propuesta pendiente del Motor Y el usuario la está confirmando explícitamente.
 
 Reglas importantes:
 - Si el paso espera un dato y el usuario simplemente lo escribe, eso es "continuar", NO "modificar". Solo es "modificar" si está corrigiendo algo ya cargado, con lenguaje de corrección ("mejor", "cambiá", "no, ponele").
@@ -592,6 +656,9 @@ No agregues texto fuera del JSON.`,
     const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
     if (parsed.tipo === "cancelar") return { tipo: "cancelar" };
     if (parsed.tipo === "pregunta") return { tipo: "pregunta" };
+    if (parsed.tipo === "aceptar_propuesta_motor" && propuestaMotor?.contactos.length) {
+      return { tipo: "aceptar_propuesta_motor" };
+    }
     if (parsed.tipo === "modificar") {
       const campos: CampoCorregible[] = ["nombre", "fecha", "audiencia", "template", "categoria", "contenido"];
       const campo = campos.find((c) => c === parsed.campo);
@@ -936,8 +1003,11 @@ export async function sendIAMessageAction(
     }
 
     if (desvio.tipo === "pregunta") {
-      // Respondemos con el agente pero CONSERVAMOS el flowState, así el
-      // flujo queda esperando donde estaba y el usuario puede retomarlo.
+      // Respondemos con el agente pero CONSERVAMOS el flowState (kind/step),
+      // así el flujo queda esperando donde estaba y el usuario puede
+      // retomarlo. Antes esto pisaba flowState entero con el original y
+      // tiraba la memoria que la herramienta pudo haber dejado (ej:
+      // propuestaMotor, ultimaBusqueda) — ahora se mergea el draft.
       const contextoNegocioFlujo = await resolverContextoNegocio();
       const tenantIdFlujo = await resolverTenantId();
       try {
@@ -947,7 +1017,13 @@ export async function sendIAMessageAction(
           contextoNegocioFlujo,
           tenantIdFlujo,
         );
-        return { ...respuesta, flowState };
+        return {
+          ...respuesta,
+          flowState: {
+            ...flowState,
+            draft: { ...flowState.draft, ...respuesta.flowState.draft },
+          },
+        };
       } catch (e) {
         console.error("[IA] Error respondiendo pregunta dentro de flujo:", e);
         return {
@@ -955,6 +1031,10 @@ export async function sendIAMessageAction(
           flowState,
         };
       }
+    }
+
+    if (desvio.tipo === "aceptar_propuesta_motor") {
+      return iniciarAudienciaDesdePropuestaMotor(flowState);
     }
     // "continuar": cae a los handlers de abajo, comportamiento de siempre.
   }
@@ -1275,8 +1355,26 @@ export async function confirmarCreacionAudienciaAction(
     };
   }
 
+  const mensajeAudienciaCreada = `Listo, creé la audiencia "${nombre}" con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}.`;
+
+  // Si esta audiencia se armó desde una propuesta del Motor en medio de una
+  // campaña (ver iniciarAudienciaDesdePropuestaMotor), volvemos automática-
+  // mente al wizard de campaña con esta audiencia ya seleccionada — mismo
+  // mecanismo que si el usuario la hubiese elegido desde la tarjeta normal,
+  // sin saltear ningún paso ni confirmación que ese flujo ya tenga.
+  if (flowState.draft.campanaPendiente) {
+    const siguiente = await seleccionarAudienciaCampanaAction(
+      { kind: "crear_campana", step: "campana_esperando_audiencia", draft: flowState.draft.campanaPendiente },
+      result.id,
+    );
+    return {
+      ...siguiente,
+      text: `${mensajeAudienciaCreada} ${siguiente.text}`,
+    };
+  }
+
   return {
-    text: `Listo, creé la audiencia "${nombre}" con ${contactosIds.length} contacto${contactosIds.length === 1 ? "" : "s"}. ¿Qué más necesitás?`,
+    text: `${mensajeAudienciaCreada} ¿Qué más necesitás?`,
     payload: {
       kind: "audiencia_creada",
       audienciaId: result.id,
@@ -2868,6 +2966,37 @@ function pct(v: number | null | undefined): string {
 }
 
 /**
+ * Resuelve teléfonos a contactos reales de yamas_send_contactos (id + nombre),
+ * de forma segura y mínima: un SELECT de solo lectura, acotado al tenant y a
+ * contactos activos. Usado para convertir resultados del Motor (que solo
+ * conocen el teléfono) en contacto_id utilizables por el flujo legacy de
+ * audiencias. Nunca inventa un id: los teléfonos sin match simplemente no
+ * aparecen en el mapa devuelto.
+ */
+async function resolverContactoIdsPorTelefono(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+  telefonos: string[],
+): Promise<Map<string, { id: string; nombre: string | null }>> {
+  const mapa = new Map<string, { id: string; nombre: string | null }>();
+  if (telefonos.length === 0) return mapa;
+  const { data, error } = await supabase
+    .from("yamas_send_contactos")
+    .select("id, telefono, nombre")
+    .eq("tenant_id", tenantId)
+    .eq("activo", true)
+    .in("telefono", telefonos);
+  if (error) {
+    console.error("[IA] Error resolviendo teléfonos a contactos:", error);
+    return mapa;
+  }
+  for (const fila of data ?? []) {
+    if (fila.telefono) mapa.set(fila.telefono, { id: fila.id, nombre: fila.nombre });
+  }
+  return mapa;
+}
+
+/**
  * Ejecuta una herramienta del agente contra Supabase. Todas las funciones
  * son RPCs fijas con tenant_id resuelto server-side — el modelo solo elige
  * cuál llamar y con qué parámetros, nunca escribe SQL.
@@ -3028,6 +3157,8 @@ async function ejecutarHerramientaAgente(
       contacto_nombre: string; telefono: string; tipo: string; cita: string;
       fecha: string; episodio_id: string; mensaje_id: string;
     }[];
+    const telefonosUnicos = Array.from(new Set(filas.map((f) => f.telefono)));
+    const mapaContactos = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosUnicos);
     return {
       datos: filas,
       tabla: filas.length
@@ -3040,6 +3171,21 @@ async function ejecutarHerramientaAgente(
               fechaCorta(f.fecha),
             ]),
             totalDisponible: filas.length,
+          }
+        : undefined,
+      // Igual que ultimaBusqueda: se guarda para que "sí, a esos" en el
+      // turno siguiente se resuelva contra la base, no contra lo que el
+      // modelo "se acuerde". contactoId queda null cuando el teléfono no
+      // tiene un contacto activo asociado (no se inventa ningún id).
+      memoria: telefonosUnicos.length
+        ? {
+            propuestaMotor: {
+              contactos: telefonosUnicos.map((tel) => ({
+                telefono: tel,
+                nombre: filas.find((f) => f.telefono === tel)?.contacto_nombre || tel,
+                contactoId: mapaContactos.get(tel)?.id ?? null,
+              })),
+            },
           }
         : undefined,
     };
@@ -3059,6 +3205,10 @@ async function ejecutarHerramientaAgente(
       calculado_at: string;
     }[];
     const elegibles = filas.filter((f) => f.elegible);
+    // Solo tiene sentido proponer para audiencia a los elegibles (los
+    // excluidos ya se explican con su motivo, no son una selección válida).
+    const telefonosElegibles = Array.from(new Set(elegibles.map((f) => f.telefono)));
+    const mapaContactos = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosElegibles);
     return {
       // El modelo ve todo (elegibles y no-elegibles con su motivo) para
       // poder explicar honestamente por qué alguien no entra en la
@@ -3077,6 +3227,17 @@ async function ejecutarHerramientaAgente(
               f.contactable ? "Sí" : "No (ver detalle)",
             ]),
             totalDisponible: elegibles.length,
+          }
+        : undefined,
+      memoria: telefonosElegibles.length
+        ? {
+            propuestaMotor: {
+              contactos: telefonosElegibles.map((tel) => ({
+                telefono: tel,
+                nombre: elegibles.find((f) => f.telefono === tel)?.contacto_nombre || tel,
+                contactoId: mapaContactos.get(tel)?.id ?? null,
+              })),
+            },
           }
         : undefined,
     };
