@@ -582,6 +582,30 @@ export async function deleteCampaignAction(
     return { error: "No se encontró la campaña." };
   }
 
+  // P3 — mismo guard de provenance que P0 (cargarCampanaEditable), acá para
+  // el borrado: una campaña materializada por Motor V1 no debe poder
+  // eliminarse desde la UI legacy — dejaría motor.drafts.campana_id
+  // apuntando a una fila inexistente. Misma fuente canónica, sin inventar
+  // otra: EXISTS (motor.drafts WHERE campana_id=...) vía el puente de solo
+  // lectura ya usado por cargarCampanaEditable.
+  const { data: esCampanaMotor, error: motorCheckError } = await supabase.rpc(
+    "yamas_send_es_campana_motor",
+    { p_campana_id: campaignId },
+  );
+
+  if (motorCheckError) {
+    // Fail-closed: si no podemos determinar la provenance, no se borra.
+    return {
+      error: "No pudimos verificar el origen de esta campaña. Probá de nuevo en unos segundos.",
+    };
+  }
+
+  if (esCampanaMotor) {
+    return {
+      error: `"${campana.nombre}" pertenece al Motor V1 y no puede eliminarse desde acá.`,
+    };
+  }
+
   if (campana.status === "enviando") {
     return {
       error: "No se puede eliminar una campaña que está enviándose en este momento.",

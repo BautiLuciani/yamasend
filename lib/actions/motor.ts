@@ -328,3 +328,517 @@ export async function confirmarEjecucionMotorAction(
     error: resultado.error,
   };
 }
+
+// ---------------------------------------------------------------------
+// PRODUCT-P3 — Dashboard de Recomendaciones del Motor.
+//
+// Flujo productivo completo, gatillado exclusivamente por clicks humanos
+// explícitos (nunca por render/refresh del Dashboard):
+//
+//   prepararPlanMotorAction()          [HUMANO: click "Preparar plan"]
+//     → public.motor_preparar_plan (reutiliza plan pendiente o genera uno)
+//   aprobarPlanMotorAction(planId)     [HUMANO: Approval 1]
+//     → public.motor_aprobar_plan
+//     → AUTO: public.motor_materializar_plan
+//   obtenerDraftPreviewMotorAction(draftId)  [lectura]
+//     → public.motor_preview_draft
+//   aprobarDraftMotorAction(draftId)   [HUMANO: Approval 2]
+//     → public.motor_aprobar_draft
+//     → AUTO: public.motor_crear_execution_intent (canal fake, resuelto
+//       server-side vía motor_canales_visibles — nunca del browser)
+//   confirmarEjecucionMotorAction(executionIntentId)  [HUMANO: ya existe, P1/P1B]
+//   obtenerEstadoEjecucionMotorAction(executionIntentId)  [lectura]
+//     → public.motor_estado_execution_intent
+//
+// Identidad humana: SIEMPRE derivada de auth.uid() + membresía 'empleado'
+// activa dentro de este mismo archivo — nunca un p_usuario/tenant que
+// venga del browser. El browser solo puede enviar IDs (planId, draftId,
+// executionIntentId); cada Server Action resuelve el tenant del usuario
+// autenticado y lo pasa como p_tenant a las funciones certificadas, que ya
+// rechazan (con excepción o resultado vacío) cualquier ID que no pertenezca
+// a ese tenant — así es como se cierra el cross-tenant sin inventar otra
+// verificación.
+// ---------------------------------------------------------------------
+
+interface ContextoMotor {
+  tenantId: string;
+  /** auth_user_id real, nunca un string arbitrario del browser. */
+  usuario: string;
+}
+
+async function resolverContextoMotor(): Promise<
+  { ok: true; ctx: ContextoMotor } | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { ok: false, error: "No hay sesión activa." };
+
+  const { data: miembro } = await supabase
+    .from("yamas_send_miembros")
+    .select("tenant_id")
+    .eq("auth_user_id", user.id)
+    .eq("rol", "empleado")
+    .eq("estado", "activo")
+    .maybeSingle();
+
+  if (!miembro?.tenant_id) {
+    return {
+      ok: false,
+      error: "Tu cuenta no tiene una membresía activa como empleado en ningún tenant.",
+    };
+  }
+
+  return { ok: true, ctx: { tenantId: miembro.tenant_id, usuario: user.id } };
+}
+
+export interface PrepararPlanMotorResult {
+  ok: boolean;
+  planId: string | null;
+  /** "PLAN_GENERATED" (recién creado) | "PENDING_PLAN_REUSED" (ya existía) */
+  resultado: "PLAN_GENERATED" | "PENDING_PLAN_REUSED" | null;
+  error: string | null;
+}
+
+/**
+ * Único punto de entrada para generar/reutilizar un Plan. Se invoca
+ * EXCLUSIVAMENTE por un click humano explícito ("Preparar plan") — nunca
+ * desde el render del Dashboard. Serializado por tenant a nivel SQL
+ * (pg_advisory_xact_lock dentro de motor_preparar_plan), así que dos clicks
+ * concurrentes del mismo tenant nunca generan dos planes.
+ */
+export async function prepararPlanMotorAction(): Promise<PrepararPlanMotorResult> {
+  const contexto = await resolverContextoMotor();
+  if (!contexto.ok) {
+    return { ok: false, planId: null, resultado: null, error: contexto.error };
+  }
+
+  if (!hayServiceRole()) {
+    return {
+      ok: false,
+      planId: null,
+      resultado: null,
+      error: "No se pudo preparar el plan por un problema de configuración del servidor.",
+    };
+  }
+
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("motor_preparar_plan", {
+    p_tenant: contexto.ctx.tenantId,
+    p_ref_ts: new Date().toISOString(),
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      planId: null,
+      resultado: null,
+      error: "No se pudo preparar el plan. Probá de nuevo en unos segundos.",
+    };
+  }
+
+  const r = data as { plan_id?: string; creado?: boolean } | null;
+
+  if (!r || typeof r.plan_id !== "string") {
+    return {
+      ok: false,
+      planId: null,
+      resultado: null,
+      error: "Respuesta inesperada del servidor al preparar el plan.",
+    };
+  }
+
+  return {
+    ok: true,
+    planId: r.plan_id,
+    resultado: r.creado ? "PLAN_GENERATED" : "PENDING_PLAN_REUSED",
+    error: null,
+  };
+}
+
+export interface AprobarPlanMotorResult {
+  ok: boolean;
+  /** id del primer draft materializado, si lo hay — la UI sigue con éste. */
+  draftId: string | null;
+  estadoMaterializacion: string | null;
+  error: string | null;
+}
+
+/**
+ * Approval 1 + materialización automática. La identidad humana se deriva
+ * acá mismo (auth.uid() + membresía) — nunca se acepta un p_usuario del
+ * browser. Idempotente: aprobar dos veces el mismo plan no duplica nada
+ * (motor.aprobar_plan tiene un índice único parcial sobre plan_approvals;
+ * motor.materializar_plan devuelve YA_MATERIALIZADO si ya corrió).
+ */
+export async function aprobarPlanMotorAction(
+  planId: string,
+): Promise<AprobarPlanMotorResult> {
+  if (!planId || typeof planId !== "string") {
+    return { ok: false, draftId: null, estadoMaterializacion: null, error: "Falta el ID del plan." };
+  }
+
+  const contexto = await resolverContextoMotor();
+  if (!contexto.ok) {
+    return { ok: false, draftId: null, estadoMaterializacion: null, error: contexto.error };
+  }
+
+  if (!hayServiceRole()) {
+    return {
+      ok: false,
+      draftId: null,
+      estadoMaterializacion: null,
+      error: "No se pudo aprobar el plan por un problema de configuración del servidor.",
+    };
+  }
+
+  const admin = createAdminClient();
+
+  // Approval 1. motor.aprobar_plan valida internamente que el plan
+  // pertenezca al tenant (RAISE EXCEPTION si no) — acá eso llega como
+  // `error`, y lo tratamos como "no encontrado", nunca como autorización
+  // implícita de otro tenant.
+  const { error: errorAprobar } = await admin.rpc("motor_aprobar_plan", {
+    p_tenant: contexto.ctx.tenantId,
+    p_plan_id: planId,
+    p_usuario: contexto.ctx.usuario,
+  });
+
+  if (errorAprobar) {
+    return {
+      ok: false,
+      draftId: null,
+      estadoMaterializacion: null,
+      error: "No encontramos ese plan para tu cuenta.",
+    };
+  }
+
+  // AUTO: materializar. Idempotente por diseño (YA_MATERIALIZADO si ya corrió).
+  const { data: dataMaterializar, error: errorMaterializar } = await admin.rpc(
+    "motor_materializar_plan",
+    { p_tenant: contexto.ctx.tenantId, p_plan_id: planId, p_usuario: contexto.ctx.usuario },
+  );
+
+  if (errorMaterializar) {
+    return {
+      ok: false,
+      draftId: null,
+      estadoMaterializacion: null,
+      error: "El plan se aprobó, pero no se pudo materializar. Podés reintentar en unos segundos.",
+    };
+  }
+
+  const m = dataMaterializar as {
+    estado?: string;
+    drafts?: Array<{ draft_id?: string; estado?: string }>;
+  } | null;
+
+  const primerDraft = m?.drafts?.[0];
+
+  if (!primerDraft?.draft_id) {
+    return {
+      ok: true,
+      draftId: null,
+      estadoMaterializacion: m?.estado ?? null,
+      error:
+        m?.estado === "PLAN_NO_MATERIALIZABLE" || m?.estado === "SIN_SELECCIONADOS"
+          ? "El plan quedó aprobado, pero no generó ningún draft (sin candidatos seleccionados)."
+          : null,
+    };
+  }
+
+  return {
+    ok: true,
+    draftId: primerDraft.draft_id,
+    estadoMaterializacion: m?.estado ?? primerDraft.estado ?? null,
+    error: null,
+  };
+}
+
+export interface DraftPreviewMotorResult {
+  ok: boolean;
+  preview: Record<string, unknown> | null;
+  error: string | null;
+}
+
+/** Lectura del draft materializado, para mostrar antes de Approval 2. */
+export async function obtenerDraftPreviewMotorAction(
+  draftId: string,
+): Promise<DraftPreviewMotorResult> {
+  if (!draftId || typeof draftId !== "string") {
+    return { ok: false, preview: null, error: "Falta el ID del draft." };
+  }
+
+  const contexto = await resolverContextoMotor();
+  if (!contexto.ok) {
+    return { ok: false, preview: null, error: contexto.error };
+  }
+
+  if (!hayServiceRole()) {
+    return { ok: false, preview: null, error: "No se pudo leer el draft por un problema de configuración del servidor." };
+  }
+
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("motor_preview_draft", {
+    p_tenant: contexto.ctx.tenantId,
+    p_draft_id: draftId,
+  });
+
+  if (error || !data) {
+    return { ok: false, preview: null, error: "No encontramos ese draft para tu cuenta." };
+  }
+
+  return { ok: true, preview: data as Record<string, unknown>, error: null };
+}
+
+export interface AprobarDraftMotorResult {
+  ok: boolean;
+  executionIntentId: string | null;
+  /** "READY" habilita el siguiente paso (autorización económica); cualquier otro valor, no. */
+  estadoIntent: string | null;
+  gate: Record<string, unknown> | null;
+  error: string | null;
+}
+
+/**
+ * Approval 2 + creación automática del Execution Intent. Misma frontera de
+ * identidad que Approval 1. El canal se resuelve server-side (nunca lo
+ * elige el browser): el único canal utilizable mientras
+ * REAL_PROVIDER_ENABLED=false es uno con provider='fake' ya configurado
+ * para el tenant (motor_canales_visibles, ya autenticado=true, ya filtra
+ * por los tenants visibles del usuario real).
+ */
+export async function aprobarDraftMotorAction(
+  draftId: string,
+): Promise<AprobarDraftMotorResult> {
+  if (!draftId || typeof draftId !== "string") {
+    return { ok: false, executionIntentId: null, estadoIntent: null, gate: null, error: "Falta el ID del draft." };
+  }
+
+  const contexto = await resolverContextoMotor();
+  if (!contexto.ok) {
+    return { ok: false, executionIntentId: null, estadoIntent: null, gate: null, error: contexto.error };
+  }
+
+  if (!hayServiceRole()) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: "No se pudo aprobar el draft por un problema de configuración del servidor.",
+    };
+  }
+
+  const supabase = await createClient();
+  const admin = createAdminClient();
+
+  // Necesitamos la versión del draft (preview_draft ya la expone) antes de
+  // aprobar y crear el intent.
+  const { data: previewData, error: previewError } = await admin.rpc("motor_preview_draft", {
+    p_tenant: contexto.ctx.tenantId,
+    p_draft_id: draftId,
+  });
+
+  if (previewError || !previewData) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: "No encontramos ese draft para tu cuenta.",
+    };
+  }
+
+  const preview = previewData as { version?: number };
+
+  if (typeof preview.version !== "number") {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: "El draft no tiene una versión válida.",
+    };
+  }
+
+  // HUMANO: Approval 2.
+  const { data: aprobarData, error: aprobarError } = await admin.rpc("motor_aprobar_draft", {
+    p_tenant: contexto.ctx.tenantId,
+    p_draft_id: draftId,
+    p_usuario: contexto.ctx.usuario,
+  });
+
+  if (aprobarError) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: "No se pudo aprobar el draft.",
+    };
+  }
+
+  const a = aprobarData as { estado?: string };
+  if (a?.estado !== "APROBADO_PARA_EJECUCION") {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: `El draft no quedó en condiciones de ejecutarse (${a?.estado ?? "estado desconocido"}).`,
+    };
+  }
+
+  // Resolver el canal server-side, con el cliente autenticado (ya filtra
+  // por tenants visibles del usuario real) — nunca un canal_id del browser.
+  const { data: canales, error: canalesError } = await supabase.rpc("motor_canales_visibles");
+
+  if (canalesError) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: "No se pudo resolver el canal de envío.",
+    };
+  }
+
+  const canal = (
+    (canales as Array<{
+      canal_id: string;
+      tenant_id: string;
+      provider: string;
+      activo: boolean;
+      es_fake: boolean;
+    }> | null) ?? []
+  ).find((c) => c.tenant_id === contexto.ctx.tenantId && c.activo && c.es_fake);
+
+  if (!canal) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: "Tu cuenta no tiene un canal de prueba (fake) configurado todavía.",
+    };
+  }
+
+  // AUTO: crear execution intent.
+  const { data: intentData, error: intentError } = await admin.rpc("motor_crear_execution_intent", {
+    p_tenant: contexto.ctx.tenantId,
+    p_draft_id: draftId,
+    p_version: preview.version,
+    p_canal_id: canal.canal_id,
+    p_provider: canal.provider,
+    p_actor: contexto.ctx.usuario,
+    p_ref_ts: new Date().toISOString(),
+    p_proposito: "campana",
+  });
+
+  if (intentError) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error: "El draft se aprobó, pero no se pudo crear la ejecución. Podés reintentar en unos segundos.",
+    };
+  }
+
+  const intent = intentData as {
+    estado?: string;
+    execution_id?: string;
+    gate?: Record<string, unknown>;
+  } | null;
+
+  if (!intent?.execution_id) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: intent?.estado ?? null,
+      gate: intent?.gate ?? null,
+      error: "Respuesta inesperada del servidor al crear la ejecución.",
+    };
+  }
+
+  return {
+    ok: intent.estado === "READY",
+    executionIntentId: intent.execution_id,
+    estadoIntent: intent.estado ?? null,
+    gate: intent.gate ?? null,
+    error:
+      intent.estado === "READY"
+        ? null
+        : "La ejecución quedó bloqueada por el gate de seguridad. Revisá el motivo antes de continuar.",
+  };
+}
+
+export interface EstadoEjecucionMotorResult {
+  ok: boolean;
+  /** Etiqueta ya lista para mostrar, nunca afirma un envío real mientras el provider sea fake. */
+  estado:
+    | "PENDIENTE"
+    | "PROCESANDO"
+    | "COMPLETADO"
+    | "PARCIAL"
+    | "FALLIDO"
+    | "DESCONOCIDO"
+    | null;
+  detalle: Record<string, unknown> | null;
+  error: string | null;
+}
+
+const MAPA_ESTADO_INTENT: Record<string, EstadoEjecucionMotorResult["estado"]> = {
+  READY: "PENDIENTE",
+  CREDITS_RESERVED: "PENDIENTE",
+  DISPATCHING: "PROCESANDO",
+  COMPLETED: "COMPLETADO",
+  PARTIAL: "PARCIAL",
+  FAILED: "FALLIDO",
+  CANCELLED: "FALLIDO",
+  GATE_BLOCKED: "FALLIDO",
+};
+
+/** Lectura del estado final de una ejecución, para la sección "Estado" del Dashboard. */
+export async function obtenerEstadoEjecucionMotorAction(
+  executionIntentId: string,
+): Promise<EstadoEjecucionMotorResult> {
+  if (!executionIntentId || typeof executionIntentId !== "string") {
+    return { ok: false, estado: null, detalle: null, error: "Falta el ID de la ejecución." };
+  }
+
+  const contexto = await resolverContextoMotor();
+  if (!contexto.ok) {
+    return { ok: false, estado: null, detalle: null, error: contexto.error };
+  }
+
+  if (!hayServiceRole()) {
+    return { ok: false, estado: null, detalle: null, error: "No se pudo leer el estado por un problema de configuración del servidor." };
+  }
+
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("motor_estado_execution_intent", {
+    p_tenant: contexto.ctx.tenantId,
+    p_execution_intent_id: executionIntentId,
+  });
+
+  if (error || !data) {
+    return { ok: false, estado: null, detalle: null, error: "No encontramos esa ejecución para tu cuenta." };
+  }
+
+  const d = data as { intent_estado?: string };
+
+  return {
+    ok: true,
+    estado: (d.intent_estado && MAPA_ESTADO_INTENT[d.intent_estado]) ?? "DESCONOCIDO",
+    detalle: data as Record<string, unknown>,
+    error: null,
+  };
+}

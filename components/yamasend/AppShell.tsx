@@ -37,6 +37,7 @@ import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
 /** Clave de localStorage con el id de la conversación de IA abierta. */
 const IA_CONVERSACION_ABIERTA_KEY = "ys-ia-conversacion-abierta";
 import CampaignDetailModal from "./CampaignDetailModal";
+import MotorRecomendaciones from "./MotorRecomendaciones";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
@@ -1619,6 +1620,9 @@ export default function AppShell({
               setWizardOpen(true);
             }}
           />
+          <div className="px-4 md:px-6 pb-6">
+            <MotorRecomendaciones />
+          </div>
         </div>
       )}
 
