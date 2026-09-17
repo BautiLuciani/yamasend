@@ -85,7 +85,7 @@ export default function MotorDiagnosticoForm() {
         disabled={disabled}
         className="rounded-xl px-4 py-3 text-[14px] font-bold bg-ys-green text-white hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {disabled ? "Congelando..." : "Congelar actor económico"}
+        {disabled ? "Procesando..." : "Confirmar y reservar créditos"}
       </button>
 
       {resultado ? (
@@ -97,9 +97,19 @@ export default function MotorDiagnosticoForm() {
               : "bg-red-50 text-red-700 border border-red-200")
           }
         >
-          {resultado.ok
-            ? `Estado: ${resultado.estado ?? "OK"}`
-            : `Error: ${resultado.error ?? "desconocido"}`}
+          {resultado.ok ? (
+            <>
+              Binding: {resultado.bindingEstado ?? "OK"} · Reserva: {resultado.reservaEstado ?? "OK"}
+              {resultado.jobId ? ` · Job: ${resultado.jobId}` : ""}
+            </>
+          ) : (
+            <>
+              Error: {resultado.error ?? "desconocido"}
+              {resultado.bindingEstado
+                ? ` (binding: ${resultado.bindingEstado}${resultado.reservaEstado ? `, reserva: ${resultado.reservaEstado}` : ""})`
+                : ""}
+            </>
+          )}
         </div>
       ) : null}
     </form>

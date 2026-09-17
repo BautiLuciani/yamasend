@@ -6,10 +6,12 @@ import MotorDiagnosticoForm from "./MotorDiagnosticoForm";
  * DIAGNOSTIC_ONLY=true
  *
  * Página exclusivamente diagnóstica para cerrar el E2E técnico de Motor V1
- * (FINAL-4 R3). No integra Motor V1 al flujo productivo: solo expone, de
- * forma manual y con confirmación humana explícita, el primer paso que el
- * propio contrato SQL exige antes de poder reservar créditos para una
- * ejecución de Motor V1 — congelar quién autoriza el gasto.
+ * (FINAL-4 R3) y, desde PRODUCT-P1, la reserva de créditos derivada de esa
+ * autorización. No integra Motor V1 al flujo productivo: solo expone, de
+ * forma manual y con confirmación humana explícita, la autorización
+ * económica (congelar quién autoriza el gasto) seguida de la reserva
+ * mecánica de los créditos ya autorizados. Sigue sin hacer claim/process de
+ * jobs, sin tocar el webhook de envío legacy y sin enviar mensajes.
  *
  * POST_R3_DECISION_REQUIRED=true: una vez cerrado el E2E, decidir si esta
  * página se elimina, se mantiene como herramienta interna protegida, o se
@@ -35,8 +37,10 @@ export default async function MotorDiagnosticoPage() {
             Motor V1 — Diagnóstico E2E
           </div>
           <div className="text-[13px] text-ys-muted font-medium leading-[1.5]">
-            Esta acción únicamente registra la autorización económica del
-            Intent. No reserva créditos, no crea jobs y no envía mensajes.
+            Esta acción registra la autorización económica del Intent y
+            reserva los créditos correspondientes (crea el job de despacho
+            en PENDIENTE). No hace claim/process de ese job ni envía
+            mensajes.
           </div>
         </div>
 
