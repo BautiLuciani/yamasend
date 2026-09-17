@@ -837,7 +837,7 @@ export async function obtenerEstadoEjecucionMotorAction(
 
   return {
     ok: true,
-    estado: (d.intent_estado && MAPA_ESTADO_INTENT[d.intent_estado]) ?? "DESCONOCIDO",
+    estado: (d.intent_estado ? MAPA_ESTADO_INTENT[d.intent_estado] : undefined) ?? "DESCONOCIDO",
     detalle: data as Record<string, unknown>,
     error: null,
   };
