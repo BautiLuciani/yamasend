@@ -400,6 +400,17 @@ export interface PrepararPlanMotorResult {
   planId: string | null;
   /** "PLAN_GENERATED" (recién creado) | "PENDING_PLAN_REUSED" (ya existía) */
   resultado: "PLAN_GENERATED" | "PENDING_PLAN_REUSED" | null;
+  /**
+   * Estado real del plan (uno de los 5 que motor.planes permite). La UI
+   * SOLO debe ofrecer "Aprobar plan" cuando esto sea 'PLAN_GENERADO' — es
+   * la única defensa correcta contra aprobar un plan sin candidatos, en
+   * vez de inferirlo del lado del cliente.
+   */
+  planEstado: string | null;
+  nEvaluados: number | null;
+  nSeleccionados: number | null;
+  nFuturos: number | null;
+  nExcluidos: number | null;
   error: string | null;
 }
 
@@ -413,7 +424,17 @@ export interface PrepararPlanMotorResult {
 export async function prepararPlanMotorAction(): Promise<PrepararPlanMotorResult> {
   const contexto = await resolverContextoMotor();
   if (!contexto.ok) {
-    return { ok: false, planId: null, resultado: null, error: contexto.error };
+    return {
+      ok: false,
+      planId: null,
+      resultado: null,
+      planEstado: null,
+      nEvaluados: null,
+      nSeleccionados: null,
+      nFuturos: null,
+      nExcluidos: null,
+      error: contexto.error,
+    };
   }
 
   if (!hayServiceRole()) {
@@ -421,6 +442,11 @@ export async function prepararPlanMotorAction(): Promise<PrepararPlanMotorResult
       ok: false,
       planId: null,
       resultado: null,
+      planEstado: null,
+      nEvaluados: null,
+      nSeleccionados: null,
+      nFuturos: null,
+      nExcluidos: null,
       error: "No se pudo preparar el plan por un problema de configuración del servidor.",
     };
   }
@@ -437,17 +463,35 @@ export async function prepararPlanMotorAction(): Promise<PrepararPlanMotorResult
       ok: false,
       planId: null,
       resultado: null,
+      planEstado: null,
+      nEvaluados: null,
+      nSeleccionados: null,
+      nFuturos: null,
+      nExcluidos: null,
       error: "No se pudo preparar el plan. Probá de nuevo en unos segundos.",
     };
   }
 
-  const r = data as { plan_id?: string; creado?: boolean } | null;
+  const r = data as {
+    plan_id?: string;
+    creado?: boolean;
+    plan_estado?: string;
+    n_evaluados?: number;
+    n_seleccionados?: number;
+    n_futuros?: number;
+    n_excluidos?: number;
+  } | null;
 
   if (!r || typeof r.plan_id !== "string") {
     return {
       ok: false,
       planId: null,
       resultado: null,
+      planEstado: null,
+      nEvaluados: null,
+      nSeleccionados: null,
+      nFuturos: null,
+      nExcluidos: null,
       error: "Respuesta inesperada del servidor al preparar el plan.",
     };
   }
@@ -456,6 +500,11 @@ export async function prepararPlanMotorAction(): Promise<PrepararPlanMotorResult
     ok: true,
     planId: r.plan_id,
     resultado: r.creado ? "PLAN_GENERATED" : "PENDING_PLAN_REUSED",
+    planEstado: r.plan_estado ?? null,
+    nEvaluados: r.n_evaluados ?? null,
+    nSeleccionados: r.n_seleccionados ?? null,
+    nFuturos: r.n_futuros ?? null,
+    nExcluidos: r.n_excluidos ?? null,
     error: null,
   };
 }

@@ -27,6 +27,14 @@ import {
 type Paso =
   | "inicial"
   | "plan_listo"
+  /** Plan preparado, pero motor_preparar_plan dice que no hay nada para
+   * aprobar (plan_estado != 'PLAN_GENERADO') — estado terminal, nunca
+   * ofrece "Aprobar plan". */
+  | "sin_oportunidades"
+  /** Approval1 se completó (ok=true), pero no se generó ningún draft —
+   * defensa adicional para un caso que la UI ya debería evitar mostrando
+   * el botón solo cuando corresponde. También estado terminal. */
+  | "sin_draft"
   | "draft_listo"
   | "intent_listo"
   | "ejecucion_confirmada";
@@ -38,6 +46,10 @@ export default function MotorRecomendaciones() {
 
   const [planId, setPlanId] = useState<string | null>(null);
   const [planMensaje, setPlanMensaje] = useState<string | null>(null);
+  const [resumenSinOportunidades, setResumenSinOportunidades] = useState<{
+    nEvaluados: number | null;
+    nSeleccionados: number | null;
+  } | null>(null);
 
   const [draftId, setDraftId] = useState<string | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
@@ -61,6 +73,19 @@ export default function MotorRecomendaciones() {
       return;
     }
 
+    // Única defensa correcta: mostrar "Aprobar plan" solo cuando el propio
+    // plan_estado dice que hay algo para decidir. Cualquier otro de los 5
+    // estados posibles de motor.planes es un estado terminal informativo.
+    if (r.planEstado !== "PLAN_GENERADO") {
+      setPlanId(r.planId);
+      setResumenSinOportunidades({
+        nEvaluados: r.nEvaluados,
+        nSeleccionados: r.nSeleccionados,
+      });
+      setPaso("sin_oportunidades");
+      return;
+    }
+
     setPlanId(r.planId);
     setPlanMensaje(
       r.resultado === "PENDING_PLAN_REUSED"
@@ -77,8 +102,18 @@ export default function MotorRecomendaciones() {
     const r = await aprobarPlanMotorAction(planId);
     setCargando(false);
 
-    if (!r.ok || !r.draftId) {
+    if (!r.ok) {
+      // ERROR REAL: no se pudo completar ni el approval ni el materialize.
       setError(r.error ?? "No se pudo aprobar el plan.");
+      return;
+    }
+
+    if (!r.draftId) {
+      // OPERACIÓN VÁLIDA SIN DRAFT: Approval1 se registró, pero no hay
+      // nada para materializar. Nunca volver a mostrar "Aprobar plan"
+      // sobre este plan — defensa adicional, aunque la UI ya no debería
+      // haber ofrecido este botón para un plan sin oportunidades.
+      setPaso("sin_draft");
       return;
     }
 
@@ -142,6 +177,7 @@ export default function MotorRecomendaciones() {
     setError(null);
     setPlanId(null);
     setPlanMensaje(null);
+    setResumenSinOportunidades(null);
     setDraftId(null);
     setPreview(null);
     setExecutionIntentId(null);
@@ -198,6 +234,53 @@ export default function MotorRecomendaciones() {
             className="self-start rounded-xl px-4 py-2.5 text-[13.5px] font-bold bg-ys-green text-white hover:opacity-90 disabled:opacity-60"
           >
             {cargando ? "Procesando..." : "Aprobar plan"}
+          </button>
+        </div>
+      )}
+
+      {paso === "sin_oportunidades" && (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-ys-border px-4 py-3 text-[13px]">
+            <div className="font-semibold mb-1">
+              No hay recomendaciones para ejecutar por ahora.
+            </div>
+            <div className="text-ys-muted">
+              El Motor analizó tus contactos, pero actualmente ninguno cumple todas las
+              condiciones necesarias para preparar una campaña.
+            </div>
+            {resumenSinOportunidades?.nEvaluados != null ? (
+              <div className="text-ys-muted mt-2">
+                {resumenSinOportunidades.nEvaluados} contactos analizados ·{" "}
+                {resumenSinOportunidades.nSeleccionados ?? 0} oportunidades listas ahora
+              </div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={handleReiniciar}
+            className="self-start rounded-xl px-4 py-2 text-[13px] font-bold border border-ys-border hover:bg-ys-el2"
+          >
+            Volver a evaluar más tarde
+          </button>
+        </div>
+      )}
+
+      {paso === "sin_draft" && (
+        <div className="flex flex-col gap-3">
+          <div className="rounded-xl border border-ys-border px-4 py-3 text-[13px]">
+            <div className="font-semibold mb-1">
+              No hay recomendaciones para ejecutar por ahora.
+            </div>
+            <div className="text-ys-muted">
+              El plan quedó aprobado, pero no se generó ninguna campaña para enviar.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleReiniciar}
+            className="self-start rounded-xl px-4 py-2 text-[13px] font-bold border border-ys-border hover:bg-ys-el2"
+          >
+            Volver a evaluar más tarde
           </button>
         </div>
       )}
