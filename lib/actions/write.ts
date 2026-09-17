@@ -1125,6 +1125,38 @@ async function cargarCampanaEditable(campanaId: string): Promise<
   if (error) return { ok: false, error: error.message };
   if (!campana) return { ok: false, error: "No encontré esa campaña." };
 
+  // P0 — Motor Draft / Legacy Execution Isolation.
+  // Una campaña materializada por motor.materializar_plan (Motor V1) no debe
+  // poder editarse, reprogramarse ni enviarse por el camino legacy: eso
+  // saltearía aprobar_draft, motor_congelar_actor_economico,
+  // reservar_creditos_intent y el execution gate del Motor. La provenance
+  // se determina por la relación existente motor.drafts.campana_id (no se
+  // agrega columna origen ni status nuevo), vía el puente de solo lectura
+  // yamas_send_es_campana_motor (el schema motor no está expuesto a
+  // PostgREST). Este chequeo corre ANTES de cualquier mutación y cubre a la
+  // vez rescheduleCampaignAction, updateCampaignTemplateAction y
+  // updateCampaignAudienceAction, que son las tres únicas llamadoras.
+  const { data: esCampanaMotor, error: motorCheckError } = await supabase.rpc(
+    "yamas_send_es_campana_motor",
+    { p_campana_id: campanaId },
+  );
+
+  if (motorCheckError) {
+    // Fail-closed: si no podemos determinar la provenance, no se edita.
+    return {
+      ok: false,
+      error: "No pudimos verificar el origen de esta campaña. Probá de nuevo en unos segundos.",
+    };
+  }
+
+  if (esCampanaMotor) {
+    return {
+      ok: false,
+      error: "campana_de_motor",
+      motivo: `"${campana.nombre}" pertenece al Motor V1 y debe gestionarse desde su flujo de aprobación, no desde Campañas.`,
+    };
+  }
+
   const status = (campana.status ?? "").toLowerCase();
   if (!ESTADOS_CAMPANA_EDITABLE.includes(status as (typeof ESTADOS_CAMPANA_EDITABLE)[number])) {
     return {
