@@ -223,7 +223,7 @@ export default function MotorRecomendaciones() {
               <div>
                 <span className="font-bold">Mensaje:</span> {String(preview.mensaje_draft)}
               </div>
-            )}
+            ) : null}
             {Array.isArray(preview.warnings) && preview.warnings.length > 0 ? (
               <div className="text-ys-warn-text">
                 Avisos: {preview.warnings.map((w) => (w as { codigo?: string }).codigo).join(", ")}
