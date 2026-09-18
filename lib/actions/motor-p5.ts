@@ -3,10 +3,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient, hayServiceRole } from "@/lib/supabase/admin";
 import { getCurrentMembership } from "@/lib/auth/permisos";
-import {
-  confirmarEjecucionMotorAction,
-  type ConfirmarEjecucionMotorResult,
-} from "@/lib/actions/motor";
 
 /**
  * PRODUCT-P5-D.4 — Página temporal de autorización humana real para el
@@ -34,10 +30,12 @@ import {
  * prepararIntentP5Action simplemente falla con el mismo GATE_BLOCKED que
  * cualquier otro llamador — no hay ningún atajo acá.
  *
- * Reutiliza confirmarEjecucionMotorAction (lib/actions/motor.ts) SIN
- * modificarla: mismo contrato, mismo binding + reserva de crédito que ya
- * hace para el resto de la app. Esta página no cambia ese comportamiento,
- * solo lo invoca sobre el intent P5 ya resuelto server-side.
+ * PRODUCT-P5-D.9: el binding humano (motor_congelar_actor_economico) sigue
+ * el mismo patrón certificado que confirmarEjecucionMotorAction (nunca se
+ * modificó esa función). La reserva de crédito, en cambio, usa una
+ * primitiva atómica dedicada (motor.reservar_y_preparar_dispatches_intent)
+ * que también crea los execution_dispatches en la misma transacción SQL —
+ * elimina estructuralmente la carrera con P2 diagnosticada en P5-D.8.
  */
 
 const TENANT_P5 = "5491137821111";
@@ -286,17 +284,35 @@ export async function prepararIntentP5Action(): Promise<PrepararIntentP5Result> 
   };
 }
 
+export interface AutorizarEjecucionP5Result {
+  ok: boolean;
+  bindingEstado: string | null;
+  reservaEstado: string | null;
+  jobId: string | null;
+  dispatchCount: number | null;
+  error: string | null;
+}
+
+const MENSAJES_BINDING_P5: Record<string, string> = {
+  sin_sesion: "No hay sesión activa.",
+  intent_no_encontrado: "No encontramos esa ejecución.",
+  sin_membresia_activa_en_el_tenant: "Tu cuenta no tiene una membresía activa como empleado en este tenant.",
+};
+
 /**
- * Autoriza económicamente el fixture P5. Resuelve el executionIntentId
- * SERVER-SIDE (nunca del cliente) y reutiliza confirmarEjecucionMotorAction
- * sin modificarla: mismo binding real vía auth.uid(), misma reserva.
+ * PRODUCT-P5-D.9 — reemplaza la reserva simple (confirmarEjecucionMotorAction)
+ * por la primitiva atómica que elimina estructuralmente la carrera P2/P4
+ * diagnosticada en P5-D.8: reserva + job + dispatches en una sola
+ * transacción SQL (motor.reservar_y_preparar_dispatches_intent). El
+ * binding humano NO cambia — sigue siendo el mismo patrón certificado
+ * (supabase.auth.getUser(), sesión real por cookies, nunca service_role
+ * como actor humano). Resuelve el executionIntentId SERVER-SIDE, nunca
+ * del cliente.
  */
-export async function autorizarEjecucionP5Action(): Promise<
-  ConfirmarEjecucionMotorResult | { ok: false; bindingEstado: null; reservaEstado: null; jobId: null; error: string }
-> {
+export async function autorizarEjecucionP5Action(): Promise<AutorizarEjecucionP5Result> {
   const membership = await getCurrentMembership();
   if (!accesoAutorizado(membership)) {
-    return { ok: false, bindingEstado: null, reservaEstado: null, jobId: null, error: "No autorizado." };
+    return { ok: false, bindingEstado: null, reservaEstado: null, jobId: null, dispatchCount: null, error: "No autorizado." };
   }
 
   const estado = await leerEstadoFixtureP5Action();
@@ -306,9 +322,162 @@ export async function autorizarEjecucionP5Action(): Promise<
       bindingEstado: null,
       reservaEstado: null,
       jobId: null,
+      dispatchCount: null,
       error: "El intent del fixture P5 todavía no está preparado.",
     };
   }
 
-  return confirmarEjecucionMotorAction(estado.intentId);
+  // Paso 1 — HUMANO. Idéntico al patrón ya certificado de
+  // confirmarEjecucionMotorAction: cliente autenticado por cookies, sin
+  // service_role.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, bindingEstado: null, reservaEstado: null, jobId: null, dispatchCount: null, error: "No hay sesión activa." };
+  }
+
+  const { data: bindingData, error: bindingError } = await supabase.rpc("motor_congelar_actor_economico", {
+    p_execution_intent_id: estado.intentId,
+  });
+
+  if (bindingError) {
+    return {
+      ok: false,
+      bindingEstado: null,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "No se pudo confirmar la autorización económica. Probá de nuevo en unos segundos.",
+    };
+  }
+
+  const b = bindingData as { ok?: boolean; estado?: string; error?: string } | null;
+
+  if (!b || typeof b.ok !== "boolean") {
+    return {
+      ok: false,
+      bindingEstado: null,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "Respuesta inesperada del servidor al confirmar la autorización económica.",
+    };
+  }
+
+  let bindingEstado: string | null = null;
+
+  if (!b.ok) {
+    if (b.error !== "intent_no_ready") {
+      return {
+        ok: false,
+        bindingEstado: null,
+        reservaEstado: null,
+        jobId: null,
+        dispatchCount: null,
+        error: MENSAJES_BINDING_P5[b.error ?? ""] ?? "No se pudo confirmar la autorización económica.",
+      };
+    }
+    // intent_no_ready: puede ser un reintento sobre un intent que ya
+    // avanzó. bindingEstado queda null explícito; la evidencia del paso 2
+    // termina de resolverlo — mismo patrón que confirmarEjecucionMotorAction.
+  } else {
+    bindingEstado = b.estado ?? null;
+  }
+
+  // Paso 2 — ATÓMICO (service_role, wrapper public P5-D.9). Reserva +
+  // job + dispatches en una sola transacción SQL: nunca deja observable
+  // "job existe sin dispatch".
+  if (!hayServiceRole()) {
+    return {
+      ok: false,
+      bindingEstado,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "No se pudo completar la preparación por un problema de configuración del servidor.",
+    };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("motor_reservar_y_preparar_dispatches_intent", {
+    p_execution_intent_id: estado.intentId,
+  });
+
+  if (error) {
+    return {
+      ok: false,
+      bindingEstado,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "Hubo un error al preparar la reserva y el dispatch. Podés reintentar en unos segundos.",
+    };
+  }
+
+  const rr = data as {
+    ok?: boolean;
+    estado?: string;
+    job_id?: string;
+    dispatch_count?: number;
+  } | null;
+
+  if (!rr || typeof rr.ok !== "boolean") {
+    return {
+      ok: false,
+      bindingEstado,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "Respuesta inesperada del servidor al preparar la reserva y el dispatch.",
+    };
+  }
+
+  if (rr.ok) {
+    // RESERVADA_Y_DESPACHADA (recién creada) o RESERVA_EXISTENTE
+    // (idempotente, ventana de carrera mientras el intent seguía READY).
+    return {
+      ok: true,
+      bindingEstado,
+      reservaEstado: rr.estado ?? null,
+      jobId: rr.job_id ?? null,
+      dispatchCount: rr.dispatch_count ?? null,
+      error: null,
+    };
+  }
+
+  // rr.ok === false. Antes de tratarlo como rechazo, verificar evidencia
+  // persistida (mismo patrón que intentarReserva en lib/actions/motor.ts):
+  // el intent ya puede tener una reserva Y dispatches vivos de un intento
+  // anterior exitoso.
+  const evidencia = await leerEstadoFixtureP5Action();
+  if (
+    evidencia.ok &&
+    evidencia.intentId === estado.intentId &&
+    evidencia.bindingExiste &&
+    evidencia.reservaExiste &&
+    evidencia.reservaEstado === "RESERVADA" &&
+    evidencia.jobId &&
+    evidencia.dispatchExiste
+  ) {
+    return {
+      ok: true,
+      bindingEstado,
+      reservaEstado: "RESERVA_YA_CONFIRMADA",
+      jobId: evidencia.jobId,
+      dispatchCount: null,
+      error: null,
+    };
+  }
+
+  return {
+    ok: false,
+    bindingEstado,
+    reservaEstado: rr.estado ?? null,
+    jobId: null,
+    dispatchCount: null,
+    error: `No se pudo preparar la reserva y el dispatch (${rr.estado ?? "motivo desconocido"}).`,
+  };
 }

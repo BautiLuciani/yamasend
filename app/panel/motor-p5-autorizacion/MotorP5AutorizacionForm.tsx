@@ -65,7 +65,7 @@ export default function MotorP5AutorizacionForm({ estadoInicial }: Props) {
     }
     setMensaje({
       tipo: "ok",
-      texto: `Autorización completada. Binding: ${r.bindingEstado ?? "OK"} · Reserva: ${r.reservaEstado ?? "OK"}${r.jobId ? ` · Job: ${r.jobId}` : ""}`,
+      texto: `Autorización completada. Binding: ${r.bindingEstado ?? "OK"} · Reserva: ${r.reservaEstado ?? "OK"}${r.jobId ? ` · Job: ${r.jobId}` : ""}${typeof r.dispatchCount === "number" ? ` · Dispatches: ${r.dispatchCount}` : ""}`,
     });
     await refrescar();
   }
