@@ -250,16 +250,39 @@ export async function prepararIntentP5Action(): Promise<PrepararIntentP5Result> 
       intentId: null,
       estado: intent?.estado ?? null,
       gate: intent?.gate ?? null,
-      error: "Respuesta inesperada del servidor al crear el intent.",
+      error: `Estado inesperado del servidor al crear el intent (${intent?.estado ?? "sin respuesta"}).`,
+    };
+  }
+
+  // INTENT_EXISTENTE: motor_crear_execution_intent encontró un intent
+  // vigente (no CANCELLED/GATE_BLOCKED) con la misma clave de idempotencia
+  // — normalmente ya detectado antes por leerEstadoFixtureP5Action, pero
+  // posible también si otra llamada concurrente lo creó justo antes. No es
+  // un bloqueo: es éxito reutilizando lo que ya existe.
+  if (intent.estado === "INTENT_EXISTENTE") {
+    return { ok: true, intentId: intent.execution_id, estado: "INTENT_EXISTENTE", gate: null, error: null };
+  }
+
+  if (intent.estado === "READY") {
+    return { ok: true, intentId: intent.execution_id, estado: "READY", gate: intent.gate ?? null, error: null };
+  }
+
+  if (intent.estado === "GATE_BLOCKED") {
+    return {
+      ok: false,
+      intentId: intent.execution_id,
+      estado: "GATE_BLOCKED",
+      gate: intent.gate ?? null,
+      error: "El intent quedó bloqueado por el gate de seguridad.",
     };
   }
 
   return {
-    ok: intent.estado === "READY",
+    ok: false,
     intentId: intent.execution_id,
     estado: intent.estado ?? null,
     gate: intent.gate ?? null,
-    error: intent.estado === "READY" ? null : "El intent quedó bloqueado por el gate de seguridad.",
+    error: `Estado inesperado del intent (${intent.estado ?? "desconocido"}).`,
   };
 }
 
