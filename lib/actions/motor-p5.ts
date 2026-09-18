@@ -191,13 +191,18 @@ export async function prepararIntentP5Action(): Promise<PrepararIntentP5Result> 
     };
   }
 
-  // Reutilizar si ya existe, nunca duplicar. Misma RPC que la lectura de
-  // estado, ya revalida membership por su cuenta.
+  // Reutilizar si ya existe Y sigue en un estado desde el que tiene sentido
+  // autorizar (READY) — nunca uno terminal (COMPLETED/PARTIAL/FAILED): un
+  // intent terminal es un resultado real ya sucedido, no algo "preparado"
+  // para un segundo intento. Si el más reciente es terminal, seguimos de
+  // largo e intentamos crear uno nuevo — motor_crear_execution_intent
+  // decide por su propia idempotency_key (basada en el approval_2_id
+  // vigente) si reutiliza o crea, sin que esta capa tenga que adivinarlo.
   const existente = await leerEstadoFixtureP5Action();
   if (!existente.ok) {
     return { ok: false, intentId: null, estado: null, gate: null, error: existente.error };
   }
-  if (existente.intentId) {
+  if (existente.intentId && existente.intentEstado === "READY") {
     return { ok: true, intentId: existente.intentId, estado: existente.intentEstado, gate: null, error: null };
   }
   if (existente.draftEstado !== "APROBADO_PARA_EJECUCION") {

@@ -94,8 +94,10 @@ export default function MotorP5AutorizacionForm({ estadoInicial }: Props) {
     );
   }
 
-  const intentPreparado = Boolean(fixture.intentId);
-  const autorizacionRealizada = fixture.bindingExiste && fixture.reservaExiste;
+  const ESTADOS_TERMINALES = new Set(["COMPLETED", "PARTIAL", "FAILED"]);
+  const intentEsTerminal = fixture.intentId !== null && fixture.intentEstado !== null && ESTADOS_TERMINALES.has(fixture.intentEstado);
+  const intentPreparado = Boolean(fixture.intentId) && fixture.intentEstado === "READY";
+  const autorizacionRealizada = fixture.bindingExiste && fixture.reservaExiste && !intentEsTerminal;
 
   return (
     <div className="flex flex-col gap-4">
@@ -115,7 +117,14 @@ export default function MotorP5AutorizacionForm({ estadoInicial }: Props) {
       </div>
 
       <div className="rounded-xl border border-ys-border px-4 py-3 flex flex-col gap-1 text-[12.5px] text-ys-muted">
-        <div>Intent: {intentPreparado ? `preparado (${fixture.intentEstado})` : "no preparado"}</div>
+        {intentEsTerminal ? (
+          <div className="text-ys-text font-semibold">
+            Intento histórico: {fixture.intentEstado} ({fixture.intentId}) — no reutilizable, generá una nueva
+            aprobación para empezar un segundo intento.
+          </div>
+        ) : (
+          <div>Intent: {intentPreparado ? `preparado (${fixture.intentEstado})` : "no preparado"}</div>
+        )}
         <div>Autorización económica: {autorizacionRealizada ? "realizada" : "pendiente"}</div>
         <div>Reserva: {fixture.reservaExiste ? fixture.reservaEstado : "—"}</div>
         <div>Job: {fixture.jobId ? `${fixture.jobEstado} (${fixture.jobId})` : "—"}</div>
