@@ -422,13 +422,25 @@ export async function autorizarEjecucionP5Action(): Promise<AutorizarEjecucionP5
   });
 
   if (error) {
+    // PRODUCT-P5-D.15 — observabilidad mínima: registrar server-side el
+    // error real de PostgREST/Supabase (nunca llega al cliente) para poder
+    // diagnosticar sin tener que reproducir manualmente la RPC. Solo campos
+    // seguros: nunca API keys, headers, cookies, JWT, service_role key, ni
+    // el teléfono completo del destinatario.
+    console.error("[P5 atomic auth] RPC failed", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      executionIntentId: estado.intentId,
+    });
     return {
       ok: false,
       bindingEstado,
       reservaEstado: null,
       jobId: null,
       dispatchCount: null,
-      error: "Hubo un error al preparar la reserva y el dispatch. Podés reintentar en unos segundos.",
+      error: "No se pudo preparar la reserva y el dispatch. No vuelvas a intentar hasta verificar el estado.",
     };
   }
 
