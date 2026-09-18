@@ -5,6 +5,7 @@ import {
   leerEstadoFixtureP5Action,
   prepararIntentP5Action,
   autorizarEjecucionP5Action,
+  reaprobarDraftP5Action,
   type EstadoFixtureP5,
 } from "@/lib/actions/motor-p5";
 
@@ -25,10 +26,11 @@ interface Props {
 
 export default function MotorP5AutorizacionForm({ estadoInicial }: Props) {
   const [fixture, setFixture] = useState<EstadoFixtureP5>(estadoInicial);
-  const [accionEnCurso, setAccionEnCurso] = useState<"preparar" | "autorizar" | null>(null);
+  const [accionEnCurso, setAccionEnCurso] = useState<"preparar" | "autorizar" | "reaprobar" | null>(null);
   const [mensaje, setMensaje] = useState<{ tipo: "ok" | "error"; texto: string } | null>(
     estadoInicial.ok ? null : { tipo: "error", texto: estadoInicial.error ?? "No se pudo leer el estado del fixture." },
   );
+  const [mensajeReaprobar, setMensajeReaprobar] = useState<{ tipo: "ok" | "error"; texto: string } | null>(null);
 
   async function refrescar() {
     const r = await leerEstadoFixtureP5Action();
@@ -68,6 +70,20 @@ export default function MotorP5AutorizacionForm({ estadoInicial }: Props) {
       texto: `Autorización completada. Binding: ${r.bindingEstado ?? "OK"} · Reserva: ${r.reservaEstado ?? "OK"}${r.jobId ? ` · Job: ${r.jobId}` : ""}${typeof r.dispatchCount === "number" ? ` · Dispatches: ${r.dispatchCount}` : ""}`,
     });
     await refrescar();
+  }
+
+  async function handleReaprobar() {
+    if (accionEnCurso) return;
+    setAccionEnCurso("reaprobar");
+    setMensajeReaprobar(null);
+    const r = await reaprobarDraftP5Action();
+    setAccionEnCurso(null);
+
+    if (!r.ok) {
+      setMensajeReaprobar({ tipo: "error", texto: r.error ?? "No se pudo generar la nueva aprobación." });
+      return;
+    }
+    setMensajeReaprobar({ tipo: "ok", texto: `Nueva aprobación generada (versión ${r.version ?? "?"}).` });
   }
 
   if (!fixture.ok) {
@@ -147,6 +163,33 @@ export default function MotorP5AutorizacionForm({ estadoInicial }: Props) {
           </button>
         </>
       )}
+
+      <div className="rounded-xl border border-dashed border-ys-border px-4 py-3 flex flex-col gap-2 mt-2">
+        <div className="text-[13px] font-bold text-ys-text">Segundo intento (nuevo Approval 2)</div>
+        <div className="text-[12px] text-ys-muted font-medium leading-[1.5]">
+          Esto crea una nueva aprobación humana del draft. NO reserva créditos. NO envía WhatsApp.
+        </div>
+        {mensajeReaprobar ? (
+          <div
+            className={
+              "rounded-xl px-4 py-3 text-[13.5px] font-semibold " +
+              (mensajeReaprobar.tipo === "ok"
+                ? "bg-green-50 text-green-800 border border-green-200"
+                : "bg-red-50 text-red-700 border border-red-200")
+            }
+          >
+            {mensajeReaprobar.texto}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          disabled={accionEnCurso !== null}
+          onClick={handleReaprobar}
+          className="rounded-xl px-4 py-3 text-[14px] font-bold bg-ys-el2 text-ys-text hover:opacity-90 transition-opacity disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {accionEnCurso === "reaprobar" ? "Generando…" : "Generar nueva aprobación P5"}
+        </button>
+      </div>
     </div>
   );
 }

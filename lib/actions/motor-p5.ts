@@ -36,6 +36,16 @@ import { getCurrentMembership } from "@/lib/auth/permisos";
  * primitiva atómica dedicada (motor.reservar_y_preparar_dispatches_intent)
  * que también crea los execution_dispatches en la misma transacción SQL —
  * elimina estructuralmente la carrera con P2 diagnosticada en P5-D.8.
+ *
+ * PRODUCT-P5-D.10: el intent COMPLETED anterior (3c29e224-...) queda
+ * intacto como evidencia histórica — nunca se reutiliza, nunca se
+ * modifica. Para un segundo intento legítimo, reaprobarDraftP5Action llama
+ * ÚNICAMENTE a motor_aprobar_draft (nunca a motor_crear_execution_intent
+ * ni a ningún otro paso): genera un approval_2_id nuevo, que a su vez hace
+ * que la próxima idempotency_key sea distinta. Ningún otro efecto — ni
+ * reserva, ni job, ni dispatch. Misma identidad humana real, mismo patrón
+ * de 2 pasos: auth.uid() vía cookies para quién aprueba, admin/service_role
+ * solo para ejecutar el wrapper (que no acepta authenticated directo).
  */
 
 const TENANT_P5 = "5491137821111";
@@ -480,4 +490,61 @@ export async function autorizarEjecucionP5Action(): Promise<AutorizarEjecucionP5
     dispatchCount: null,
     error: `No se pudo preparar la reserva y el dispatch (${rr.estado ?? "motivo desconocido"}).`,
   };
+}
+
+export interface ReaprobarDraftP5Result {
+  ok: boolean;
+  version: number | null;
+  error: string | null;
+}
+
+/**
+ * PRODUCT-P5-D.10 — genera un nuevo Approval 2 (evento de aprobación
+ * humana) sobre el draft fijo del fixture P5. Llama ÚNICAMENTE a
+ * motor_aprobar_draft — a diferencia de aprobarDraftMotorAction (la
+ * Server Action general), NUNCA encadena una llamada a
+ * motor_crear_execution_intent. No reserva créditos, no crea job, no crea
+ * dispatch: solo el evento de aprobación (INSERT en
+ * motor.draft_approvals + auditoría). Mismo patrón de identidad en 2
+ * pasos que el resto del archivo: auth.uid() real (cookies) para saber
+ * quién aprueba, admin/service_role únicamente para ejecutar el wrapper
+ * (que no acepta authenticated directo).
+ */
+export async function reaprobarDraftP5Action(): Promise<ReaprobarDraftP5Result> {
+  const membership = await getCurrentMembership();
+  if (!accesoAutorizado(membership)) {
+    return { ok: false, version: null, error: "No autorizado." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { ok: false, version: null, error: "No hay sesión activa." };
+  }
+
+  if (!hayServiceRole()) {
+    return { ok: false, version: null, error: "No se pudo re-aprobar por un problema de configuración del servidor." };
+  }
+
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("motor_aprobar_draft", {
+    p_tenant: TENANT_P5,
+    p_draft_id: DRAFT_ID_P5,
+    p_usuario: user.id,
+  });
+
+  if (error) {
+    return { ok: false, version: null, error: "No se pudo re-aprobar el draft." };
+  }
+
+  const r = data as { estado?: string; version?: number; bloqueos?: unknown } | null;
+
+  if (r?.estado === "APROBADO_PARA_EJECUCION") {
+    return { ok: true, version: r.version ?? null, error: null };
+  }
+
+  return { ok: false, version: null, error: `No se pudo re-aprobar (${r?.estado ?? "motivo desconocido"}).` };
 }
