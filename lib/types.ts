@@ -479,6 +479,16 @@ export interface IAFlowState {
     // legacy de siempre) y acá queda el draft de campaña pendiente, para
     // retomarlo automáticamente apenas la audiencia quede creada.
     campanaPendiente?: IAFlowState["draft"];
+    // PRODUCT-AI-MOTOR-1.5 — provenance conversacional: presente y en
+    // "motor" únicamente cuando este draft de campaña se originó al aceptar
+    // una propuesta del Motor (ver iniciarAudienciaDesdePropuestaMotor). Lo
+    // fija exclusivamente ese código server-side, nunca un tool del LLM ni
+    // un argumento libre — por eso el tipo es un literal fijo, no un string
+    // cualquiera. confirmarCreacionCampanaAction lo usa para cortar el
+    // camino legacy ANTES de crear ninguna fila; la fuente de verdad real
+    // para campañas ya persistidas es la columna yamas_send_campanas.origen
+    // (más el check canónico motor.drafts), no este campo.
+    origenRecomendacion?: "motor";
   };
 }
 

@@ -546,7 +546,15 @@ async function iniciarAudienciaDesdePropuestaMotor(
       draft: {
         contactosIds: resolubles.map((c) => c.contactoId as string),
         contactosIdsResueltos: true,
-        campanaPendiente: flowState.kind === "crear_campana" ? campanaDraftPendiente : undefined,
+        // PRODUCT-AI-MOTOR-1.5: esta campaña se arma a partir de una
+        // recomendación del Motor (WHO/WHEN), no de una elección manual del
+        // usuario -- confirmarCreacionCampanaAction corta acá el camino
+        // legacy antes de crear ninguna fila. Ver comentario del campo en
+        // lib/types.ts.
+        campanaPendiente:
+          flowState.kind === "crear_campana"
+            ? { ...campanaDraftPendiente, origenRecomendacion: "motor" }
+            : undefined,
       },
     },
   };
@@ -2150,6 +2158,22 @@ export async function confirmarCreacionCampanaAction(
   const gate = await assertPermiso("crear_campanas");
   if (!gate.ok) {
     return { text: gate.error ?? "No tenés permiso para hacer eso.", flowState: IA_FLOW_IDLE };
+  }
+
+  // PRODUCT-AI-MOTOR-1.5 — frontera Motor -> legacy. Si este draft de
+  // campaña se originó al aceptar una propuesta del Motor
+  // (iniciarAudienciaDesdePropuestaMotor), cortamos ACÁ, antes de llamar a
+  // saveCampaignAction: ni se crea la fila, ni se reservan créditos legacy,
+  // ni hay nada que sendCampaignAction tenga que bloquear después. El
+  // guard de sendCampaignAction (yamas_send_campanas.origen +
+  // yamas_send_es_campana_motor) sigue existiendo como defensa en
+  // profundidad para el otro caller (el wizard manual de AppShell), no
+  // como la única barrera acá.
+  if (flowState.draft.origenRecomendacion === "motor") {
+    return {
+      text: "Esta campaña fue preparada a partir de recomendaciones inteligentes y todavía no se puede enviar desde el chat: va a seguir el flujo de aprobación de YamaSend IA.",
+      flowState: IA_FLOW_IDLE,
+    };
   }
 
   if (

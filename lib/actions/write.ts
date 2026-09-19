@@ -303,6 +303,15 @@ const CAMPAIGN_SEND_WEBHOOK_URL =
  * "Duplicar" en el modal de detalle de campaña (ver onDuplicate en
  * AppShell.tsx). No cambia la lógica de guardado — solo el tipo de evento
  * que se registra en el log de actividad del Dashboard.
+ *
+ * origen ("manual" por default): provenance durable que va directo a
+ * yamas_send_campanas.origen (PRODUCT-AI-MOTOR-1.5). SIEMPRE lo decide el
+ * código del servidor que llama a esta función — nunca un valor que viaje
+ * desde el cliente sin pasar antes por lógica propia: hoy ningún caller le
+ * pasa "motor" (esa ruta se corta antes, en confirmarCreacionCampanaAction),
+ * pero el parámetro existe para que, si en el futuro se conecta un camino
+ * real Motor -> campaña, quede tageado desde el mismo INSERT en vez de con
+ * un UPDATE posterior.
  */
 export async function saveCampaignAction(
   nombre: string,
@@ -311,6 +320,7 @@ export async function saveCampaignAction(
   contactosIds: string[],
   fechaProgramada: string | null = null,
   esDuplicada: boolean = false,
+  origen: "manual" | "motor" = "manual",
 ): Promise<SaveResult> {
   // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
   // escondido no impide invocar el server action directamente.
@@ -366,6 +376,7 @@ export async function saveCampaignAction(
       waba_id: cliente.wabaid,
       status: fechaProgramada ? "programada" : "enviando",
       fecha_programada: fechaProgramada,
+      origen,
     })
     .select("id")
     .single();
@@ -438,6 +449,43 @@ export async function sendCampaignAction(
   // escondido no impide invocar el server action directamente.
   const gate = await assertPermiso("enviar_campanas");
   if (!gate.ok) return { ok: false, error: gate.error };
+
+  // PRODUCT-AI-MOTOR-1.5 — guard de provenance, ANTES de reservar créditos,
+  // crear el envío o llamar al provider. Fail-closed con dos fuentes
+  // independientes (si cualquiera de las dos dice "Motor", se bloquea):
+  //
+  //   1. yamas_send_campanas.origen — provenance durable, poblada por
+  //      saveCampaignAction en cada creación (nunca elegible por el cliente:
+  //      el parámetro lo decide el server, ver más abajo).
+  //   2. public.yamas_send_es_campana_motor — la fuente canónica preexistente
+  //      (EXISTS motor.drafts WHERE campana_id=...), la misma que ya usan
+  //      deleteCampaignAction y cargarCampanaEditable.
+  //
+  // Cualquier error al determinar la provenance también falla cerrado: no
+  // enviamos si no podemos probar que es seguro hacerlo.
+  const supabaseProvenance = await createClient();
+  const [{ data: campanaProvenance, error: origenError }, { data: esCampanaMotor, error: motorCheckError }] =
+    await Promise.all([
+      supabaseProvenance.from("yamas_send_campanas").select("origen").eq("id", campaignId).maybeSingle(),
+      supabaseProvenance.rpc("yamas_send_es_campana_motor", { p_campana_id: campaignId }),
+    ]);
+
+  if (origenError || motorCheckError || !campanaProvenance) {
+    return {
+      ok: false,
+      error: "No pudimos verificar el origen de esta campaña. Probá de nuevo en unos segundos.",
+    };
+  }
+
+  if (campanaProvenance.origen === "motor" || esCampanaMotor) {
+    // Copy orientado al usuario, sin RPCs/SQL/nombres de schema — ver
+    // PRODUCT-AI-MOTOR-1.5 Fase 10. No se ofrece bypass.
+    return {
+      ok: false,
+      error:
+        "Esta campaña fue preparada a partir de recomendaciones inteligentes y todavía no se puede enviar desde acá: va a seguir el flujo de aprobación de YamaSend IA.",
+    };
+  }
 
   // Gate de créditos. Se bloquea la campaña ENTERA si el saldo no alcanza para
   // todos los destinatarios, en vez de enviar hasta agotar: una campaña a
