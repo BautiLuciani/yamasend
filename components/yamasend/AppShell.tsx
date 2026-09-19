@@ -1425,6 +1425,16 @@ export default function AppShell({
     setDetailCampaignId(campanaId);
   }
 
+  // AI-MOTOR-1.9 — handoff Chat IA -> revisión humana del Motor.
+  // Ruta fija, nunca generada por el modelo ni por datos del payload (el
+  // payload "revisar_motor" no lleva ningún dato). Es una ruta real de
+  // Next.js con su propio guard server-side (assertPermiso("ver_motor")),
+  // a diferencia de "ver campaña/audiencia" que solo cambian de sección
+  // dentro de este mismo shell ya autenticado.
+  function handleIARevisarMotor() {
+    router.push("/panel/motor");
+  }
+
   async function handleIAElegirRecursoEditar(id: string, nombre: string) {
     setIaSending(true);
     try {
@@ -1688,6 +1698,7 @@ export default function AppShell({
           onConfirmarCampana={handleIAConfirmarCampana}
           onComprarCreditos={abrirCompraCreditos}
           onVerCampana={handleIAVerCampana}
+          onRevisarMotor={handleIARevisarMotor}
           onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
           onCrearAudienciaDesdeBusqueda={handleIACrearAudienciaDesdeBusqueda}
           onCrearAudienciaDesdeImportacion={handleIACrearAudienciaDesdeImportacion}

@@ -138,6 +138,7 @@ const MENSAJES: Record<PermisoKey, string> = {
   enviar_campanas: "enviar campañas",
   comprar_creditos: "comprar créditos",
   usar_ia: "usar el asistente de IA",
+  ver_motor: "revisar el Motor de Decisión",
 };
 
 /**

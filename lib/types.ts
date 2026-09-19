@@ -355,6 +355,15 @@ export type ChatPayload =
       filas: string[][];
       // Si la consulta devolvió más filas de las que se muestran.
       totalDisponible?: number;
+    }
+  | {
+      // AI-MOTOR-1.9 — handoff Chat IA -> revisión humana del Motor.
+      // A propósito no lleva NINGÚN dato (ni planId, ni candidatos, ni
+      // tenantId): la pantalla productiva (/panel/motor) recalcula todo
+      // server-side por su cuenta. El único efecto de este payload es
+      // mostrar un botón que navega a una ruta fija; no transporta ningún
+      // estado del Motor generado por el LLM ni por este turno del chat.
+      kind: "revisar_motor";
     };
 
 export interface ChatMessage {
@@ -572,7 +581,8 @@ export type PermisoKey =
   | "crear_campanas"
   | "enviar_campanas"
   | "comprar_creditos"
-  | "usar_ia";
+  | "usar_ia"
+  | "ver_motor";
 
 export type Permisos = Record<PermisoKey, boolean>;
 
@@ -585,12 +595,23 @@ export const PERMISO_KEYS: PermisoKey[] = [
   "enviar_campanas",
   "comprar_creditos",
   "usar_ia",
+  "ver_motor",
 ];
 
 /**
  * Permisos por defecto del empleado independiente: todo habilitado, que es
  * exactamente cómo se comporta la app hoy. Se usa como fallback para cuentas
  * anteriores al sistema de roles, para que nadie quede bloqueado.
+ *
+ * EXCEPCIÓN DELIBERADA — ver_motor: a diferencia de los demás, este permiso
+ * NO preserva un comportamiento previo (la revisión del Motor no existía
+ * hasta AI-MOTOR-1.9), así que "todo habilitado como hoy" no aplica: no hay
+ * un "hoy" anterior para esta capacidad. Queda en false también acá para
+ * que ninguna cuenta — ni siquiera las legacy sin fila de permisos — reciba
+ * acceso automático a evidencia comercial real del Motor sin una decisión
+ * explícita de la organización. Otorgarlo requiere setear
+ * yamas_send_miembros.permisos->>'ver_motor' = true fila por fila (fuera
+ * del alcance de este cambio de código).
  */
 export const PERMISOS_COMPLETOS: Permisos = {
   crear_audiencias: true,
@@ -601,6 +622,7 @@ export const PERMISOS_COMPLETOS: Permisos = {
   enviar_campanas: true,
   comprar_creditos: true,
   usar_ia: true,
+  ver_motor: false,
 };
 
 /** Membresía del usuario logueado: quién es y qué puede hacer. */

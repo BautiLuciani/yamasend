@@ -251,6 +251,7 @@ export function renderChatCard(
     onElegirRecursoEditar: (id: string, nombre: string) => void;
     onElegirTemperatura: (temperatura: "caliente" | "tibio" | "frio") => void;
     onElegirCampoCampana: (campo: "nombre" | "template" | "audiencia" | "fecha") => void;
+    onRevisarMotor: () => void;
   },
   isLatest: boolean,
 ) {
@@ -465,6 +466,9 @@ export function renderChatCard(
         totalDisponible={payload.totalDisponible}
       />
     );
+  }
+  if (payload.kind === "revisar_motor") {
+    return <RevisarMotorCard onRevisar={handlers.onRevisarMotor} />;
   }
   // Guard de exhaustividad: si se agrega un payload nuevo a ChatPayload y no
   // se le da render acá, esto deja de compilar. Antes el `return null` final
@@ -1213,6 +1217,46 @@ export function CampanaCreadaCard({
         className="flex-none text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
       >
         Ver campaña →
+      </button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Tarjeta: revisar_motor (AI-MOTOR-1.9)
+// No lleva ningún dato del Motor (ni plan, ni candidatos, ni tenant): el
+// único efecto del botón es navegar a /panel/motor, donde el usuario
+// revisa y aprueba con sus propios clicks. Nada se crea ni se aprueba acá.
+// -------------------------------------------------------------------------
+interface RevisarMotorCardProps {
+  onRevisar: () => void;
+}
+
+export function RevisarMotorCard({ onRevisar }: RevisarMotorCardProps) {
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex items-center gap-3">
+      <div className="w-[38px] h-[38px] flex-none rounded-xl bg-ys-green-bg flex items-center justify-center">
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+          <path
+            d="M2 8c1.8-3.2 4-4.8 6-4.8s4.2 1.6 6 4.8c-1.8 3.2-4 4.8-6 4.8S3.8 11.2 2 8Z"
+            stroke="#12B76A"
+            strokeWidth="1.5"
+            strokeLinejoin="round"
+          />
+          <circle cx="8" cy="8" r="1.8" stroke="#12B76A" strokeWidth="1.5" />
+        </svg>
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+        <div className="text-[14.5px] font-extrabold text-ys-text">Revisar plan del Motor</div>
+        <div className="text-xs text-ys-dim font-semibold">
+          Vas a poder aprobar o descartar paso a paso — todavía no se creó ni se envió nada.
+        </div>
+      </div>
+      <button
+        onClick={onRevisar}
+        className="flex-none text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
+      >
+        Revisar plan del Motor →
       </button>
     </div>
   );
