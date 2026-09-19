@@ -5,21 +5,23 @@ import { useState } from "react";
 /**
  * Guía de uso del asistente de IA.
  *
- * Vive dentro del panel (no es un PDF suelto) por tres razones: se lee bien
- * en celular, usa los mismos tokens visuales que el resto del producto, y se
- * actualiza con un deploy en vez de tener que regenerar y volver a subir un
- * archivo cada vez que el asistente aprende algo nuevo.
+ * Vive dentro del panel (no es un PDF suelto) por dos razones: se lee bien
+ * en celular y usa los mismos tokens visuales que el resto del producto.
  *
- * El botón "Descargar" usa window.print(), que en cualquier navegador ofrece
- * "Guardar como PDF": quien quiera el PDF lo tiene, sin mantener dos formatos.
+ * "Descargar en PDF" genera un documento PDF real e independiente (ver
+ * IAAyudaPdfDocument.tsx, con @react-pdf/renderer) — no es window.print():
+ * no depende del layout de la página, del viewport ni de qué accordion esté
+ * abierto acá en pantalla, y no arrastra el chrome de la app (sidebar, URL,
+ * fecha del navegador). El modal y el PDF comparten la misma fuente de
+ * contenido (TEMAS, más abajo), así que nunca pueden divergir.
  */
 
-interface Ejemplo {
+export interface Ejemplo {
   texto: string;
   nota?: string;
 }
 
-interface Tema {
+export interface Tema {
   id: string;
   titulo: string;
   resumen: string;
@@ -65,7 +67,23 @@ const COLORES: Record<
   },
 };
 
-const TEMAS: Tema[] = [
+/**
+ * Misma paleta que COLORES, en hex plano — la usa el generador de PDF
+ * (components/yamasend/IAAyudaPdfDocument.tsx), que no puede consumir clases
+ * de Tailwind. Mantener sincronizado si se toca COLORES.
+ */
+export const PDF_COLOR_HEX: Record<
+  Tema["color"],
+  { chip: string; texto: string; borde: string }
+> = {
+  verde: { chip: "#ecf9f2", texto: "#067647", borde: "#a9e3c7" },
+  azul: { chip: "#eaf2fd", texto: "#1a5fb4", borde: "#b3cdf2" },
+  ambar: { chip: "#fdf5e6", texto: "#8a5a00", borde: "#eccf94" },
+  violeta: { chip: "#f2eefc", texto: "#5b3fa8", borde: "#cbbcee" },
+  rosa: { chip: "#fdeef3", texto: "#a8336a", borde: "#eebccf" },
+};
+
+export const TEMAS: Tema[] = [
   {
     id: "oportunidades",
     titulo: "Oportunidades",
@@ -284,33 +302,55 @@ interface IAAyudaModalProps {
 
 export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyudaModalProps) {
   const [abierto, setAbierto] = useState<string | null>("oportunidades");
+  const [generandoPdf, setGenerandoPdf] = useState(false);
+  const [errorPdf, setErrorPdf] = useState(false);
+
+  /**
+   * Genera el PDF real (ver IAAyudaPdfDocument.tsx) y lo descarga directo,
+   * sin pasar por el diálogo de impresión del navegador. La librería se
+   * importa de forma dinámica para no sumar peso al bundle del modal en
+   * cada carga de la sección IA — solo se descarga cuando alguien realmente
+   * pide el PDF.
+   */
+  async function handleDescargarPdf() {
+    if (generandoPdf) return;
+    setGenerandoPdf(true);
+    setErrorPdf(false);
+    try {
+      const [{ pdf }, { default: IAAyudaPdfDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("./IAAyudaPdfDocument"),
+      ]);
+      const blob = await pdf(<IAAyudaPdfDocument />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "YamaSend-IA-Guia.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[IAAyudaModal] No se pudo generar el PDF", err);
+      setErrorPdf(true);
+    } finally {
+      setGenerandoPdf(false);
+    }
+  }
 
   if (!open) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-6 print:static print:block print:bg-white print:p-0"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-6"
       onClick={onClose}
     >
-      {/*
-        @page + break-inside-avoid: al imprimir (o "Guardar como PDF" desde
-        el diálogo de impresión), evita que una card quede partida entre dos
-        páginas y da márgenes razonables. No depende de qué accordion esté
-        abierto: eso ya lo resuelve el patrón "hidden print:block" de cada
-        sección, más abajo.
-      */}
-      <style>{`
-        @media print {
-          @page { margin: 14mm; }
-          section { break-inside: avoid; page-break-inside: avoid; }
-        }
-      `}</style>
       <div
-        className="bg-ys-bg w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-xl print:max-h-none print:rounded-none print:shadow-none print:w-full print:bg-white"
+        className="bg-ys-bg w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Encabezado (pantalla) */}
-        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-ys-border bg-white print:hidden">
+        {/* Encabezado */}
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-ys-border bg-white">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-ys-text">Qué le podés pedir al asistente</h2>
             <p className="text-[12.5px] text-ys-muted mt-0.5">
@@ -321,7 +361,7 @@ export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyuda
             type="button"
             onClick={onClose}
             aria-label="Cerrar"
-            className="flex-none w-8 h-8 rounded-lg flex items-center justify-center text-ys-dim hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer print:hidden"
+            className="flex-none w-8 h-8 rounded-lg flex items-center justify-center text-ys-dim hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path
@@ -334,23 +374,8 @@ export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyuda
           </button>
         </div>
 
-        {/* Encabezado (solo impresión/PDF) — documento completo con marca */}
-        <div className="hidden print:block px-1 pb-4 mb-1 border-b border-ys-border">
-          <div className="text-xl font-extrabold text-ys-text">YamaSend IA</div>
-          <div className="text-sm font-semibold text-ys-muted mt-0.5">
-            Todo lo que le podés pedir a tu asistente
-          </div>
-          <p className="text-[12.5px] text-ys-muted mt-2 leading-relaxed">
-            Tu asistente puede ayudarte a entender conversaciones, detectar oportunidades y
-            decidir a quién contactar, cuándo hacerlo y qué comunicar.
-          </p>
-          <p className="text-[12.5px] font-semibold text-ys-text mt-1.5">
-            Las acciones importantes siempre requieren tu confirmación.
-          </p>
-        </div>
-
         {/* Contenido */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 print:overflow-visible print:px-1 print:py-0">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
           {TEMAS.map((tema) => {
             const c = COLORES[tema.color];
             const expandido = abierto === tema.id;
@@ -382,7 +407,7 @@ export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyuda
                     height="16"
                     viewBox="0 0 16 16"
                     fill="none"
-                    className={`flex-none text-ys-dim transition-transform print:hidden ${
+                    className={`flex-none text-ys-dim transition-transform ${
                       expandido ? "rotate-180" : ""
                     }`}
                   >
@@ -396,7 +421,7 @@ export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyuda
                   </svg>
                 </button>
 
-                <div className={expandido ? "block" : "hidden print:block"}>
+                <div className={expandido ? "block" : "hidden"}>
                   <div className="px-4 pb-4 pt-1 space-y-2">
                     {tema.ejemplos.map((ej) => (
                       <button
@@ -409,7 +434,7 @@ export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyuda
                           <span className="text-[13px] font-medium text-ys-text">
                             &ldquo;{ej.texto}&rdquo;
                           </span>
-                          <span className="ml-auto flex-none text-[11px] font-semibold text-ys-dim opacity-0 group-hover:opacity-100 transition-opacity print:hidden">
+                          <span className="ml-auto flex-none text-[11px] font-semibold text-ys-dim opacity-0 group-hover:opacity-100 transition-opacity">
                             Probar →
                           </span>
                         </span>
@@ -447,14 +472,22 @@ export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyuda
         </div>
 
         {/* Pie */}
-        <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-ys-border bg-white print:hidden">
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="text-[12.5px] font-semibold text-ys-muted hover:text-ys-text transition-colors cursor-pointer"
-          >
-            Descargar en PDF
-          </button>
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-ys-border bg-white">
+          <div className="flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={handleDescargarPdf}
+              disabled={generandoPdf}
+              className="text-[12.5px] font-semibold text-ys-muted hover:text-ys-text transition-colors cursor-pointer disabled:opacity-60 disabled:cursor-wait text-left"
+            >
+              {generandoPdf ? "Generando PDF..." : "Descargar en PDF"}
+            </button>
+            {errorPdf && (
+              <span className="text-[11px] font-medium text-red-600">
+                No se pudo generar el PDF. Probá de nuevo.
+              </span>
+            )}
+          </div>
           <button
             type="button"
             onClick={onClose}
