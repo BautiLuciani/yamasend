@@ -61,17 +61,26 @@ export interface ConfirmarEjecucionMotorResult {
    */
   bindingEstado: string | null;
   /**
-   * Estado real de motor.reservar_creditos_intent ("RESERVADA" |
-   * "RESERVA_EXISTENTE" | "RESERVA_RECHAZADA" | "GATE_BLOCKED_EN_DISPATCH" |
-   * "APPROVAL_2_CAMBIO_DESDE_EL_INTENT" | "COSTO_CAMBIO_DESDE_LA_APROBACION" |
-   * "INTENT_NO_READY"), o el literal sintetizado por este archivo
-   * "RESERVA_YA_CONFIRMADA" cuando se reconoce éxito idempotente a partir de
-   * evidencia persistida en vez de la respuesta directa de la RPC. null si
-   * nunca se llegó a intentar la reserva.
+   * Estado real de la reserva. Para provider='fake': motor.reservar_creditos_intent
+   * ("RESERVADA" | "RESERVA_EXISTENTE" | "RESERVA_RECHAZADA" |
+   * "GATE_BLOCKED_EN_DISPATCH" | "APPROVAL_2_CAMBIO_DESDE_EL_INTENT" |
+   * "COSTO_CAMBIO_DESDE_LA_APROBACION" | "INTENT_NO_READY"). Para
+   * provider='ycloud': motor.reservar_y_preparar_dispatches_intent
+   * ("RESERVADA_Y_DESPACHADA" | "RESERVA_EXISTENTE" | ...). O el literal
+   * sintetizado por este archivo "RESERVA_YA_CONFIRMADA" cuando se reconoce
+   * éxito idempotente a partir de evidencia persistida en vez de la
+   * respuesta directa de la RPC. null si nunca se llegó a intentar la
+   * reserva.
    */
   reservaEstado: string | null;
   /** id del motor.execution_jobs asociado, cuando la reserva es o ya era exitosa. */
   jobId: string | null;
+  /**
+   * PRODUCT-P6.1 — cantidad de execution_dispatches creados atómicamente.
+   * Solo poblado para provider='ycloud' (camino atómico); null para
+   * provider='fake' (el camino P2 no crea dispatches en esta llamada).
+   */
+  dispatchCount: number | null;
   error: string | null;
 }
 
@@ -97,7 +106,17 @@ const MENSAJES_RESERVA: Record<string, string> = {
   RESERVA_RECHAZADA: "No alcanzan los créditos disponibles para esta ejecución.",
   INTENT_NO_READY:
     "Esta ejecución ya no está en un estado que permita reservar créditos.",
+  // Estados propios de motor_reservar_y_preparar_dispatches_intent que no
+  // ya cubre el mapa de arriba (los nombres de estado coinciden 1:1 para
+  // el resto: INTENT_NO_ENCONTRADO, SIN_ACTOR_ECONOMICO_CONGELADO,
+  // BINDING_INCOHERENTE_CON_INTENT, GATE_BLOCKED_EN_DISPATCH,
+  // APPROVAL_2_CAMBIO_DESDE_EL_INTENT, COSTO_CAMBIO_DESDE_LA_APROBACION,
+  // INTENT_NO_READY).
+  SIN_DESTINATARIOS: "Esta ejecución no tiene ningún destinatario incluido.",
+  CREDITOS_NO_COINCIDEN_CON_DESTINATARIOS:
+    "La cantidad de créditos ya no coincide con los destinatarios de esta ejecución. Contactá a soporte.",
 };
+
 
 /** Estados del intent en los que, si la evidencia coincide, ya hay una reserva viva. */
 const ESTADOS_INTENT_CON_RESERVA_POSIBLE = new Set([
@@ -133,6 +152,146 @@ function esReservaYaConfirmada(ev: EvidenciaPersistida | undefined): ev is Requi
       ev.job_id.length > 0,
   );
 }
+
+/**
+ * PRODUCT-P6.1 — resuelve, server-side y tenant-scoped, el provider real de
+ * un execution_intent ya creado. Nunca acepta el provider del cliente: es
+ * la única fuente de verdad para decidir qué primitiva de reserva usar
+ * (routing policy A — ver comentario de confirmarEjecucionMotorAction).
+ * Usa la misma RPC ya certificada que obtenerEstadoEjecucionMotorAction.
+ */
+async function resolverProviderYEstadoDelIntent(
+  tenantId: string,
+  executionIntentId: string,
+): Promise<{ provider: string | null; intentEstado: string | null; jobEstado: string | null } | null> {
+  if (!hayServiceRole()) return null;
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("motor_estado_execution_intent", {
+    p_tenant: tenantId,
+    p_execution_intent_id: executionIntentId,
+  });
+  if (error || !data) return null;
+  const d = data as { provider?: string; intent_estado?: string; job_estado?: string };
+  return {
+    provider: d.provider ?? null,
+    intentEstado: d.intent_estado ?? null,
+    jobEstado: d.job_estado ?? null,
+  };
+}
+
+/**
+ * PRODUCT-P6.1 — camino atómico para provider='ycloud'. Llama al wrapper
+ * public.motor_reservar_y_preparar_dispatches_intent (service_role), que en
+ * una sola transacción SQL reserva créditos + crea el job (ya CLAIMED,
+ * nunca PENDIENTE) + crea los execution_dispatches — elimina
+ * estructuralmente la ventana de carrera con el claim genérico de P2 (ver
+ * PRODUCT-P5-D.9). Misma interpretación de éxito/idempotencia/rechazo que
+ * intentarReserva, adaptada al contrato de esta RPC.
+ */
+async function intentarReservaAtomica(
+  executionIntentId: string,
+  tenantId: string,
+): Promise<{
+  ok: boolean;
+  reservaEstado: string | null;
+  jobId: string | null;
+  dispatchCount: number | null;
+  error: string | null;
+}> {
+  if (!hayServiceRole()) {
+    return {
+      ok: false,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error:
+        "No se pudo completar la reserva y preparación por un problema de configuración del servidor. Podés reintentarla en unos minutos.",
+    };
+  }
+
+  const admin = createAdminClient();
+
+  const { data, error } = await admin.rpc("motor_reservar_y_preparar_dispatches_intent", {
+    p_execution_intent_id: executionIntentId,
+  });
+
+  if (error) {
+    console.error("[motor atomic reserve] RPC failed", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      executionIntentId,
+    });
+    return {
+      ok: false,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "No se pudo preparar la reserva y el dispatch. No vuelvas a intentar hasta verificar el estado.",
+    };
+  }
+
+  const rr = data as {
+    ok?: boolean;
+    estado?: string;
+    job_id?: string;
+    dispatch_count?: number;
+  } | null;
+
+  if (!rr || typeof rr.ok !== "boolean") {
+    return {
+      ok: false,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "Respuesta inesperada del servidor al preparar la reserva y el dispatch.",
+    };
+  }
+
+  if (rr.ok) {
+    // RESERVADA_Y_DESPACHADA (recién creada) y RESERVA_EXISTENTE
+    // (idempotente, ventana mientras el intent seguía READY) son éxito.
+    return {
+      ok: true,
+      reservaEstado: rr.estado ?? null,
+      jobId: rr.job_id ?? null,
+      dispatchCount: rr.dispatch_count ?? null,
+      error: null,
+    };
+  }
+
+  // rr.ok === false. Igual que en el camino fake: si el intent ya avanzó
+  // (INTENT_NO_READY), verificar evidencia persistida antes de rechazar —
+  // puede ser un reintento legítimo sobre una preparación atómica ya
+  // exitosa. Único estado que la deja completa en este camino: DISPATCHING
+  // (o terminal posterior) con un job asociado.
+  const evidencia = await resolverProviderYEstadoDelIntent(tenantId, executionIntentId);
+  const yaPreparado =
+    evidencia?.intentEstado != null &&
+    ["DISPATCHING", "COMPLETED", "PARTIAL", "FAILED"].includes(evidencia.intentEstado) &&
+    typeof evidencia.jobEstado === "string" &&
+    evidencia.jobEstado.length > 0;
+
+  if (yaPreparado) {
+    return {
+      ok: true,
+      reservaEstado: "RESERVA_YA_CONFIRMADA",
+      jobId: null,
+      dispatchCount: null,
+      error: null,
+    };
+  }
+
+  return {
+    ok: false,
+    reservaEstado: rr.estado ?? null,
+    jobId: null,
+    dispatchCount: null,
+    error: MENSAJES_RESERVA[rr.estado ?? ""] ?? "No se pudo preparar la reserva y el dispatch de esta ejecución.",
+  };
+}
+
 
 /**
  * Llama al wrapper public.motor_reservar_creditos_intent (service_role) y
@@ -244,6 +403,7 @@ export async function confirmarEjecucionMotorAction(
       bindingEstado: null,
       reservaEstado: null,
       jobId: null,
+      dispatchCount: null,
       error: "Falta el ID del execution intent.",
     };
   }
@@ -261,6 +421,7 @@ export async function confirmarEjecucionMotorAction(
       bindingEstado: null,
       reservaEstado: null,
       jobId: null,
+      dispatchCount: null,
       error: "No hay sesión activa.",
     };
   }
@@ -275,6 +436,7 @@ export async function confirmarEjecucionMotorAction(
       bindingEstado: null,
       reservaEstado: null,
       jobId: null,
+      dispatchCount: null,
       error: "No se pudo confirmar la autorización económica. Probá de nuevo en unos segundos.",
     };
   }
@@ -291,6 +453,7 @@ export async function confirmarEjecucionMotorAction(
       bindingEstado: null,
       reservaEstado: null,
       jobId: null,
+      dispatchCount: null,
       error: "Respuesta inesperada del servidor al confirmar la autorización económica.",
     };
   }
@@ -306,6 +469,7 @@ export async function confirmarEjecucionMotorAction(
         bindingEstado: null,
         reservaEstado: null,
         jobId: null,
+        dispatchCount: null,
         error: MENSAJES_BINDING[r.error ?? ""] ?? "No se pudo confirmar la autorización económica.",
       };
     }
@@ -317,15 +481,62 @@ export async function confirmarEjecucionMotorAction(
     bindingEstado = r.estado ?? null;
   }
 
-  // Paso 2 — INFRAESTRUCTURA (service_role, vía wrapper public P1B).
-  const resultado = await intentarReserva(executionIntentId);
+  // Paso 2 — INFRAESTRUCTURA (service_role, vía wrapper public P1B/P6.1).
+  //
+  // PRODUCT-P6.1 — routing policy A: el provider real del intent (resuelto
+  // server-side, jamás del cliente) decide qué primitiva de reserva usar.
+  // provider='fake' sigue exactamente el camino P2 sin cambios (job sin
+  // dispatch, tal como P2 espera). provider='ycloud' usa el camino atómico
+  // P4 (reserva + job ya-owned + dispatch en una sola transacción SQL — sin
+  // ventana de carrera con el claim genérico de P2). Cualquier otro valor
+  // de provider (o uno que no se pueda resolver) es fail-closed explícito:
+  // nunca cae por defecto a ninguno de los dos caminos.
+  const tenantId = await resolverTenantDelUsuario(user.id);
+  if (!tenantId) {
+    return {
+      ok: false,
+      bindingEstado,
+      reservaEstado: null,
+      jobId: null,
+      dispatchCount: null,
+      error: "Tu cuenta no tiene una membresía activa como empleado en ningún tenant.",
+    };
+  }
+
+  const info = await resolverProviderYEstadoDelIntent(tenantId, executionIntentId);
+  const provider = info?.provider ?? null;
+
+  if (provider === "fake") {
+    const resultado = await intentarReserva(executionIntentId);
+    return {
+      ok: resultado.ok,
+      bindingEstado,
+      reservaEstado: resultado.reservaEstado,
+      jobId: resultado.jobId,
+      dispatchCount: null,
+      error: resultado.error,
+    };
+  }
+
+  if (provider === "ycloud") {
+    const resultado = await intentarReservaAtomica(executionIntentId, tenantId);
+    return {
+      ok: resultado.ok,
+      bindingEstado,
+      reservaEstado: resultado.reservaEstado,
+      jobId: resultado.jobId,
+      dispatchCount: resultado.dispatchCount,
+      error: resultado.error,
+    };
+  }
 
   return {
-    ok: resultado.ok,
+    ok: false,
     bindingEstado,
-    reservaEstado: resultado.reservaEstado,
-    jobId: resultado.jobId,
-    error: resultado.error,
+    reservaEstado: null,
+    jobId: null,
+    dispatchCount: null,
+    error: `No se pudo determinar cómo procesar esta ejecución (provider desconocido: ${provider ?? "no resuelto"}).`,
   };
 }
 
@@ -393,6 +604,24 @@ async function resolverContextoMotor(): Promise<
   }
 
   return { ok: true, ctx: { tenantId: miembro.tenant_id, usuario: user.id } };
+}
+
+/**
+ * PRODUCT-P6.1 — variante de resolverContextoMotor para callers que ya
+ * tienen el auth_user_id resuelto (evita una segunda llamada a
+ * auth.getUser() dentro de la misma Server Action). Mismo guard exacto:
+ * rol='empleado', estado='activo'.
+ */
+async function resolverTenantDelUsuario(authUserId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: miembro } = await supabase
+    .from("yamas_send_miembros")
+    .select("tenant_id")
+    .eq("auth_user_id", authUserId)
+    .eq("rol", "empleado")
+    .eq("estado", "activo")
+    .maybeSingle();
+  return miembro?.tenant_id ?? null;
 }
 
 export interface PrepararPlanMotorResult {

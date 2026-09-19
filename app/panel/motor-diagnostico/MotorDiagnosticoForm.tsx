@@ -101,6 +101,7 @@ export default function MotorDiagnosticoForm() {
             <>
               Binding: {resultado.bindingEstado ?? "OK"} · Reserva: {resultado.reservaEstado ?? "OK"}
               {resultado.jobId ? ` · Job: ${resultado.jobId}` : ""}
+              {typeof resultado.dispatchCount === "number" ? ` · Dispatches: ${resultado.dispatchCount}` : ""}
             </>
           ) : (
             <>
