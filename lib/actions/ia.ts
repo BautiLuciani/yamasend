@@ -2937,6 +2937,19 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "abrir_revision_motor",
+      description:
+        "Abre la pantalla de revisión humana del plan del Motor de Decisión (/panel/motor), donde el usuario revisa y aprueba paso a paso, con sus propios clicks, antes de que se cree o envíe absolutamente nada. Esta herramienta NUNCA crea, aprueba, reserva créditos ni ejecuta nada por sí misma — su único efecto es mostrarle al usuario un botón para ir a esa pantalla. Usala cuando, después de haber hablado de oportunidades, prioridad o el plan del Motor (motor_oportunidades, motor_prioridad_contactos, motor_plan_preview), el usuario exprese que quiere avanzar, revisar o aprobar ese plan — por ejemplo 'dale, revisemos el plan', 'quiero avanzar con esto', 'armemos esto', 'mostrame el plan para aprobarlo'. No la uses como respuesta a una pregunta puramente informativa: para eso seguí usando las herramientas de consulta del Motor. Esta herramienta no toma ningún parámetro: nunca inventes ni pases un tenant, un contacto, un plan, un presupuesto ni ningún otro dato — la pantalla resuelve todo eso por su cuenta. Después de llamarla, NUNCA digas que ya se creó, aprobó o envió algo: solo le abriste al usuario la pantalla donde puede decidir.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "crear_audiencia_con_estos_contactos",
       description:
         "Abre el flujo de creación de audiencia con contactos concretos. Hay dos formas de indicar los contactos, y conviene usar la que corresponda:\n- filtro_temperatura: la MÁS confiable. Resuelve los contactos en el momento contra la base (ej: el usuario pide una audiencia con 'los calientes' o 'los fríos'). Usala siempre que el grupo se pueda describir por temperatura.\n- contacto_ids: solo si los ids salen de un resultado de listar_contactos o buscar_contactos de ESTE MISMO turno. Los ids NO sobreviven entre mensajes: si el usuario se refiere a contactos de un mensaje anterior, volvé a consultarlos con la herramienta correspondiente antes de usar esta.",
@@ -3599,6 +3612,46 @@ async function ejecutarHerramientaAgente(
     return { datos: data ?? {} };
   }
 
+  if (nombre === "abrir_revision_motor") {
+    // AI-MOTOR-1.9 — handoff Chat IA -> revisión humana del Motor.
+    //
+    // Deliberadamente NO llama a ninguna Server Action ni RPC del Motor
+    // (ni prepararPlanMotorAction, ni motor_plan_preview, nada que cree,
+    // apruebe, reserve o ejecute). El único chequeo que hace es de
+    // AUTORIZACIÓN — no de negocio: getCurrentMembership() está memoizado
+    // con React cache() dentro de este mismo request (sendIAMessageAction
+    // ya lo resolvió al validar assertPermiso("usar_ia")), así que esto no
+    // agrega un round-trip nuevo. Es el mismo patrón de autorización que
+    // usa el resto de la app, aplicado ANTES de ofrecer la tarjeta: si el
+    // usuario no tiene "ver_motor", el agente ni siquiera abre el flowState
+    // (evita el caso en que el chat prometa algo que /panel/motor después
+    // le va a negar).
+    const membership = await getCurrentMembership();
+    if (!membership?.permisos.ver_motor) {
+      return {
+        datos: {
+          error:
+            "Este usuario no tiene permiso para revisar el Motor de Decisión todavía. No ofrezcas la revisión del plan; si preguntó por oportunidades o prioridad, seguí respondiendo con las herramientas de consulta del Motor.",
+        },
+      };
+    }
+
+    return {
+      datos: { ok: true },
+      accion: {
+        text: "Dale, te dejo la revisión del plan lista para que la abras cuando quieras — ahí vas a poder aprobar o descartar paso a paso, no se creó ni se aprobó nada todavía.",
+        payload: { kind: "revisar_motor" },
+        // Sin flujo multi-turno: no hay ningún paso siguiente que
+        // sendIAMessageAction deba manejar acá (a diferencia de
+        // crear_audiencia/abrir_flujo). La única interacción restante es
+        // el click humano en la tarjeta, que navega fuera del chat — por
+        // eso el flowState vuelve a quedar en IA_FLOW_IDLE en vez de
+        // inventar un IAFlowKind nuevo para un "flujo" que no tiene pasos.
+        flowState: IA_FLOW_IDLE,
+      },
+    };
+  }
+
   if (nombre === "crear_audiencia_con_estos_contactos") {
     const nombreAudiencia =
       typeof args.nombre === "string" && args.nombre.trim()
@@ -3829,6 +3882,7 @@ EL MOTOR DE DECISIÓN — PROPUESTA DE PLAN (motor_plan_preview)
 - Si la cuenta tiene varios contactos con estados distintos, contalo así: quiénes están listos, quiénes conviene esperar, y para quiénes no hay oferta que les sirva — no lo aplanes todo a una sola frase genérica.
 - No muestres el JSON crudo, los códigos internos (LISTO_AHORA, BAJO_CALIDAD_MINIMA, etc.) ni ningún id técnico al usuario: traducilo a lenguaje natural, cercano.
 - Si el usuario menciona un tope de créditos explícito, pasalo en presupuesto_creditos. Si no lo menciona, no le pongas presupuesto vos.
+- Si después de ver oportunidades, prioridad o el plan del Motor el usuario dice que quiere avanzar, revisar o aprobar eso (ej. "dale, revisemos el plan", "quiero avanzar con esto", "armemos esto", "mostrame el plan para aprobarlo"), usá abrir_revision_motor. Esta herramienta no toma ningún parámetro y NUNCA crea, aprueba, reserva créditos ni ejecuta nada — solo le muestra al usuario un botón para ir a la pantalla donde él mismo revisa y aprueba paso a paso. Después de usarla, NUNCA digas que ya se creó, aprobó o envió una campaña, un draft o un plan: lo único que pasó es que le abriste esa pantalla. Si la herramienta te devuelve un error de permiso, no insistas ni la reintentes: explicale con naturalidad que todavía no tiene ese permiso habilitado.
 
 ACCIONES QUE PODÉS EJECUTAR
 - Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.

@@ -45,6 +45,7 @@ const PERMISO_LABEL: Record<PermisoKey, string> = {
   enviar_campanas: "Enviar campañas",
   comprar_creditos: "Comprar créditos",
   usar_ia: "Asistente IA",
+  ver_motor: "Revisar Motor",
 };
 
 function EstadoBadge({ estado }: { estado: EmpleadoResumen["estado"] }) {

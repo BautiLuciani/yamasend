@@ -13,6 +13,7 @@ const PERMISO_LABEL: Record<PermisoKey, string> = {
   enviar_campanas: "Enviar campañas",
   comprar_creditos: "Comprar créditos",
   usar_ia: "Usar el asistente de IA",
+  ver_motor: "Revisar el Motor de Decisión",
 };
 
 /** Arranque conservador: puede organizarse, pero no gastar plata todavía. */
@@ -25,6 +26,7 @@ const PERMISOS_INICIALES: Permisos = {
   enviar_campanas: false,
   comprar_creditos: false,
   usar_ia: true,
+  ver_motor: false,
 };
 
 export default function InvitarEmpleadoModal({
