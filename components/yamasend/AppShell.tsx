@@ -37,7 +37,6 @@ import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
 /** Clave de localStorage con el id de la conversación de IA abierta. */
 const IA_CONVERSACION_ABIERTA_KEY = "ys-ia-conversacion-abierta";
 import CampaignDetailModal from "./CampaignDetailModal";
-import MotorRecomendaciones from "./MotorRecomendaciones";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
@@ -455,15 +454,19 @@ export default function AppShell({
   // loading spinner de Next en cada cambio de tab, que no queremos acá — mismo
   // criterio que ya usamos para otros toggles que no deben mostrar loading state.
   function getInitialSection(): AppSection {
-    if (typeof window === "undefined") return "dashboard";
+    // Default de /panel: IA para quien tiene el permiso (PRODUCT-AI-UX-1),
+    // Dashboard para quien no — nunca aterriza en una sección sin permitir.
+    const defaultSection: AppSection = user.permisos.usar_ia ? "ia" : "dashboard";
+    if (typeof window === "undefined") return defaultSection;
     const param = new URLSearchParams(window.location.search).get("section");
+    if (!param) return defaultSection;
     // Una sección que el usuario no tiene permitida no se puede activar por
     // URL: sin esto, ?section=ia le abriría el chat a alguien sin el permiso
     // aunque no le aparezca el ítem en el nav.
     if (param === "ia" && !user.permisos.usar_ia) return "dashboard";
     return VALID_SECTIONS.includes(param as AppSection)
       ? (param as AppSection)
-      : "dashboard";
+      : defaultSection;
   }
 
   const [activeSection, setActiveSectionState] = useState<AppSection>(getInitialSection);
@@ -1620,9 +1623,6 @@ export default function AppShell({
               setWizardOpen(true);
             }}
           />
-          <div className="px-4 md:px-6 pb-6">
-            <MotorRecomendaciones />
-          </div>
         </div>
       )}
 

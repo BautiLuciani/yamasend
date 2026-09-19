@@ -67,6 +67,126 @@ const COLORES: Record<
 
 const TEMAS: Tema[] = [
   {
+    id: "oportunidades",
+    titulo: "Oportunidades",
+    resumen: "Encontrá clientes que están en un buen momento para volver a contactar.",
+    color: "verde",
+    icono: (
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <path
+          d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+      </svg>
+    ),
+    ejemplos: [
+      { texto: "¿A quién me conviene contactar hoy?" },
+      { texto: "¿Qué oportunidades importantes detectaste?" },
+      { texto: "Mostrame clientes con intención de compra" },
+      {
+        texto: "¿Por qué recomendás contactar a estas personas?",
+        nota: "El asistente te muestra la frase textual que escribió cada contacto, como evidencia",
+      },
+    ],
+    tip: "Cuando el asistente te recomienda a alguien, siempre te muestra qué dijo esa persona en la conversación real — nunca es una corazonada.",
+  },
+  {
+    id: "momento",
+    titulo: "Momento ideal",
+    resumen: "Descubrí cuándo conviene volver a hablar con cada cliente.",
+    color: "azul",
+    icono: (
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M8 4.8v3.4l2.3 1.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    ejemplos: [
+      { texto: "¿A quién debería contactar esta semana?" },
+      { texto: "¿Qué clientes están esperando que los contacte más adelante?" },
+      { texto: "¿Cuándo debería volver a escribirle a este cliente?" },
+      { texto: "Mostrame oportunidades cuyo momento de contacto ya llegó" },
+    ],
+    tip: "El momento lo calcula el asistente según cuándo escribió cada contacto y qué tan urgente parece su interés.",
+  },
+  {
+    id: "ofrecer",
+    titulo: "Qué ofrecer",
+    resumen: "Usá lo que dijeron tus clientes para entender qué puede interesarles.",
+    color: "ambar",
+    icono: (
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <path
+          d="M2 2.5h5.2L14 9.3a1.3 1.3 0 0 1 0 1.9l-2.8 2.8a1.3 1.3 0 0 1-1.9 0L2.5 7.2V2z"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+        <circle cx="5" cy="5" r="1" fill="currentColor" />
+      </svg>
+    ),
+    ejemplos: [
+      { texto: "¿Qué producto le interesa a este cliente?" },
+      { texto: "¿Quién está buscando zapatillas?" },
+      { texto: "¿Qué le ofrecerías a este contacto?" },
+      { texto: "Agrupame clientes según lo que están buscando" },
+    ],
+    tip: "Funciona mejor cuanto más claro tengas cargado tu catálogo. Si el asistente todavía no lo tiene, te lo va a decir en vez de inventar una respuesta.",
+  },
+  {
+    id: "audiencias",
+    titulo: "Audiencias inteligentes",
+    resumen: "Convertí oportunidades en grupos de clientes listos para trabajar.",
+    color: "violeta",
+    icono: (
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <circle cx="5.2" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+        <circle cx="10.8" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.5" />
+        <path
+          d="M1.8 13c0-1.9 1.5-3 3.4-3s3.4 1.1 3.4 3M7.4 13c0-1.9 1.5-3 3.4-3s3.4 1.1 3.4 3"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+    ejemplos: [
+      { texto: "Creá una audiencia con clientes interesados en zapatillas" },
+      { texto: "Agrupá los clientes que conviene contactar hoy" },
+      {
+        texto: "Armame una audiencia con esas oportunidades",
+        nota: "Después de una búsqueda o recomendación, toma los resultados que acabás de ver",
+      },
+      { texto: "Renombrá la audiencia" },
+      { texto: "¿Cuántas audiencias tengo?" },
+    ],
+    tip: "Podés partir de una búsqueda o de una oportunidad detectada: el asistente arma la audiencia con esos contactos, sin que tengas que volver a explicarlos.",
+  },
+  {
+    id: "campanas",
+    titulo: "Mensajes y campañas",
+    resumen: "Pasá de una oportunidad a una campaña conversando con la IA.",
+    color: "rosa",
+    icono: (
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <path d="M2 8l12-5-4.5 12L7.5 9.5 2 8z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      </svg>
+    ),
+    ejemplos: [
+      { texto: "Preparame una campaña para estas personas" },
+      { texto: "¿Qué mensaje mandarías?" },
+      {
+        texto: "Prepará la campaña, pero no envíes nada todavía",
+        nota: "Nada se crea ni se envía sin que lo confirmes antes",
+      },
+      { texto: "Programá la campaña para el viernes" },
+      { texto: "Cambiale el template a la campaña" },
+    ],
+    tip: "El template, la audiencia y la fecha se pueden cambiar mientras la campaña esté en borrador o programada. Si ya se envió, conviene duplicarla y editar la copia.",
+  },
+  {
     id: "contactos",
     titulo: "Contactos",
     resumen: "Traé tus conversaciones de WhatsApp y encontrá gente por lo que dijo.",
@@ -101,35 +221,6 @@ const TEMAS: Tema[] = [
     tip: "Cuando la respuesta viene de algo que la persona realmente escribió, el asistente te muestra la frase textual como evidencia.",
   },
   {
-    id: "audiencias",
-    titulo: "Audiencias",
-    resumen: "Agrupá contactos para enviarles una campaña.",
-    color: "azul",
-    icono: (
-      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-        <circle cx="5.2" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.5" />
-        <circle cx="10.8" cy="6" r="2.2" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          d="M1.8 13c0-1.9 1.5-3 3.4-3s3.4 1.1 3.4 3M7.4 13c0-1.9 1.5-3 3.4-3s3.4 1.1 3.4 3"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
-      </svg>
-    ),
-    ejemplos: [
-      { texto: "Creá una audiencia" },
-      { texto: "Armá una audiencia con los contactos calientes" },
-      {
-        texto: "Armá una audiencia con esos",
-        nota: "Después de una búsqueda, toma los resultados que acabás de ver",
-      },
-      { texto: "Renombrá la audiencia" },
-      { texto: "¿Cuántas audiencias tengo?" },
-    ],
-    tip: "Podés encadenar: primero buscá los contactos que te interesan y después pedí la audiencia con esos resultados.",
-  },
-  {
     id: "templates",
     titulo: "Templates",
     resumen: "Creá los mensajes que Meta tiene que aprobar antes de enviarlos.",
@@ -158,31 +249,6 @@ const TEMAS: Tema[] = [
       { texto: "Mostrame el estado de mis templates" },
     ],
     tip: "Un template recién creado queda «enviado» hasta que Meta lo aprueba. Solo los aprobados se pueden usar en una campaña.",
-  },
-  {
-    id: "campanas",
-    titulo: "Campañas",
-    resumen: "Enviá un template a una audiencia, ahora o programado.",
-    color: "violeta",
-    icono: (
-      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-        <path
-          d="M2 8l12-5-4.5 12L7.5 9.5 2 8z"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinejoin="round"
-        />
-      </svg>
-    ),
-    ejemplos: [
-      { texto: "Quiero mandar una campaña" },
-      { texto: "Programá una campaña para el viernes" },
-      { texto: "Cambiá el template de la campaña" },
-      { texto: "Cambiale la audiencia a la campaña de agosto" },
-      { texto: "Reprogramá la campaña" },
-      { texto: "Cambiale el nombre a la campaña" },
-    ],
-    tip: "El template, la audiencia y la fecha solo se pueden cambiar mientras la campaña esté en borrador o programada. Si ya se envió, conviene duplicarla y editar la copia.",
   },
   {
     id: "metricas",
@@ -217,21 +283,34 @@ interface IAAyudaModalProps {
 }
 
 export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyudaModalProps) {
-  const [abierto, setAbierto] = useState<string | null>("contactos");
+  const [abierto, setAbierto] = useState<string | null>("oportunidades");
 
   if (!open) return null;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-6"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-6 print:static print:block print:bg-white print:p-0"
       onClick={onClose}
     >
+      {/*
+        @page + break-inside-avoid: al imprimir (o "Guardar como PDF" desde
+        el diálogo de impresión), evita que una card quede partida entre dos
+        páginas y da márgenes razonables. No depende de qué accordion esté
+        abierto: eso ya lo resuelve el patrón "hidden print:block" de cada
+        sección, más abajo.
+      */}
+      <style>{`
+        @media print {
+          @page { margin: 14mm; }
+          section { break-inside: avoid; page-break-inside: avoid; }
+        }
+      `}</style>
       <div
-        className="bg-ys-bg w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-xl"
+        className="bg-ys-bg w-full sm:max-w-2xl max-h-[92vh] sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col shadow-xl print:max-h-none print:rounded-none print:shadow-none print:w-full print:bg-white"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Encabezado */}
-        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-ys-border bg-white">
+        {/* Encabezado (pantalla) */}
+        <div className="flex items-start justify-between gap-4 px-5 py-4 border-b border-ys-border bg-white print:hidden">
           <div className="min-w-0">
             <h2 className="text-base font-bold text-ys-text">Qué le podés pedir al asistente</h2>
             <p className="text-[12.5px] text-ys-muted mt-0.5">
@@ -255,8 +334,23 @@ export default function IAAyudaModal({ open, onClose, onProbarEjemplo }: IAAyuda
           </button>
         </div>
 
+        {/* Encabezado (solo impresión/PDF) — documento completo con marca */}
+        <div className="hidden print:block px-1 pb-4 mb-1 border-b border-ys-border">
+          <div className="text-xl font-extrabold text-ys-text">YamaSend IA</div>
+          <div className="text-sm font-semibold text-ys-muted mt-0.5">
+            Todo lo que le podés pedir a tu asistente
+          </div>
+          <p className="text-[12.5px] text-ys-muted mt-2 leading-relaxed">
+            Tu asistente puede ayudarte a entender conversaciones, detectar oportunidades y
+            decidir a quién contactar, cuándo hacerlo y qué comunicar.
+          </p>
+          <p className="text-[12.5px] font-semibold text-ys-text mt-1.5">
+            Las acciones importantes siempre requieren tu confirmación.
+          </p>
+        </div>
+
         {/* Contenido */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 print:overflow-visible print:px-1 print:py-0">
           {TEMAS.map((tema) => {
             const c = COLORES[tema.color];
             const expandido = abierto === tema.id;

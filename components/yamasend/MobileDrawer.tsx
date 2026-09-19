@@ -19,6 +19,15 @@ interface MobileDrawerProps {
 
 const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
   {
+    key: "ia",
+    labelKey: "nav_ai",
+    icon: (c) => (
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+        <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke={c} strokeWidth="1.4" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
     key: "dashboard",
     labelKey: "nav_dashboard",
     icon: (c) => (
@@ -69,15 +78,6 @@ const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" |
       <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
         <path d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z" stroke={c} strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M12 6v4" stroke={c} strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
-    ),
-  },
-  {
-    key: "ia",
-    labelKey: "nav_ai",
-    icon: (c) => (
-      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
-        <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke={c} strokeWidth="1.4" strokeLinejoin="round" />
       </svg>
     ),
   },
