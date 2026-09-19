@@ -56,6 +56,10 @@ export default function MotorRecomendaciones() {
 
   const [executionIntentId, setExecutionIntentId] = useState<string | null>(null);
   const [gate, setGate] = useState<Record<string, unknown> | null>(null);
+  // AI-MOTOR-1.12 — provider real del canal resuelto server-side, solo
+  // para decidir qué copy mostrar antes de "Confirmar ejecución". Nunca
+  // se usa para decidir nada de negocio.
+  const [provider, setProvider] = useState<string | null>(null);
 
   const [resultadoEjecucion, setResultadoEjecucion] = useState<{
     estado: string | null;
@@ -136,6 +140,7 @@ export default function MotorRecomendaciones() {
     setCargando(false);
 
     setGate(r.gate);
+    setProvider(r.provider ?? null);
 
     if (!r.ok || !r.executionIntentId) {
       setError(
@@ -182,14 +187,16 @@ export default function MotorRecomendaciones() {
     setPreview(null);
     setExecutionIntentId(null);
     setGate(null);
+    setProvider(null);
     setResultadoEjecucion(null);
   }
 
+  const esProviderReal = Boolean(provider && provider !== "fake");
   const ESTADO_LABEL: Record<string, string> = {
     PENDIENTE: "Preparando ejecución",
     PROCESANDO: "Procesando",
-    COMPLETADO: "Ejecución completada (entorno de prueba)",
-    PARCIAL: "Ejecución parcial (entorno de prueba)",
+    COMPLETADO: esProviderReal ? "Ejecución completada" : "Ejecución completada (entorno de prueba)",
+    PARCIAL: esProviderReal ? "Ejecución parcial" : "Ejecución parcial (entorno de prueba)",
     FALLIDO: "Ejecución fallida",
     DESCONOCIDO: "Estado desconocido",
   };
@@ -201,7 +208,9 @@ export default function MotorRecomendaciones() {
           Recomendaciones del Motor
         </div>
         <div className="text-[12.5px] text-ys-muted font-medium">
-          Entorno de prueba — ningún mensaje de WhatsApp se envía todavía.
+          {provider && provider !== "fake"
+            ? "Este canal envía mensajes reales de WhatsApp."
+            : "Entorno de prueba — ningún mensaje de WhatsApp se envía todavía."}
         </div>
       </div>
 
@@ -331,18 +340,34 @@ export default function MotorRecomendaciones() {
 
       {paso === "intent_listo" && (
         <div className="flex flex-col gap-3">
-          <div className="text-[13px] text-ys-muted font-medium">
-            {gate && typeof gate.costo_creditos === "number"
-              ? `Esta ejecución va a usar ${gate.costo_creditos} créditos para ${gate.destinatarios ?? "?"} contactos.`
-              : "Ejecución lista para confirmar."}
-          </div>
+          {provider && provider !== "fake" ? (
+            <div className="rounded-xl px-4 py-3 text-[13px] font-semibold bg-ys-warn-bg text-ys-warn-text border border-ys-border">
+              Vas a enviar {gate && typeof gate.destinatarios === "number" ? gate.destinatarios : "un"}{" "}
+              mensaje{gate && gate.destinatarios === 1 ? "" : "s"} real
+              {gate && gate.destinatarios === 1 ? "" : "es"} de WhatsApp
+              {gate && typeof gate.costo_creditos === "number"
+                ? ` (${gate.costo_creditos} créditos)`
+                : ""}
+              . Esta acción no se puede deshacer.
+            </div>
+          ) : (
+            <div className="text-[13px] text-ys-muted font-medium">
+              {gate && typeof gate.costo_creditos === "number"
+                ? `Esta ejecución va a usar ${gate.costo_creditos} créditos para ${gate.destinatarios ?? "?"} contactos.`
+                : "Ejecución lista para confirmar."}
+            </div>
+          )}
           <button
             type="button"
             disabled={cargando}
             onClick={handleConfirmarYEjecutar}
             className="self-start rounded-xl px-4 py-2.5 text-[13.5px] font-bold bg-ys-green text-white hover:opacity-90 disabled:opacity-60"
           >
-            {cargando ? "Confirmando..." : "Confirmar y ejecutar"}
+            {cargando
+              ? "Confirmando..."
+              : provider && provider !== "fake"
+                ? "Confirmar envío real"
+                : "Confirmar y ejecutar"}
           </button>
         </div>
       )}

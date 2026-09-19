@@ -880,6 +880,14 @@ export interface AprobarDraftMotorResult {
   /** "READY" habilita el siguiente paso (autorización económica); cualquier otro valor, no. */
   estadoIntent: string | null;
   gate: Record<string, unknown> | null;
+  /**
+   * AI-MOTOR-1.12 — provider del canal resuelto server-side ("fake" |
+   * "ycloud" | otro que se habilite a futuro). La UI lo usa ÚNICAMENTE
+   * para decidir qué copy mostrar antes de "Confirmar ejecución" (envío
+   * real vs. simulado) — nunca para decidir nada de negocio: eso lo
+   * sigue resolviendo el propio servidor en cada paso siguiente.
+   */
+  provider?: string | null;
   error: string | null;
 }
 
@@ -987,7 +995,17 @@ export async function aprobarDraftMotorAction(
     };
   }
 
-  const canal = (
+  // AI-MOTOR-1.12 — selección general de canal (ya no hardcodea es_fake).
+  // Cualquier tenant con exactamente un canal activo usa ESE canal, sea
+  // fake o real: el provider real no está permitido "porque sí" para
+  // nadie — motor.providers_permitidos (kill switch global) y el propio
+  // canal (activo=true, configurado por el tenant) siguen siendo los
+  // únicos gates. Ante ambigüedad (más de un canal activo) fail-closed:
+  // nunca se elige el primero, igual que ya hace
+  // motor.validar_execution_gate más abajo en el pipeline
+  // (EXECUTION_BLOCKED_CANAL_AMBIGUO) — acá se corta antes, con un error
+  // legible en vez de dejar avanzar una elección arbitraria.
+  const canalesDelTenant = (
     (canales as Array<{
       canal_id: string;
       tenant_id: string;
@@ -995,17 +1013,30 @@ export async function aprobarDraftMotorAction(
       activo: boolean;
       es_fake: boolean;
     }> | null) ?? []
-  ).find((c) => c.tenant_id === contexto.ctx.tenantId && c.activo && c.es_fake);
+  ).filter((c) => c.tenant_id === contexto.ctx.tenantId && c.activo);
 
-  if (!canal) {
+  if (canalesDelTenant.length === 0) {
     return {
       ok: false,
       executionIntentId: null,
       estadoIntent: null,
       gate: null,
-      error: "Tu cuenta no tiene un canal de prueba (fake) configurado todavía.",
+      error: "Tu cuenta todavía no tiene un canal de envío configurado y activo.",
     };
   }
+
+  if (canalesDelTenant.length > 1) {
+    return {
+      ok: false,
+      executionIntentId: null,
+      estadoIntent: null,
+      gate: null,
+      error:
+        "Tu cuenta tiene más de un canal de envío activo y no se puede determinar cuál usar. Contactá a soporte antes de continuar.",
+    };
+  }
+
+  const canal = canalesDelTenant[0];
 
   // AUTO: crear execution intent.
   const { data: intentData, error: intentError } = await admin.rpc("motor_crear_execution_intent", {
@@ -1050,6 +1081,7 @@ export async function aprobarDraftMotorAction(
     executionIntentId: intent.execution_id,
     estadoIntent: intent.estado ?? null,
     gate: intent.gate ?? null,
+    provider: canal.provider,
     error:
       intent.estado === "READY"
         ? null
