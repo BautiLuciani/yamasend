@@ -2,7 +2,12 @@ import { redirect } from "next/navigation";
 import { getCurrentMembership } from "@/lib/auth/permisos";
 import LoginGate from "../login-gate";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
   // Se chequea la membresía y no el AppUser: getCurrentAppUser() devuelve
   // null para una cuenta empresa, y eso la dejaría entrar acá estando logueada.
   const membership = await getCurrentMembership();
@@ -11,5 +16,5 @@ export default async function LoginPage() {
     redirect("/panel");
   }
 
-  return <LoginGate initialTab="login" />;
+  return <LoginGate initialTab="login" initialError={error ?? null} />;
 }

@@ -7,9 +7,9 @@ import LoginGate from "../login-gate";
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ invite?: string }>;
+  searchParams: Promise<{ invite?: string; error?: string }>;
 }) {
-  const { invite } = await searchParams;
+  const { invite, error } = await searchParams;
   // Se chequea la membresía y no el AppUser: getCurrentAppUser() devuelve
   // null para una cuenta empresa, y eso la dejaría entrar acá estando logueada.
   const membership = await getCurrentMembership();
@@ -60,6 +60,7 @@ export default async function RegisterPage({
       inviteToken={invite ?? null}
       esInvitacionEmpresa={info?.valida === true && info.rol === "empresa"}
       organizacionInvita={info?.organizacion ?? null}
+      initialError={error ?? null}
     />
   );
 }
