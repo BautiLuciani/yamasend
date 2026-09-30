@@ -3,6 +3,7 @@
 import LoginScreen from "@/components/yamasend/LoginScreen";
 import { createClient } from "@/lib/supabase/client";
 import { validarDominioEmailAction } from "@/lib/actions/auth";
+import { COOKIE_NEXT_OAUTH } from "@/lib/utils/redireccionOauth";
 
 /**
  * El magic link se pide desde el NAVEGADOR, no desde una Server Action.
@@ -21,12 +22,27 @@ function urlCallback(): string {
   return `${base}/auth/callback`;
 }
 
+/**
+ * Si el usuario llegó al login desde "Conectar" en Claude / ChatGPT, se
+ * recuerda a dónde volver en una cookie de corta duración: /auth/callback la
+ * lee al confirmar el magic link. Va en cookie y no en la URL del magic link
+ * para no tener que tocar la lista de redirects permitidos de Supabase (el
+ * link tiene que abrirse en el mismo navegador de todas formas, por PKCE).
+ */
+function recordarVueltaOauth(nextOauth: string | null) {
+  const seguro = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = nextOauth
+    ? `${COOKIE_NEXT_OAUTH}=${encodeURIComponent(nextOauth)}; Path=/; Max-Age=3600; SameSite=Lax${seguro}`
+    : `${COOKIE_NEXT_OAUTH}=; Path=/; Max-Age=0; SameSite=Lax${seguro}`;
+}
+
 export default function LoginGate({
   initialTab,
   inviteToken = null,
   esInvitacionEmpresa = false,
   organizacionInvita = null,
   initialError = null,
+  nextOauth = null,
 }: {
   initialTab?: "login" | "register";
   redirectTo?: string;
@@ -34,11 +50,13 @@ export default function LoginGate({
   esInvitacionEmpresa?: boolean;
   organizacionInvita?: string | null;
   initialError?: string | null;
+  nextOauth?: string | null;
 }) {
   // shouldCreateUser: false — esta acción es solo para "ya tengo cuenta". Si
   // el email no existe, Supabase devuelve error en vez de crear una cuenta
   // fantasma sin nombre ni tipo elegido.
   async function handleLogin(email: string): Promise<string | null> {
+    recordarVueltaOauth(nextOauth);
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -69,6 +87,9 @@ export default function LoginGate({
   }): Promise<{ error: string | null }> {
     // Validación de dominio en el servidor (DNS). No toca cookies, así que
     // no dispara el re-render de la página.
+    // Una cuenta nueva sigue su onboarding (conectar WhatsApp): no se la
+    // manda a una pantalla de consentimiento que dejó a medias antes.
+    recordarVueltaOauth(null);
     const dominioValido = await validarDominioEmailAction(data.email);
     if (!dominioValido) {
       return {
