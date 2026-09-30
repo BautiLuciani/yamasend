@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { getOnboardingLink } from "@/lib/services/whatsappOnboarding";
+import { dominioDeEmailExiste } from "@/lib/utils/validarEmail";
 
 export interface AuthResult {
   error: string | null;
@@ -62,6 +63,14 @@ export async function requestRegisterLink(data: {
   nombreEmpresa?: string | null;
   inviteToken?: string | null;
 }): Promise<AuthResult> {
+  const dominioValido = await dominioDeEmailExiste(data.email);
+  if (!dominioValido) {
+    return {
+      error:
+        "Ese email no parece existir — revisá que el dominio esté bien escrito.",
+    };
+  }
+
   const supabase = await createClient();
 
   const { error } = await supabase.auth.signInWithOtp({
