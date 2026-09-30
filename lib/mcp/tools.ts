@@ -149,6 +149,19 @@ function normalizar(texto: string): string {
     .trim();
 }
 
+/**
+ * Etiqueta legible del estado de un template. En la base conviven filas con
+ * estados que no están en el tipo (ej. "APPROVED"/"PENDING" en mayúsculas,
+ * escritos por flujos viejos). No se les inventa un significado: se muestran
+ * tal cual y no cuentan como aprobados, igual que en el panel.
+ */
+function etiquetaEstadoTemplate(status: string): string {
+  return (
+    (ETIQUETA_ESTADO_TEMPLATE as Record<string, string>)[status] ??
+    `estado sin clasificar ("${status}"): no se puede usar en campañas hasta que figure como aprobado`
+  );
+}
+
 function recortar(texto: string | undefined | null, max: number): string | undefined {
   if (!texto) return undefined;
   return texto.length > max ? `${texto.slice(0, max - 1)}…` : texto;
@@ -413,7 +426,7 @@ async function validarEnvioTemplate(
   if (mismoNombre) {
     return {
       ok: false,
-      error: `Ya existe un template llamado "${mismoNombre.nombre}" (${ETIQUETA_ESTADO_TEMPLATE[mismoNombre.status]}). Elegí otro nombre.`,
+      error: `Ya existe un template llamado "${mismoNombre.nombre}" (${etiquetaEstadoTemplate(mismoNombre.status)}). Elegí otro nombre.`,
     };
   }
 
@@ -504,7 +517,7 @@ async function validarCampana(
   if (template.status !== "verificado") {
     return {
       ok: false,
-      error: `El template "${template.nombre}" está ${ETIQUETA_ESTADO_TEMPLATE[template.status]}. Solo se pueden usar templates aprobados por Meta.`,
+      error: `El template "${template.nombre}" está ${etiquetaEstadoTemplate(template.status)}. Solo se pueden usar templates aprobados por Meta.`,
     };
   }
 
@@ -880,7 +893,7 @@ export function registrarToolsYamasend(server: McpServer): void {
           templates: templates.map((t) => ({
             id: t.id,
             nombre: t.nombre,
-            estado: ETIQUETA_ESTADO_TEMPLATE[t.status],
+            estado: etiquetaEstadoTemplate(t.status),
             categoria: t.tipo,
             idioma: t.templateLang,
             contenido: t.contenido,
