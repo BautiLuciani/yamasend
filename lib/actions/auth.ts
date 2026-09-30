@@ -4,94 +4,15 @@ import { createClient } from "@/lib/supabase/server";
 import { getOnboardingLink } from "@/lib/services/whatsappOnboarding";
 import { dominioDeEmailExiste } from "@/lib/utils/validarEmail";
 
-export interface AuthResult {
-  error: string | null;
-}
-
-function sitioBase(): string {
-  const u = process.env.NEXT_PUBLIC_APP_URL;
-  if (!u) {
-    throw new Error("Falta NEXT_PUBLIC_APP_URL en el entorno.");
-  }
-  return u.replace(/\/+$/, "");
-}
-
 /**
- * Login SIN contraseña: manda un magic link por email.
- *
- * shouldCreateUser: false a propósito — esta acción es solo para "ya tengo
- * cuenta". Si el email no existe, Supabase devuelve error y se lo mostramos
- * tal cual ("no encontramos cuenta con ese email"), en vez de crear una
- * cuenta fantasma sin nombre ni tipo elegido.
+ * Chequea (por DNS) que el dominio del email pueda recibir correo, antes de
+ * mandar el magic link de registro. El magic link en sí se pide desde el
+ * navegador (ver app/login-gate.tsx): esta acción NO toca cookies a
+ * propósito, así no dispara el re-render de la página que borraba el cartel
+ * de "Revisá tu email".
  */
-export async function requestLoginLink(email: string): Promise<AuthResult> {
-  const supabase = await createClient();
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: {
-      shouldCreateUser: false,
-      emailRedirectTo: `${sitioBase()}/auth/callback`,
-    },
-  });
-
-  if (error) {
-    if (error.message?.toLowerCase().includes("signups not allowed")) {
-      return { error: "No encontramos una cuenta con ese email." };
-    }
-    return { error: error.message || "No se pudo enviar el link de acceso." };
-  }
-
-  return { error: null };
-}
-
-/**
- * Registro SIN contraseña y SIN pedir WhatsApp a mano: manda un magic link,
- * y todo lo que el usuario tipeó (nombre, tipo de cuenta, invitación) viaja
- * en el metadata del usuario para aplicarse recién cuando confirma el link
- * (ahí sí hay sesión real, ver procesarPrimerIngreso()).
- *
- * shouldCreateUser: true — a diferencia del login. Si el email ya tenía
- * cuenta, Supabase simplemente le manda un magic link a ESA cuenta (no crea
- * una duplicada); el usuario termina logueado en la cuenta que ya tenía, sin
- * error ni drama.
- */
-export async function requestRegisterLink(data: {
-  nombre: string;
-  email: string;
-  tipoCuenta: "individual" | "empresa";
-  nombreEmpresa?: string | null;
-  inviteToken?: string | null;
-}): Promise<AuthResult> {
-  const dominioValido = await dominioDeEmailExiste(data.email);
-  if (!dominioValido) {
-    return {
-      error:
-        "Ese email no parece existir — revisá que el dominio esté bien escrito.",
-    };
-  }
-
-  const supabase = await createClient();
-
-  const { error } = await supabase.auth.signInWithOtp({
-    email: data.email,
-    options: {
-      shouldCreateUser: true,
-      emailRedirectTo: `${sitioBase()}/auth/callback`,
-      data: {
-        nombre: data.nombre,
-        tipo_cuenta: data.tipoCuenta,
-        nombre_empresa: data.nombreEmpresa ?? null,
-        invite_token: data.inviteToken ?? null,
-      },
-    },
-  });
-
-  if (error) {
-    return { error: error.message || "No se pudo enviar el link de acceso." };
-  }
-
-  return { error: null };
+export async function validarDominioEmailAction(email: string): Promise<boolean> {
+  return dominioDeEmailExiste(email);
 }
 
 export async function logoutAction(): Promise<void> {
