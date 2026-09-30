@@ -49,6 +49,17 @@ const i18n = {
     settings_language_es: "Español",
     settings_language_en: "Inglés",
 
+    // ── Configuración (modal) ──
+    config_title: "Configuración",
+    config_nav_mcp: "Conector IA",
+    config_mcp_title: "Conector para Claude y ChatGPT",
+    config_mcp_desc: "Usá YamaSend hablando con la IA. Esta guía explica qué podés hacer y cómo conectarlo paso a paso.",
+    config_mcp_url_label: "Tu dirección de conexión",
+    config_mcp_copy: "Copiar",
+    config_mcp_copied: "Copiado",
+    config_mcp_download: "Descargar PDF",
+    config_mcp_page_alt: "Página {n} de la guía del conector",
+
     // ── Mi perfil (modal) ──
     myprofile_title: "Mi perfil",
     myprofile_nav_personal: "Perfil personal",
@@ -208,6 +219,17 @@ const i18n = {
     settings_language_desc: "Choose the interface language.",
     settings_language_es: "Spanish",
     settings_language_en: "English",
+
+    // ── Settings (modal) ──
+    config_title: "Settings",
+    config_nav_mcp: "AI connector",
+    config_mcp_title: "Connector for Claude and ChatGPT",
+    config_mcp_desc: "Use YamaSend by talking to AI. This guide explains what you can do and how to connect it step by step (in Spanish).",
+    config_mcp_url_label: "Your connection address",
+    config_mcp_copy: "Copy",
+    config_mcp_copied: "Copied",
+    config_mcp_download: "Download PDF",
+    config_mcp_page_alt: "Page {n} of the connector guide",
 
     // ── My profile (modal) ──
     myprofile_title: "My profile",

@@ -40,6 +40,7 @@ import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
+import ConfiguracionModal from "./ConfiguracionModal";
 import LogoutModal from "./LogoutModal";
 import KpiRow from "./KpiRow";
 import ContactsTable from "./ContactsTable";
@@ -488,6 +489,7 @@ export default function AppShell({
   const [profileOpen, setProfileOpen] = useState(false);
   const [profileView, setProfileView] = useState<"profile" | "settings">("profile");
   const [myProfileOpen, setMyProfileOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
   // Sección con la que abrir Mi Perfil. "creditos" cuando se llega desde un
   // botón de comprar; undefined cuando se abre normal desde el menú.
   const [myProfileSeccion, setMyProfileSeccion] = useState<
@@ -1565,6 +1567,7 @@ export default function AppShell({
         planLabel={planLabel}
         onLogout={handleLogout}
         onOpenMyProfile={() => setMyProfileOpen(true)}
+        onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
       />
 
@@ -1578,6 +1581,7 @@ export default function AppShell({
         planLabel={planLabel}
         onLogout={handleLogout}
         onOpenMyProfile={() => setMyProfileOpen(true)}
+        onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
       />
 
@@ -1606,6 +1610,8 @@ export default function AppShell({
         }}
         onUserUpdate={(patch) => setUser((prev) => ({ ...prev, ...patch }))}
       />
+
+      <ConfiguracionModal open={configOpen} onClose={() => setConfigOpen(false)} />
 
       <LogoutModal
         open={logoutModalOpen}

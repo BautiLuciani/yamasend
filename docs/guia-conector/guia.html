@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>YamaSend · Conectá YamaSend con Claude y ChatGPT</title>
+<style>
+  @font-face { font-family: "Manrope"; font-weight: 400; src: url("node_modules/@fontsource/manrope/files/manrope-latin-400-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Manrope"; font-weight: 500; src: url("node_modules/@fontsource/manrope/files/manrope-latin-500-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Manrope"; font-weight: 600; src: url("node_modules/@fontsource/manrope/files/manrope-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Manrope"; font-weight: 700; src: url("node_modules/@fontsource/manrope/files/manrope-latin-700-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Manrope"; font-weight: 800; src: url("node_modules/@fontsource/manrope/files/manrope-latin-800-normal.woff2") format("woff2"); }
+  @font-face { font-family: "Plex Mono"; font-weight: 500; src: url("node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
+
+  :root {
+    --bg: #fbfcfb; --card: #ffffff; --el2: #f2f4f3;
+    --text: #16211b; --muted: #5d6660; --dim: #8a908c;
+    --border: #e8ebe9; --border2: #d8ded9;
+    --green: #12b76a; --green-dark: #067647; --green-bg: #ecf9f2; --green-border: #a9e3c7;
+    --warn-bg: #fdf5e6; --warn-text: #8a5a00; --warn-border: #f3dfb8;
+    --dark: #16211b;
+  }
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { font-family: "Manrope", sans-serif; color: var(--text); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { background: #fff; font-size: 10.6pt; line-height: 1.55; }
+
+  .page { width: 210mm; height: 297mm; position: relative; overflow: hidden; page-break-after: always; padding: 22mm 20mm 20mm; background: #fff; }
+  .page:last-child { page-break-after: auto; }
+
+  /* Encabezado y pie de páginas interiores */
+  .top { position: absolute; top: 9mm; left: 20mm; right: 20mm; display: flex; align-items: center; justify-content: space-between; font-size: 8pt; color: var(--dim); font-weight: 600; letter-spacing: .02em; }
+  .top img { height: 7mm; }
+  .bottom { position: absolute; bottom: 9mm; left: 20mm; right: 20mm; display: flex; justify-content: space-between; font-size: 8pt; color: var(--dim); font-weight: 600; border-top: 1px solid var(--border); padding-top: 3mm; }
+
+  /* Portada */
+  .cover { padding: 0; background: var(--bg); }
+  .cover-band { position: absolute; inset: 0 0 auto 0; height: 148mm; background: linear-gradient(135deg, #0b3d2a 0%, #0e6b44 55%, #12b76a 100%); }
+  .cover-band::after { content: ""; position: absolute; right: -30mm; top: -30mm; width: 140mm; height: 140mm; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.14), rgba(255,255,255,0) 70%); }
+  .cover-logo { position: absolute; top: 20mm; left: 20mm; background: #fff; border-radius: 5mm; padding: 5mm 7mm; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  .cover-logo img { height: 20mm; display: block; }
+  .cover-title { position: absolute; top: 70mm; left: 20mm; right: 20mm; color: #fff; }
+  .kicker { display: inline-block; font-size: 8.5pt; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28); padding: 1.5mm 3.5mm; border-radius: 20mm; margin-bottom: 6mm; }
+  .cover-title h1 { font-size: 30pt; line-height: 1.12; font-weight: 800; letter-spacing: -.02em; }
+  .cover-title p { margin-top: 5mm; font-size: 12.5pt; color: rgba(255,255,255,.88); font-weight: 500; max-width: 150mm; }
+  .cover-body { position: absolute; top: 156mm; left: 20mm; right: 20mm; }
+  .chat-demo { background: #fff; border: 1px solid var(--border); border-radius: 5mm; padding: 5mm; box-shadow: 0 8px 20px rgba(16,24,20,.05); }
+  .bubble { max-width: 80%; padding: 2.4mm 4mm; border-radius: 4mm; font-size: 10pt; font-weight: 500; margin-bottom: 3mm; }
+  .bubble.user { margin-left: auto; background: var(--green); color: #fff; border-bottom-right-radius: 1mm; }
+  .bubble.ai { background: var(--el2); color: var(--text); border-bottom-left-radius: 1mm; }
+  .bubble.ai b { color: var(--green-dark); }
+  .toc { margin-top: 6mm; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .toc div { background: #fff; border: 1px solid var(--border); border-radius: 4mm; padding: 4mm; }
+  .toc .n { font-size: 8pt; font-weight: 800; color: var(--green); letter-spacing: .1em; }
+  .toc .t { font-size: 10.5pt; font-weight: 700; margin-top: 1mm; line-height: 1.3; }
+  .toc .p { font-size: 8.5pt; color: var(--dim); font-weight: 600; margin-top: 1.5mm; }
+
+  /* Títulos de sección */
+  .sec-head { display: flex; align-items: center; gap: 4mm; margin-bottom: 3mm; }
+  .sec-num { width: 11mm; height: 11mm; border-radius: 3mm; background: var(--green); color: #fff; font-weight: 800; font-size: 14pt; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  h2 { font-size: 20pt; font-weight: 800; letter-spacing: -.02em; line-height: 1.15; }
+  .lead { color: var(--muted); font-size: 11pt; font-weight: 500; margin-bottom: 6mm; }
+  h3 { font-size: 12pt; font-weight: 800; margin: 6mm 0 3mm; letter-spacing: -.01em; }
+
+  /* Tarjetas de funciones */
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .card { border: 1px solid var(--border); border-radius: 4mm; padding: 4.5mm; background: #fff; break-inside: avoid; }
+  .card .ico { width: 8mm; height: 8mm; border-radius: 2.5mm; background: var(--green-bg); display: flex; align-items: center; justify-content: center; margin-bottom: 2.5mm; }
+  .card .ico svg { width: 4.6mm; height: 4.6mm; }
+  .card h4 { font-size: 10.8pt; font-weight: 800; margin-bottom: 1mm; }
+  .card p { font-size: 9.4pt; color: var(--muted); font-weight: 500; line-height: 1.45; }
+  .card .ej { margin-top: 2.5mm; font-size: 9pt; color: var(--green-dark); font-weight: 700; background: var(--green-bg); border-radius: 2mm; padding: 1.8mm 2.8mm; }
+  .tag { display: inline-block; font-size: 7.5pt; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; padding: .8mm 2.2mm; border-radius: 10mm; margin-left: 2mm; vertical-align: middle; }
+  .tag.libre { background: var(--green-bg); color: var(--green-dark); }
+  .tag.confirma { background: var(--warn-bg); color: var(--warn-text); }
+
+  /* Recuadros */
+  .note { border-radius: 4mm; padding: 4.5mm 5mm; font-size: 9.6pt; font-weight: 500; break-inside: avoid; }
+  .note b { font-weight: 800; }
+  .note.green { background: var(--green-bg); border: 1px solid var(--green-border); color: #0f3d27; }
+  .note.warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: #5c3d00; }
+  .note.gray { background: var(--el2); border: 1px solid var(--border); color: var(--text); }
+  .note .nt { font-weight: 800; font-size: 10.2pt; margin-bottom: 1.5mm; display: flex; align-items: center; gap: 2mm; }
+  .checks { list-style: none; margin-top: 1mm; }
+  .checks li { position: relative; padding-left: 6mm; margin: 1.6mm 0; }
+  .checks li::before { content: ""; position: absolute; left: 0; top: 1.3mm; width: 3.4mm; height: 3.4mm; border-radius: 50%; background: var(--green) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='m4 8.4 2.7 2.4L12 5.4' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>") center/100% no-repeat; }
+
+  /* Flujo de envío seguro */
+  .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 2.5mm; margin: 3mm 0 1mm; }
+  .flow .st { background: #fff; border: 1px solid var(--border); border-radius: 3.5mm; padding: 3.5mm; }
+  .flow .st .k { font-size: 7.5pt; font-weight: 800; color: var(--green); letter-spacing: .1em; }
+  .flow .st .v { font-size: 9.6pt; font-weight: 700; margin-top: .8mm; line-height: 1.35; }
+  .flow .st .d { font-size: 8.6pt; color: var(--muted); font-weight: 500; margin-top: 1mm; line-height: 1.4; }
+  .flow .ar { display: flex; align-items: center; color: var(--green); font-weight: 800; font-size: 13pt; }
+
+  /* Pasos */
+  .steps { counter-reset: paso; }
+  .step { display: grid; grid-template-columns: 9mm 1fr; gap: 4mm; padding: 3.8mm 0; border-bottom: 1px dashed var(--border2); break-inside: avoid; }
+  .step:last-child { border-bottom: 0; }
+  .step .num { counter-increment: paso; width: 9mm; height: 9mm; border-radius: 50%; background: var(--dark); color: #fff; font-weight: 800; font-size: 11pt; display: flex; align-items: center; justify-content: center; }
+  .step .num::before { content: counter(paso); }
+  .step h4 { font-size: 11pt; font-weight: 800; margin: 1.2mm 0 1mm; }
+  .step p { font-size: 9.8pt; color: var(--muted); font-weight: 500; }
+  .step p b, .step li b { color: var(--text); font-weight: 800; }
+  .step ul { margin: 1.5mm 0 0 4.5mm; font-size: 9.6pt; color: var(--muted); font-weight: 500; }
+  .step ul li { margin: .8mm 0; }
+  .ui { display: inline-block; font-weight: 800; color: var(--text); background: var(--el2); border: 1px solid var(--border2); border-radius: 1.5mm; padding: 0 1.6mm; font-size: 9.2pt; white-space: nowrap; }
+  .url { display: flex; align-items: center; justify-content: space-between; gap: 3mm; margin-top: 2.5mm; background: var(--dark); color: #fff; border-radius: 3mm; padding: 3mm 4mm; }
+  .url code { font-family: "Plex Mono", monospace; font-size: 10.5pt; color: #7ff0b4; }
+  .url span { font-size: 7.5pt; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: rgba(255,255,255,.6); }
+
+  /* Mockups simples de pantallas */
+  .mock { margin-top: 2.5mm; border: 1px solid var(--border2); border-radius: 3.5mm; background: #fff; overflow: hidden; max-width: 128mm; }
+  .mock .bar { background: var(--el2); padding: 1.8mm 3mm; font-size: 8pt; font-weight: 700; color: var(--dim); display: flex; gap: 1.4mm; align-items: center; }
+  .mock .bar i { width: 2mm; height: 2mm; border-radius: 50%; background: var(--border2); display: inline-block; }
+  .mock .body { padding: 3.5mm 4mm; font-size: 9pt; }
+  .mock .row { display: flex; align-items: flex-start; gap: 2.2mm; margin: 1.3mm 0; }
+  .mock .radio { width: 3.2mm; height: 3.2mm; border-radius: 50%; border: 1.5px solid var(--border2); margin-top: .9mm; flex-shrink: 0; }
+  .mock .radio.on { border: 1mm solid var(--green); }
+  .mock .lbl { font-weight: 700; }
+  .mock .muted { color: var(--dim); font-weight: 500; }
+  .mock .field { border: 1px solid var(--border2); border-radius: 2mm; padding: 1.4mm 2.5mm; margin: 1mm 0 2mm; font-family: "Plex Mono", monospace; font-size: 8.6pt; color: var(--text); }
+  .mock .fl { font-size: 8pt; font-weight: 700; color: var(--muted); }
+  .mock .btn { display: inline-block; background: var(--green); color: #fff; font-weight: 800; border-radius: 2mm; padding: 1.6mm 4mm; font-size: 8.8pt; }
+  .mock .btn.dark { background: var(--dark); }
+  .mock .btn.ghost { background: #fff; color: var(--muted); border: 1px solid var(--border2); }
+  .mock .sub { font-size: 8pt; font-weight: 800; color: var(--muted); margin: 2mm 0 .8mm; text-transform: uppercase; letter-spacing: .06em; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin: 2mm 0 4mm; }
+  .plan { border: 1px solid var(--border); border-radius: 3.5mm; padding: 3.5mm; background: #fff; }
+  .plan .pn { font-size: 9.8pt; font-weight: 800; }
+  .plan .pd { font-size: 8.8pt; color: var(--muted); font-weight: 500; margin-top: 1mm; line-height: 1.4; }
+  .plan.ok { border-color: var(--green-border); background: var(--green-bg); }
+  .plan.no { background: var(--el2); }
+  .pill { display: inline-block; font-size: 7.5pt; font-weight: 800; padding: .6mm 2mm; border-radius: 10mm; margin-bottom: 1.5mm; letter-spacing: .04em; }
+  .pill.ok { background: var(--green); color: #fff; }
+  .pill.no { background: var(--border2); color: var(--muted); }
+
+  .faq { break-inside: avoid; border: 1px solid var(--border); border-radius: 3.5mm; padding: 3.8mm 4.5mm; margin-bottom: 3mm; background: #fff; }
+  .faq .q { font-weight: 800; font-size: 10.3pt; }
+  .faq .a { color: var(--muted); font-weight: 500; font-size: 9.6pt; margin-top: 1mm; }
+
+  .prompts { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5mm; margin-top: 2mm; }
+  .prompts div { background: var(--el2); border-radius: 3mm; padding: 2.8mm 3.5mm; font-size: 9.3pt; font-weight: 600; }
+  .prompts div::before { content: "“"; color: var(--green); font-weight: 800; font-size: 13pt; line-height: 0; margin-right: 1mm; vertical-align: -1.5mm; }
+
+  .fin { position: absolute; left: 20mm; right: 20mm; bottom: 24mm; text-align: center; }
+  .fin img { height: 12mm; opacity: .95; }
+  .fin p { font-size: 8.8pt; color: var(--dim); font-weight: 600; margin-top: 2mm; }
+</style>
+</head>
+<body>
+
+<!-- ============================================================ PORTADA -->
+<section class="page cover">
+  <div class="cover-band"></div>
+  <div class="cover-logo"><img src="logo-crop.png" alt="YamaSend"></div>
+  <div class="cover-title">
+    <span class="kicker">Guía del conector</span>
+    <h1>Usá YamaSend<br>desde Claude y ChatGPT</h1>
+    <p>Consultá tus contactos, armá audiencias y enviá campañas de WhatsApp simplemente escribiéndole a la IA.</p>
+  </div>
+
+  <div class="cover-body">
+    <div class="chat-demo">
+      <div class="bubble user">Armame una audiencia con todos mis contactos calientes</div>
+      <div class="bubble ai">Listo, creé la audiencia <b>“Clientes calientes”</b> con 42 contactos. ¿Querés que preparemos una campaña para ellos?</div>
+      <div class="bubble user">Sí, con el template de la promo de octubre, mañana a las 10</div>
+      <div class="bubble ai" style="margin-bottom:0">Te preparé la vista previa: <b>42 destinatarios</b>, usa <b>42 créditos</b>, se envía mañana a las 10:00. ¿Confirmo?</div>
+    </div>
+
+    <div class="toc">
+      <div><div class="n">01</div><div class="t">Qué podés hacer desde el chat</div><div class="p">Página 2</div></div>
+      <div><div class="n">02</div><div class="t">Cómo conectarlo a Claude</div><div class="p">Página 4</div></div>
+      <div><div class="n">03</div><div class="t">Cómo conectarlo a ChatGPT</div><div class="p">Página 6</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 1. QUÉ PODÉS HACER -->
+<section class="page">
+  <div class="top"><img src="logo-crop.png" alt="YamaSend"><span>Guía del conector · Claude y ChatGPT</span></div>
+
+  <div class="sec-head"><div class="sec-num">1</div><h2>Qué podés hacer desde el chat</h2></div>
+  <p class="lead">Una vez conectado, le hablás a Claude o a ChatGPT como le hablarías a una persona, y la IA trabaja sobre tu cuenta de YamaSend. No hace falta saber de tecnología ni aprender comandos.</p>
+
+  <h3>Consultar <span class="tag libre">Sin confirmación</span></h3>
+  <div class="cards">
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></div>
+      <h4>Tu cuenta y créditos</h4>
+      <p>Si tu WhatsApp está conectado, cuántos créditos te quedan y qué acciones tenés habilitadas.</p>
+      <div class="ej">“¿Cuántos créditos me quedan?”</div>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg></div>
+      <h4>Buscar contactos</h4>
+      <p>Por nombre, por lo que consultaron, por su nivel de interés (caliente, tibio, frío) o por cuánto hace que no escriben.</p>
+      <div class="ej">“¿Quiénes preguntaron por departamentos?”</div>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></div>
+      <h4>Audiencias, templates y campañas</h4>
+      <p>Ver tus listas de contactos, tus mensajes con su estado en Meta (aprobado, en revisión, rechazado y el motivo) y tus campañas.</p>
+      <div class="ej">“¿Qué templates tengo aprobados?”</div>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></div>
+      <h4>Resultados y métricas</h4>
+      <p>Cuántos mensajes se enviaron, cuántos se leyeron, cómo te fue en una campaña y cuál es el mejor horario para enviar.</p>
+      <div class="ej">“¿Cómo le fue a la campaña de ayer?”</div>
+    </div>
+  </div>
+
+  <h3>Crear y organizar <span class="tag libre">No envía nada</span></h3>
+  <div class="cards">
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c1-3.5 3.5-5 6.5-5s5.5 1.5 6.5 5M18 8v6M15 11h6"/></svg></div>
+      <h4>Armar y editar audiencias</h4>
+      <p>Crear listas con los contactos que elijas o con un filtro (por ejemplo, “todos los calientes”), renombrarlas y sumar o quitar contactos.</p>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg></div>
+      <h4>Redactar templates</h4>
+      <p>Pedile a la IA que te escriba el mensaje y guardalo como borrador en YamaSend para revisarlo con calma.</p>
+    </div>
+  </div>
+
+  <div class="bottom"><span>YamaSend · Mensajería masiva por IA</span><span>2</span></div>
+</section>
+
+<!-- ============================================================ 1b. ENVÍOS + SEGURIDAD -->
+<section class="page">
+  <div class="top"><img src="logo-crop.png" alt="YamaSend"><span>Guía del conector · Claude y ChatGPT</span></div>
+
+  <h3 style="margin-top:0">Enviar <span class="tag confirma">Siempre con tu confirmación</span></h3>
+  <div class="cards">
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v5c0 4.5 3.3 8 8 9 4.7-1 8-4.5 8-9V7z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg></div>
+      <h4>Mandar un template a Meta</h4>
+      <p>Para que Meta lo apruebe y lo puedas usar en campañas. La revisión suele tardar de minutos a 24 horas.</p>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="#067647" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10 14"/><path d="m21 3-7 18-4-7-7-4z"/></svg></div>
+      <h4>Enviar o programar una campaña</h4>
+      <p>Elegís audiencia, template aprobado y cuándo sale: ahora o en la fecha y hora que quieras. Cada mensaje usa 1 crédito.</p>
+    </div>
+  </div>
+
+  <h3>Cómo funciona un envío</h3>
+  <p style="color:var(--muted);font-weight:500;font-size:9.8pt">Enviar le llega a personas reales y no se puede deshacer. Por eso, antes de cualquier envío, YamaSend siempre te muestra un resumen:</p>
+  <div class="flow">
+    <div class="st"><div class="k">PASO 1</div><div class="v">Le pedís el envío</div><div class="d">“Mandá la promo a mis clientes calientes”.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="k">PASO 2</div><div class="v">Ves la vista previa</div><div class="d">Audiencia, cantidad de personas, mensaje exacto, fecha y créditos.</div></div>
+    <div class="ar">→</div>
+    <div class="st"><div class="k">PASO 3</div><div class="v">Confirmás</div><div class="d">Recién ahí se envía. Si algo cambió, se vuelve a pedir confirmación.</div></div>
+  </div>
+
+  <div class="note green" style="margin-top:6mm">
+    <div class="nt">Tu cuenta, protegida</div>
+    <ul class="checks">
+      <li>La IA solo ve <b>tus</b> datos: los mismos que ves vos en el panel de YamaSend, con los mismos permisos.</li>
+      <li>Nada se envía sin una vista previa, y cada confirmación sirve para <b>un solo envío</b>: no hay envíos duplicados.</li>
+      <li>El conector no compra créditos ni maneja pagos. Eso se hace siempre desde YamaSend.</li>
+      <li>Podés desconectarlo cuando quieras desde la configuración de conectores de Claude o ChatGPT.</li>
+    </ul>
+  </div>
+
+  <h3>Ideas para arrancar</h3>
+  <div class="prompts">
+    <div>¿Cómo está mi cuenta de YamaSend?</div>
+    <div>Mostrame los contactos que no escriben hace más de 30 días.</div>
+    <div>Escribime un template para una promo de 2x1 y guardalo como borrador.</div>
+    <div>¿Qué campañas envié este mes y cuántas personas las leyeron?</div>
+    <div>¿Cuál es el mejor horario para mandar una campaña?</div>
+    <div>Programá la campaña de la promo para el viernes a las 10.</div>
+  </div>
+
+
+  <div class="bottom"><span>YamaSend · Mensajería masiva por IA</span><span>3</span></div>
+</section>
+
+<!-- ============================================================ 2. CLAUDE -->
+<section class="page">
+  <div class="top"><img src="logo-crop.png" alt="YamaSend"><span>Guía del conector · Claude y ChatGPT</span></div>
+
+  <div class="sec-head"><div class="sec-num">2</div><h2>Cómo conectarlo a Claude</h2></div>
+  <p class="lead">Funciona en <b>todos los planes de Claude</b> (el plan gratuito permite un conector personalizado). Lo configurás una sola vez y queda disponible en la web, en la app de escritorio y en el celular.</p>
+
+  <div class="url"><code>https://yamasend.vercel.app/api/mcp</code><span>Tu dirección de conexión</span></div>
+
+  <div class="note gray" style="margin-top:3mm">
+    <div class="nt">Antes de empezar</div>
+    Necesitás una cuenta de YamaSend con tu <b>WhatsApp Business conectado</b>. Si todavía no lo conectaste, hacelo primero desde el panel de YamaSend.
+  </div>
+
+  <div class="steps" style="margin-top:2mm">
+    <div class="step"><div class="num"></div><div>
+      <h4>Abrí la configuración de conectores</h4>
+      <p>En Claude (desde el navegador o la app de escritorio) entrá a <span class="ui">Configuración</span> → <span class="ui">Conectores</span> y tocá <span class="ui">Agregar conector personalizado</span>.</p>
+    </div></div>
+
+    <div class="step"><div class="num"></div><div>
+      <h4>Completá el nombre y la dirección</h4>
+      <p>En <b>Nombre</b> escribí <b>YamaSend</b> y en <b>URL</b> pegá la dirección de conexión de arriba. En <b>Autenticación</b> y <b>Cliente OAuth</b> dejá lo que Claude detecta solo:</p>
+      <div class="mock">
+        <div class="bar"><i></i><i></i><i></i>&nbsp;Agregar conector personalizado</div>
+        <div class="body">
+          <div class="fl">Nombre</div><div class="field">YamaSend</div>
+          <div class="fl">URL</div><div class="field">https://yamasend.vercel.app/api/mcp</div>
+          <div class="two">
+            <div><div class="sub">Autenticación</div><div class="row"><span class="radio on"></span><span class="lbl">Iniciar sesión ahora</span></div></div>
+            <div><div class="sub">Cliente OAuth</div><div class="row"><span class="radio on"></span><span class="lbl">Registrar automáticamente</span></div></div>
+          </div>
+          <div style="text-align:right;margin-top:2mm"><span class="btn dark">Agregar</span></div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="step"><div class="num"></div><div>
+      <h4>Tocá “Conectar” e iniciá sesión en YamaSend</h4>
+      <p>Se abre YamaSend. Si no tenías la sesión abierta, ingresá tu email: te llega un link de acceso y, al abrirlo, volvés solo a la pantalla de permiso.</p>
+    </div></div>
+
+  </div>
+
+  <div class="bottom"><span>YamaSend · Mensajería masiva por IA</span><span>4</span></div>
+</section>
+
+<!-- ============================================================ 2b. CLAUDE EQUIPOS + TIPS -->
+<section class="page">
+  <div class="top"><img src="logo-crop.png" alt="YamaSend"><span>Guía del conector · Claude y ChatGPT</span></div>
+
+  <div class="steps" style="counter-reset: paso 3">
+    <div class="step"><div class="num"></div><div>
+      <h4>Tocá “Permitir acceso”</h4>
+      <div class="mock" style="max-width:92mm">
+        <div class="body" style="text-align:center">
+          <div style="font-weight:800;font-size:9.6pt;margin-bottom:1.5mm">Claude quiere conectarse con tu cuenta de YamaSend</div>
+          <div class="muted" style="font-size:8.2pt;margin-bottom:2.5mm">Vas a poder manejar YamaSend hablando desde el chat.</div>
+          <div class="btn" style="display:block;margin-bottom:1.5mm">Permitir acceso</div>
+          <div class="btn ghost" style="display:block">Cancelar</div>
+        </div>
+      </div>
+      <p style="margin-top:2mm">Volvés a Claude con YamaSend conectado.</p>
+    </div></div>
+
+    <div class="step"><div class="num"></div><div>
+      <h4>Probalo en un chat nuevo</h4>
+      <p>Escribí <b>“¿Cómo está mi cuenta de YamaSend?”</b>. La primera vez que use YamaSend, Claude te va a pedir permiso para usar la herramienta: aceptá. Para los envíos te recomendamos aprobar cada vez.</p>
+    </div></div>
+  </div>
+
+  <h3>¿Usás Claude con tu empresa (plan Team o Enterprise)?</h3>
+  <div class="note gray">
+    En estos planes, <b>el administrador de la organización</b> agrega el conector una sola vez desde la <b>configuración de la organización</b>, en la sección de conectores, usando la misma dirección de conexión. Después, cada persona del equipo solo tiene que ir a <span class="ui">Configuración</span> → <span class="ui">Conectores</span>, buscar YamaSend y tocar <span class="ui">Conectar</span> para iniciar sesión con <b>su propia</b> cuenta de YamaSend.
+  </div>
+
+  <h3>Consejos para usarlo en Claude</h3>
+  <ul class="checks" style="font-size:10pt;font-weight:500;color:var(--muted)">
+    <li>Si Claude no usa YamaSend en un chat, revisá en el menú de herramientas del chat que el conector <b>YamaSend</b> esté activado, o nombralo en tu mensaje: “en YamaSend…”.</li>
+    <li>Podés pedir varias cosas seguidas: “buscá los contactos tibios, armá una audiencia y preparame una campaña”.</li>
+    <li>Cuando Claude te muestre la vista previa de un envío, leela con atención: lo que confirmás es exactamente lo que sale.</li>
+    <li>Para desconectarlo: <span class="ui">Configuración</span> → <span class="ui">Conectores</span> → YamaSend → desconectar.</li>
+  </ul>
+
+  <div class="note green" style="margin-top:5mm">
+    <div class="nt">¿Algo no funcionó?</div>
+    Pasá a la sección <b>Preguntas frecuentes</b> al final de esta guía. Ahí están las situaciones más comunes y cómo resolverlas.
+  </div>
+
+  <div class="bottom"><span>YamaSend · Mensajería masiva por IA</span><span>5</span></div>
+</section>
+
+<!-- ============================================================ 3. CHATGPT -->
+<section class="page">
+  <div class="top"><img src="logo-crop.png" alt="YamaSend"><span>Guía del conector · Claude y ChatGPT</span></div>
+
+  <div class="sec-head"><div class="sec-num">3</div><h2>Cómo conectarlo a ChatGPT</h2></div>
+  <p class="lead">En ChatGPT, los conectores propios se agregan desde el <b>modo desarrollador</b>, que hoy solo está disponible en algunos planes. Revisá el tuyo antes de empezar:</p>
+
+  <div class="plans">
+    <div class="plan ok"><span class="pill ok">DISPONIBLE</span><div class="pn">Business</div><div class="pd">Un administrador del espacio de trabajo tiene que activar el modo desarrollador.</div></div>
+    <div class="plan ok"><span class="pill ok">DISPONIBLE</span><div class="pn">Enterprise y Edu</div><div class="pd">El administrador tiene que darte acceso; después lo activás vos.</div></div>
+    <div class="plan no"><span class="pill no">TODAVÍA NO</span><div class="pn">Gratis, Plus y Pro</div><div class="pd">No permiten conectores con acciones. Mientras tanto, podés usar YamaSend desde Claude.</div></div>
+  </div>
+
+  <div class="url"><code>https://yamasend.vercel.app/api/mcp</code><span>Tu dirección de conexión</span></div>
+
+  <div class="steps" style="margin-top:2mm">
+    <div class="step"><div class="num"></div><div>
+      <h4>Activá el modo desarrollador</h4>
+      <p>Entrá a <span class="ui">Configuración</span> → <span class="ui">Aplicaciones</span> → <span class="ui">Configuración avanzada</span> y activá el <b>modo desarrollador</b>. En los planes Business, esto lo hace el administrador.</p>
+    </div></div>
+
+    <div class="step"><div class="num"></div><div>
+      <h4>Creá la aplicación de YamaSend</h4>
+      <p>En <span class="ui">Configuración</span> → <span class="ui">Aplicaciones</span> tocá <span class="ui">Crear</span> y completá:</p>
+      <ul>
+        <li><b>Nombre:</b> YamaSend</li>
+        <li><b>Dirección del servidor MCP:</b> la dirección de conexión de arriba</li>
+        <li><b>Autenticación:</b> OAuth</li>
+      </ul>
+    </div></div>
+
+    <div class="step"><div class="num"></div><div>
+      <h4>Iniciá sesión en YamaSend y permití el acceso</h4>
+      <p>Al buscar las herramientas, ChatGPT abre YamaSend. Iniciá sesión y tocá <b>Permitir acceso</b>, igual que en Claude. Después tocá <span class="ui">Crear</span> para terminar.</p>
+    </div></div>
+
+    <div class="step"><div class="num"></div><div>
+      <h4>Usalo en un chat</h4>
+      <p>YamaSend aparece en tus aplicaciones activas con la etiqueta <b>Dev</b>. En un chat nuevo, elegilo desde el menú de herramientas o mencionalo con <b>@YamaSend</b> y escribí, por ejemplo, <b>“¿Cómo está mi cuenta de YamaSend?”</b>.</p>
+    </div></div>
+  </div>
+
+  <div class="note warn" style="margin-top:3mm">
+    <b>Importante:</b> OpenAI cambia seguido los nombres de estos menús (por ejemplo “Aplicaciones” también puede aparecer como “Apps” o “Plugins”). Si no encontrás una opción con el mismo nombre, buscá la sección de aplicaciones o conectores dentro de la configuración.
+  </div>
+
+  <div class="bottom"><span>YamaSend · Mensajería masiva por IA</span><span>6</span></div>
+</section>
+
+<!-- ============================================================ FAQ -->
+<section class="page">
+  <div class="top"><img src="logo-crop.png" alt="YamaSend"><span>Guía del conector · Claude y ChatGPT</span></div>
+
+  <div class="sec-head"><div class="sec-num" style="background:var(--dark)">?</div><h2>Preguntas frecuentes</h2></div>
+  <p class="lead">Las situaciones más comunes y cómo resolverlas.</p>
+
+  <div class="faq"><div class="q">Me dice que mi cuenta “todavía no está lista”.</div><div class="a">Tu cuenta de YamaSend todavía no tiene el WhatsApp Business conectado. Entrá a YamaSend desde el navegador, terminá de conectar WhatsApp y volvé a probar.</div></div>
+  <div class="faq"><div class="q">Me dice que no tengo créditos suficientes.</div><div class="a">Cada mensaje de una campaña usa 1 crédito. Comprá más créditos desde YamaSend (o pedíselos a tu empresa) o elegí una audiencia más chica.</div></div>
+  <div class="faq"><div class="q">No puedo usar un template en una campaña.</div><div class="a">Solo se pueden usar templates <b>aprobados por Meta</b>. Si está en revisión, esperá la aprobación; si fue rechazado, la IA te muestra el motivo y te ayuda a armar uno nuevo.</div></div>
+  <div class="faq"><div class="q">¿Puedo deshacer un envío?</div><div class="a">No. Por eso siempre vas a ver una vista previa antes de confirmar. Una campaña <b>programada</b> sí se puede modificar o eliminar desde YamaSend antes de la fecha de envío.</div></div>
+  <div class="faq"><div class="q">La pantalla de permiso dice que la solicitud venció.</div><div class="a">El pedido de conexión dura unos minutos. Volvé a Claude o ChatGPT y tocá <b>Conectar</b> de nuevo.</div></div>
+  <div class="faq"><div class="q">¿La IA puede ver datos de otras cuentas?</div><div class="a">No. El conector usa tu sesión de YamaSend: ve y hace exactamente lo mismo que vos en el panel, con tus permisos. Si trabajás para una empresa, se respetan los permisos que te dio.</div></div>
+  <div class="faq"><div class="q">¿Cómo lo desconecto?</div><div class="a">Desde la configuración de conectores (Claude) o de aplicaciones (ChatGPT), eligiendo YamaSend y desconectándolo. Tu cuenta de YamaSend no se modifica.</div></div>
+
+  <div class="fin">
+    <img src="logo-crop.png" alt="YamaSend">
+    <p>¿Necesitás ayuda? Escribinos desde YamaSend y te damos una mano.</p>
+  </div>
+
+  <div class="bottom"><span>YamaSend · Mensajería masiva por IA</span><span>7</span></div>
+</section>
+
+</body>
+</html>

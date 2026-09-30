@@ -12,6 +12,7 @@ interface SidebarProps {
   planLabel: string;
   onLogout: () => void;
   onOpenMyProfile: () => void;
+  onOpenSettings: () => void;
   /** Secciones a ocultar del nav según los permisos del usuario. */
   hiddenSections?: AppSection[];
 }
@@ -89,6 +90,7 @@ export default function Sidebar({
   planLabel,
   onLogout,
   onOpenMyProfile,
+  onOpenSettings,
   hiddenSections = [],
 }: SidebarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -149,13 +151,19 @@ export default function Sidebar({
               </svg>
               {t("profile_my_profile")}
             </button>
-            <div className="flex items-center gap-2.5 px-[11px] py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-not-allowed opacity-60">
+            <button
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenSettings();
+              }}
+              className="flex items-center gap-2.5 px-[11px] py-2.5 rounded-lg text-[13.5px] font-semibold text-[#3f4844] cursor-pointer hover:bg-ys-el2 transition-colors text-left w-full"
+            >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.5" />
                 <path d="M8 1.8v1.6M8 12.6v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9 12 12M12 4l-1.1 1.1M5.1 10.9 4 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
               {t("profile_settings")}
-            </div>
+            </button>
             <div className="h-px bg-ys-border-softest my-1 mx-1.5" />
             <button
               onClick={onLogout}
