@@ -1,49 +1,36 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import LoginScreen from "@/components/yamasend/LoginScreen";
-import { loginAction, registerAction } from "@/lib/actions/auth";
+import { requestLoginLink, requestRegisterLink } from "@/lib/actions/auth";
 
 export default function LoginGate({
   initialTab,
-  redirectTo = "/panel",
   inviteToken = null,
   esInvitacionEmpresa = false,
   organizacionInvita = null,
+  initialError = null,
 }: {
   initialTab?: "login" | "register";
   redirectTo?: string;
   inviteToken?: string | null;
   esInvitacionEmpresa?: boolean;
   organizacionInvita?: string | null;
+  initialError?: string | null;
 }) {
-  const router = useRouter();
-
-  async function handleLogin(email: string, password: string) {
-    const { error } = await loginAction(email, password);
-    if (error) return error;
-    // Si se llegó acá por un link de invitación, después de loguearse hay que
-    // volver a ese link y no al panel: si no, la invitación se pierde otra vez
-    // y la persona queda igual que antes.
-    router.push(
-      inviteToken ? `/register?invite=${encodeURIComponent(inviteToken)}` : redirectTo,
-    );
-    return null;
+  async function handleLogin(email: string) {
+    const { error } = await requestLoginLink(email);
+    return error;
   }
 
   async function handleRegister(data: {
     nombre: string;
     email: string;
-    whatsapp: string;
-    password: string;
     tipoCuenta: "individual" | "empresa";
     nombreEmpresa?: string | null;
     inviteToken?: string | null;
   }) {
-    const { error, codigo } = await registerAction(data);
-    if (error) return { error, codigo: codigo ?? null };
-    router.push(redirectTo);
-    return { error: null, codigo: null };
+    const { error } = await requestRegisterLink(data);
+    return { error };
   }
 
   return (
@@ -54,10 +41,8 @@ export default function LoginGate({
       inviteToken={inviteToken}
       esInvitacionEmpresa={esInvitacionEmpresa}
       organizacionInvita={organizacionInvita}
+      initialError={initialError}
       onTabChange={(next) => {
-        // Actualiza solo la URL visible, sin disparar navegación de Next
-        // (que activaría el Suspense/loading.tsx de /login o /register
-        // para un simple cambio de tab que es 100% estado local).
         window.history.replaceState(null, "", `/${next}`);
       }}
     />
