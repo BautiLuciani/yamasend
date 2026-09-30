@@ -53,9 +53,9 @@ export async function dominioDeEmailExiste(email: string): Promise<boolean> {
     return registrosAaaa.length > 0;
   } catch (err) {
     const codigo = (err as NodeJS.ErrnoException)?.code;
-    if (codigo !== "ENOTFOUND" && codigo !== "ENODATA" && (err as Error)?.message !== "timeout_dns") {
-      return true; // problema nuestro, no del dominio: dejamos pasar
+    if (codigo === "ENOTFOUND" || codigo === "ENODATA") {
+      return false; // el dominio realmente no existe
     }
-    return false;
+    return true; // timeout u otro problema nuestro: dejamos pasar
   }
 }

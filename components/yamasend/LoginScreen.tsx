@@ -115,19 +115,25 @@ export default function LoginScreen({
   );
 
   // login state
-  const [liEmail, setLiEmail] = useState(() =>
-    typeof window === "undefined"
-      ? ""
-      : window.localStorage.getItem(RECORDAR_EMAIL_KEY) ?? "",
-  );
+  const [liEmail, setLiEmail] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      return window.localStorage.getItem(RECORDAR_EMAIL_KEY) ?? "";
+    } catch {
+      return "";
+    }
+  });
   const [liErr, setLiErr] = useState(initialTab === "login" ? initialError ?? "" : "");
   const [liLoading, setLiLoading] = useState(false);
   const [liFocused, setLiFocused] = useState(false);
-  const [liRecordar, setLiRecordar] = useState(() =>
-    typeof window === "undefined"
-      ? false
-      : Boolean(window.localStorage.getItem(RECORDAR_EMAIL_KEY)),
-  );
+  const [liRecordar, setLiRecordar] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return Boolean(window.localStorage.getItem(RECORDAR_EMAIL_KEY));
+    } catch {
+      return false;
+    }
+  });
 
   // register state
   const [regNombre, setRegNombre] = useState("");
@@ -165,10 +171,16 @@ export default function LoginScreen({
       setLiErr(err);
       return;
     }
-    if (liRecordar) {
-      window.localStorage.setItem(RECORDAR_EMAIL_KEY, liEmail);
-    } else {
-      window.localStorage.removeItem(RECORDAR_EMAIL_KEY);
+    try {
+      if (liRecordar) {
+        window.localStorage.setItem(RECORDAR_EMAIL_KEY, liEmail);
+      } else {
+        window.localStorage.removeItem(RECORDAR_EMAIL_KEY);
+      }
+    } catch {
+      // Si el navegador bloquea localStorage (modo privado, storage
+      // deshabilitado, etc.) no debe impedir mostrar la confirmación: el
+      // mail ya se mandó, "recordar email" es solo una comodidad.
     }
     setLinkEnviado({ email: liEmail });
   }
