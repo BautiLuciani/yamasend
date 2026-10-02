@@ -4218,10 +4218,25 @@ async function ejecutarHerramientaAgente(
     // Los tipos de señal van con su nombre en criollo: con el código interno
     // ("especificacion_demanda") el chat lo repetía tal cual al usuario.
     const resumen = (data ?? {}) as { senales_por_tipo?: { tipo: string; menciones: number; contactos: number }[] };
+    // Mismo criterio que motor_oportunidades para "stock": solo cuentan las
+    // citas que de verdad preguntan si hay. Si no, el resumen decía 31 y la
+    // lista de quiénes consultaron stock decía otro número.
+    const disp = (resumen.senales_por_tipo ?? []).find((s) => s.tipo === "consulta_disponibilidad");
+    if (disp) {
+      const { data: citasDisp } = await supabase.rpc("chat_oportunidades", {
+        p_tenant_id: tenantId, p_tipo: "consulta_disponibilidad", p_telefono: null,
+        p_desde: null, p_hasta: null, p_limite: 100,
+      });
+      const filtradas = ((citasDisp ?? []) as { telefono: string; cita: string }[]).filter((f) => RE_CONSULTA_STOCK.test(f.cita));
+      if ((citasDisp ?? []).length < 100) {
+        disp.menciones = filtradas.length;
+        disp.contactos = new Set(filtradas.map((f) => f.telefono)).size;
+      }
+    }
     return {
       datos: {
         ...resumen,
-        senales_por_tipo: (resumen.senales_por_tipo ?? []).map((s) => ({
+        senales_por_tipo: [...(resumen.senales_por_tipo ?? [])].sort((x, y) => y.contactos - x.contactos).map((s) => ({
           que_hicieron: ETIQUETA_SENAL[s.tipo] ?? s.tipo,
           menciones: s.menciones,
           contactos: s.contactos,
@@ -4782,7 +4797,7 @@ LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_de_compra)
 - moderada: consulta comercial clara (precio, stock, condiciones) o 1-2 datos concretos de lo que busca.
 - débil: interés vago, un dato aislado o solo el saludo de un anuncio.
 - sin_interes_comercial: charla personal, proveedores, mensajes automáticos.
-- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil, copiado TAL CUAL (no lo recalcules ni le sumes nada: ya incluye fuerte + moderada + débil). Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
+- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "interés leve" = débil, pero mencioná también a los de intención moderada aparte para que no queden afuera ("223 con interés leve y otros 64 con interés moderado"); "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil, copiado TAL CUAL (no lo recalcules ni le sumes nada: ya incluye fuerte + moderada + débil). Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
 
 EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "quién preguntó por precios", "quién debería priorizar", "qué oportunidades tengo" (prioridad), "por qué contactar a este cliente".
