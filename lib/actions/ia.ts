@@ -3187,6 +3187,7 @@ const ETIQUETA_OBJECION: Record<string, string> = {
   descarte: "Descartó",
   comparando_competencia: "Competencia",
   precio: "Precio (posible)",
+  compra_en_otro_lado: "Compra en otro lado (posible)",
   demora_entrega: "Entrega (posible)",
   atencion: "Atención (posible)",
   stock: "Stock (posible)",
@@ -3201,13 +3202,28 @@ const PALABRAS_VACIAS = new Set([
   "bolsa", "bolsas", "alimento", "alimentos", "comida",
 ]);
 
+/** Palabras que en una dirección no indican la zona ("Sucursal San Miguel" → "san miguel"). */
+const PALABRAS_VACIAS_LUGAR = new Set([
+  "sucursal", "calle", "av", "avenida", "timbre", "piso", "depto", "dpto", "entre", "esquina",
+  "local", "casa", "barrio", "zona", "provincia", "pcia", "prov", "nro", "numero", "altura",
+]);
+
+/** Cuántas unidades pide un texto ("10 bolsas de 20k" → 10; "una bolsa de 15 kg" → 0). */
+function unidadesPedidas(texto: string): number {
+  let max = 0;
+  const re = /(\d+)\s*(bolsas?|bolsones?|unidades|u\.|cajas?|bultos?|packs?|paquetes?|latas?|pipetas?|cajones?)/gi;
+  for (const m of texto.matchAll(re)) max = Math.max(max, Number(m[1]));
+  return max;
+}
+
 /**
  * Cuenta qué términos (palabras sueltas y pares de palabras, ej. "royal
  * canin", "pro plan") aparecen en lo que piden los clientes, por cantidad de
  * CONTACTOS distintos — no por menciones, para que un cliente insistente no
  * infle un producto. Sirve para "qué marcas/productos me piden más".
  */
-function terminosMasMencionados(filas: { valor: string; telefono: string }[]) {
+function terminosMasMencionados(filas: { valor: string; telefono: string }[], extraVacias?: Set<string>) {
+  const vacia = (t: string) => PALABRAS_VACIAS.has(t) || !!extraVacias?.has(t);
   const porTermino = new Map<string, Set<string>>();
   const sumar = (t: string, quien: string) => {
     if (!porTermino.has(t)) porTermino.set(t, new Set());
@@ -3224,14 +3240,14 @@ function terminosMasMencionados(filas: { valor: string; telefono: string }[]) {
       .split(/\s+/)
       .filter((t) => t.length > 1);
     for (const t of new Set(tokens)) {
-      if (!PALABRAS_VACIAS.has(t) && !/^\d+$/.test(t)) sumar(t, quien);
+      if (!vacia(t) && !/^\d+$/.test(t)) sumar(t, quien);
     }
     // Pares solo de palabras realmente contiguas ("pro plan", "royal canin");
     // un número o una palabra vacía en el medio corta el par.
     for (let j = 0; j < tokens.length - 1; j++) {
       const a = tokens[j];
       const b = tokens[j + 1];
-      if (PALABRAS_VACIAS.has(a) || PALABRAS_VACIAS.has(b) || /^\d+$/.test(a) || /^\d+$/.test(b)) continue;
+      if (vacia(a) || vacia(b) || /^\d+$/.test(a) || /^\d+$/.test(b)) continue;
       sumar(`${a} ${b}`, quien);
     }
   });
@@ -3254,13 +3270,48 @@ function momentoContacto(f: {
   when_estado: string | null;
   earliest_contact_at?: string | null;
 }): string {
-  if (f.contactable) return "Sí, ahora";
+  if (estaContactableAhora(f)) return "Sí, ahora";
   if (f.when_estado === "ESPERAR_HASTA") {
-    return f.earliest_contact_at ? `Esperar (desde ${fechaCorta(f.earliest_contact_at)})` : "Esperar";
+    return f.earliest_contact_at ? `Esperar (desde ${fechaHoraCorta(f.earliest_contact_at)})` : "Esperar";
   }
   if (f.when_estado === "NO_CONTACTAR") return "No por ahora";
   return "Sin dato";
 }
+
+/**
+ * WHEN se calcula en un momento dado y queda guardado: una espera "hasta las
+ * 10:49 de hoy" sigue figurando como no contactable aunque ya hayan pasado.
+ * Si la espera ya venció, se puede escribir ahora.
+ */
+function estaContactableAhora(f: {
+  contactable: boolean | null;
+  when_estado: string | null;
+  earliest_contact_at?: string | null;
+}): boolean {
+  if (f.contactable) return true;
+  return f.when_estado === "ESPERAR_HASTA" && !!f.earliest_contact_at &&
+    Date.parse(f.earliest_contact_at) <= Date.now();
+}
+
+function fechaHoraCorta(v: string): string {
+  return new Date(v).toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: ZONA_HORARIA_NEGOCIO,
+  }) + " h";
+}
+
+/** Por qué el Motor dice que conviene esperar o no escribirle (códigos de WHEN/WHO). */
+const MOTIVO_MOMENTO: Record<string, string> = {
+  S_CONVERSACION_ACTIVA: "tuvo una conversación con el negocio hace muy poco (menos de 48 h): conviene no interrumpirla",
+  S_SIN_RESPUESTA_REITERADA: "no respondió a los últimos mensajes del negocio (varios turnos seguidos sin respuesta)",
+  S_CAMPANA_RECIENTE: "recibió una campaña hace pocos días",
+  S_DESCARTE_RECIENTE: "dijo hace poco que no le interesaba",
+  S_PREFERENCIA_CANAL_DECLARADA: "pidió que lo contacten por otro medio",
+};
 
 function pct(v: number | null | undefined): string {
   if (v == null) return "—";
@@ -3523,9 +3574,23 @@ async function ejecutarHerramientaAgente(
     // Totales reales (la lista viene recortada por "limite"): sin esto el
     // modelo contaba filas y decía cosas como "ninguno se puede contactar"
     // mientras la tabla mostraba varios "Sí".
-    const { data: resumenCuenta } = await supabase.rpc("chat_resumen_cuenta", { p_tenant_id: tenantId });
+    const [{ data: resumenCuenta }, { data: motivosEspera }] = await Promise.all([
+      supabase.rpc("chat_resumen_cuenta", { p_tenant_id: tenantId }),
+      supabase.rpc("chat_motivos_espera", { p_tenant_id: tenantId }),
+    ]);
     const resumenPrioridad =
       (resumenCuenta as { prioridad?: Record<string, number> } | null)?.prioridad ?? null;
+    // Por qué conviene esperar / no escribirle, en palabras (antes el modelo
+    // lo deducía de las citas y llegó a inventar "por un error de transferencia").
+    const motivoPorTelefono = new Map<string, string>();
+    for (const m of (motivosEspera ?? []) as { telefono: string; motivos: string[] | null }[]) {
+      const textos = (m.motivos ?? []).map((c) => MOTIVO_MOMENTO[c]).filter(Boolean);
+      if (textos.length) motivoPorTelefono.set(m.telefono, textos.join("; "));
+    }
+    for (const f of filas) {
+      (f as typeof f & { motivo_momento?: string }).motivo_momento =
+        estaContactableAhora(f) ? undefined : motivoPorTelefono.get(f.telefono);
+    }
     const elegibles = filas.filter((f) => f.elegible);
     // Solo tiene sentido proponer para audiencia a los elegibles (los
     // excluidos ya se explican con su motivo, no son una selección válida).
@@ -3547,10 +3612,9 @@ async function ejecutarHerramientaAgente(
           score_normalizado: f.score_normalizado,
           motivos_exclusion: f.elegible ? undefined : f.motivos_exclusion,
           evidencias_utilizadas: f.evidencias_utilizadas,
-          when_estado: f.when_estado,
-          contactable: f.contactable,
-          earliest_contact_at: f.earliest_contact_at,
+          contactable_ahora: estaContactableAhora(f),
           momento: f.momento,
+          motivo_momento: (f as typeof f & { motivo_momento?: string }).motivo_momento,
         })),
       },
       tabla: elegibles.length
@@ -3969,44 +4033,101 @@ async function ejecutarHerramientaAgente(
   if (nombre === "motor_demanda") {
     const atributo = typeof args.atributo === "string" ? args.atributo : "producto";
     const texto = typeof args.texto === "string" && args.texto.trim() ? args.texto.trim().slice(0, 60) : null;
-    const { data, error } = await supabase.rpc("chat_demanda", {
-      p_tenant_id: tenantId,
-      p_atributo: atributo,
-      p_texto: texto,
-      p_limite: 500,
-    });
-    if (error) return { datos: { error: error.message } };
-    const filas = ((data ?? []) as {
+    type FilaDemanda = {
       atributo: string; valor: string; rol: string | null; contacto_nombre: string;
       telefono: string; cita: string; fecha: string;
-    }[]).map((f) => ({
-      ...f,
-      valor: enmascararDatosSensibles(f.valor).slice(0, 120),
-      cita: enmascararDatosSensibles(f.cita).slice(0, 200),
-    }));
+    };
+    const traer = async (attr: string, txt: string | null) => {
+      const { data, error } = await supabase.rpc("chat_demanda", {
+        p_tenant_id: tenantId,
+        p_atributo: attr,
+        p_texto: txt,
+        p_limite: 500,
+      });
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as FilaDemanda[]).map((f) => ({
+        ...f,
+        valor: enmascararDatosSensibles(f.valor).slice(0, 120),
+        cita: enmascararDatosSensibles(f.cita).slice(0, 200),
+      }));
+    };
+    let filas: FilaDemanda[];
+    try {
+      filas = await traer(atributo, texto);
+    } catch (e) {
+      return { datos: { error: (e as Error).message } };
+    }
     const contactos = new Set(filas.map((f) => f.telefono).filter(Boolean));
-    return {
-      datos: {
-        atributo,
-        filtro_texto: texto,
-        menciones: filas.length,
-        contactos_distintos: contactos.size,
-        // La RPC trae hasta 500: si llegó al tope, los totales son una muestra.
-        resultado_recortado: filas.length >= 500,
-        terminos_mas_mencionados: atributo === "producto" || atributo === "variante" || atributo === "lugar"
-          ? terminosMasMencionados(filas)
+    const ejemplo = (f: FilaDemanda) => ({
+      contacto: f.contacto_nombre,
+      telefono: f.telefono,
+      valor: f.valor,
+      cita: f.cita,
+      fecha: fechaCorta(f.fecha),
+    });
+    const base = {
+      atributo,
+      filtro_texto: texto,
+      menciones: filas.length,
+      contactos_distintos: contactos.size,
+      // La RPC trae hasta 500: si llegó al tope, los totales son una muestra.
+      resultado_recortado: filas.length >= 500,
+    };
+
+    // "Qué productos/marcas/zonas piden más": la respuesta es un RANKING, y la
+    // tabla también (antes mostraba las últimas filas, que no decían nada de
+    // qué era lo más pedido).
+    if (!texto && (atributo === "producto" || atributo === "variante" || atributo === "lugar")) {
+      const ranking = terminosMasMencionados(filas, atributo === "lugar" ? PALABRAS_VACIAS_LUGAR : undefined);
+      return {
+        datos: { ...base, ranking_por_contactos: ranking, ejemplos: filas.slice(0, 25).map(ejemplo) },
+        tabla: ranking.length
+          ? {
+              titulo: TITULO_DEMANDA[atributo] ?? "Lo que piden tus clientes",
+              columnas: [atributo === "lugar" ? "Zona o lugar" : "Producto o marca", "Contactos que lo mencionaron"],
+              filas: ranking.slice(0, MAX_FILAS_TABLA).map((t) => [t.termino, String(t.contactos)]),
+            }
           : undefined,
-        // Para cantidad/modalidad/presupuesto los valores son pocos y cortos:
-        // van todos para que el modelo pueda juzgar (ej. "10 bolsas de 20 kg").
-        ejemplos: filas.slice(0, atributo === "producto" ? 40 : 60).map((f) => ({
-          contacto: f.contacto_nombre,
-          telefono: f.telefono,
-          valor: f.valor,
-          rol: f.rol,
-          cita: f.cita,
-          fecha: fechaCorta(f.fecha),
-        })),
-      },
+      };
+    }
+
+    // "¿Alguien pidió cantidades grandes o por mayor?": una bolsa de 15 o
+    // 20 kg es el tamaño normal de venta, no una compra grande. Se marca como
+    // posible compra por mayor solo cuando piden VARIAS unidades, o cuando el
+    // cliente se presenta como comercio (perfil_grupo, ej. "pet shop").
+    if (atributo === "cantidad" && !texto) {
+      let perfiles: FilaDemanda[] = [];
+      try {
+        perfiles = await traer("perfil_grupo", null);
+      } catch {
+        perfiles = [];
+      }
+      const porMayor = filas.filter((f) => unidadesPedidas(`${f.valor} ${f.cita}`) >= 3);
+      const comercios = perfiles.filter((f) => /(shop|tienda|veterinari|local|comercio|negocio|revend|mayorista|distribu|petshop|forrajer)/i.test(f.valor));
+      const destacadas = [...porMayor, ...comercios];
+      return {
+        datos: {
+          ...base,
+          posibles_compras_por_mayor: porMayor.map(ejemplo),
+          clientes_que_se_presentan_como_comercio: comercios.map(ejemplo),
+          criterio: "Se considera compra grande o por mayor pedir 3 o más unidades/bolsas, o presentarse como comercio. Una sola bolsa (aunque sea de 15 o 20 kg) es una compra normal.",
+          otras_cantidades_mencionadas: filas.filter((f) => !porMayor.includes(f)).slice(0, 30).map((f) => ({
+            contacto: f.contacto_nombre, valor: f.valor, fecha: fechaCorta(f.fecha),
+          })),
+        },
+        tabla: destacadas.length
+          ? {
+              titulo: "Posibles compras por mayor",
+              columnas: ["Contacto", "Pidió", "Qué dijo", "Cuándo"],
+              filas: destacadas.slice(0, MAX_FILAS_TABLA).map((f) => [f.contacto_nombre, f.valor, f.cita, fechaCorta(f.fecha)]),
+              totalDisponible: destacadas.length,
+            }
+          : undefined,
+      };
+    }
+
+    return {
+      datos: { ...base, ejemplos: filas.slice(0, 60).map(ejemplo) },
       tabla: filas.length
         ? {
             titulo: TITULO_DEMANDA[atributo] ?? "Lo que piden tus clientes",
@@ -4383,9 +4504,9 @@ BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 - Cuando recortaste por presupuesto, aclaralo: cuántos entran y cuántos quedaron afuera.
 
 QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
-- Totales, panorama, "cuántos contactos tengo", "cuántos están listos para comprar", "cuántos tienen intención fuerte / interés leve" → motor_resumen_cuenta. "Qué es lo que más me consultan" → motor_resumen_cuenta (qué TIPO de consulta: precio, stock, envíos…) y además motor_demanda con atributo producto (QUÉ productos y marcas). Es la ÚNICA fuente para totales: nunca cuentes las filas de otra herramienta (vienen recortadas) ni uses plan_candidatos_evaluados como total de contactos (son solo los que tienen una conversación analizada).
+- Totales, panorama, "cuántos contactos tengo", "cuántos están listos para comprar", "cuántos tienen intención fuerte / interés leve" → motor_resumen_cuenta. "Qué es lo que más me consultan" → motor_resumen_cuenta (qué TIPO de consulta: precio, stock, envíos…) y además motor_demanda con atributo producto (QUÉ productos y marcas). Es la ÚNICA fuente para totales: el total de contactos es TOTAL_CONTACTOS_DE_LA_CUENTA (nunca sumes las intensidades para sacar el total, ni uses contactos_con_conversacion_analizada ni plan_candidatos_evaluados como total). Nunca cuentes las filas de otra herramienta (vienen recortadas).
 - Ejemplos de un tipo de señal ("quién preguntó precios", "quién consultó stock", "quién dijo que quería comprar", "quién preguntó por envíos") → motor_oportunidades CON el filtro tipo que corresponda.
-- Productos o marcas más pedidos, cantidades grandes o compras por mayor, zonas o direcciones, envío/retiro → motor_demanda con el atributo que corresponda.
+- Productos o marcas más pedidos, cantidades grandes o compras por mayor, zonas o direcciones, envío/retiro → motor_demanda con el atributo que corresponda. Para "más pedidos" o "de qué zonas" usá ranking_por_contactos (es lo que muestra la tabla). Para compras grandes usá posibles_compras_por_mayor y clientes_que_se_presentan_como_comercio: una sola bolsa de 15 o 20 kg es una compra normal, nunca la presentes como compra grande o por mayor; si esas listas están vacías, decí que no encontraste pedidos por mayor.
 - Objeciones, reclamos, dudas, quejas → motor_objeciones.
 - Quién escribió y quedó sin respuesta o sin cerrar en un período → conversaciones_pendientes.
 - A quién contactar primero / prioridad → motor_prioridad_contactos. Un plan de acción → motor_plan_preview.
@@ -4393,21 +4514,21 @@ QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
 - Interés por un tema descrito libremente ("los que buscan alimento para gato") → buscar_contactos (o motor_demanda si es un producto o marca concreta).
 - Si ninguna herramienta trae el dato que piden (facturación, ventas, ganancias, stock real del local, precios del catálogo, opiniones sobre la competencia que nadie expresó), decí con franqueza que ese dato no lo tenés y qué sí podés mostrar. No llames a una herramienta "por las dudas" para rellenar.
 
-LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_por_contacto)
+LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_de_compra)
 - fuerte: el cliente expresó intención de compra concreta, pidió reservar o pasó datos para concretar (o dio 3+ datos concretos más una consulta comercial).
 - moderada: consulta comercial clara (precio, stock, condiciones) o 1-2 datos concretos de lo que busca.
 - débil: interés vago, un dato aislado o solo el saludo de un anuncio.
 - sin_interes_comercial: charla personal, proveedores, mensajes automáticos.
-- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "sin interés" = sin_interes_comercial. Aclará que es una clasificación por la conversación, no una venta confirmada.
+- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil. Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
 
 EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "qué conversaciones importantes tuve", "quién preguntó por precios", "qué oportunidades detectaste", "quién debería priorizar", "por qué contactar a este cliente".
 - "¿Qué oportunidades tengo hoy?" significa "qué oportunidades tengo en este momento": NO filtres por la fecha de hoy salvo que pidan explícitamente las de un período ("las de hoy", "esta semana").
-- Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo (podés parafrasear la cita, pero el hecho de que lo dijo tiene que salir de un resultado real, nunca inventado).
+- Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo. Si la ponés entre comillas, tiene que ser EXACTA, letra por letra (con sus errores de tipeo); si la parafraseás, sin comillas. Nunca le agregues un motivo o una intención que el cliente no dijo.
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
 - motor_prioridad_contactos trae "totales_de_la_cuenta" (prioritarios, contactables_ahora, conviene_esperar, no_contactar_por_ahora) y "contactos" (los primeros de la lista, cada uno con "momento", el mismo texto que ve el usuario en la tabla). Para cualquier número usá totales_de_la_cuenta. Lo que digas sobre si se le puede escribir ahora a alguien tiene que coincidir con su "momento": si la tabla dice "Sí, ahora", nunca digas que no se puede contactar.
-- motor_prioridad_contactos trae DOS cosas que NUNCA hay que confundir: "elegible" (prioridad comercial, decidida por WHO) y "contactable" (si conviene escribirle AHORA, decidido por WHEN — puede ser distinto de elegible). Al recomendar a quién contactar primero, priorizá siempre "contactable": a un elegible con contactable=false hay que presentarlo como "es prioritario, pero conviene esperar" (usando when_estado para explicar por qué, y earliest_contact_at para decir desde cuándo), nunca como "contactalo ahora".
+- motor_prioridad_contactos trae DOS cosas que NUNCA hay que confundir: "elegible" (prioridad comercial, decidida por WHO) y "contactable" (si conviene escribirle AHORA, decidido por WHEN — puede ser distinto de elegible). Al recomendar a quién contactar primero, priorizá siempre "contactable_ahora": a un prioritario con contactable_ahora=false presentalo como "es prioritario, pero conviene esperar" y explicá el por qué ÚNICAMENTE con "motivo_momento" (y "momento" para decir desde cuándo). Nunca deduzcas el motivo de espera a partir de las citas del cliente (por ejemplo, un reclamo o una transferencia NO son el motivo de espera).
 - Una recomendación de prioridad siempre tiene que poder respaldarse con evidencia verificable, nunca solo con el score: el score por sí solo no es una explicación. motor_prioridad_contactos ya trae evidencias_utilizadas con tipo y cita real por contacto — usalo para explicar el "por qué" si alcanza. Si necesitás más detalle o más contexto del que trae esa lista, llamá motor_oportunidades filtrando por ese mismo teléfono.
 
 EL MOTOR DE DECISIÓN — PROPUESTA DE PLAN (motor_plan_preview)
@@ -4441,6 +4562,9 @@ ACCIONES QUE PODÉS EJECUTAR
 - Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
 - Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes de abrir un flujo.
 
+CONTACTOS DE UNA RESPUESTA ANTERIOR
+- Si el usuario se refiere a una lista que le diste antes ("uno de los que me pasaste", "el primero", "ese contacto"), buscá esa lista en los mensajes anteriores de esta conversación y elegí un contacto de ESA lista (decí cuál elegiste). Después consultá sus datos con motor_oportunidades filtrando por su teléfono. Nunca elijas un contacto que no estaba en esa lista.
+
 OBJECIONES, PENDIENTES Y HORARIOS
 - motor_objeciones separa "objeciones_verificadas_por_el_motor" de "posibles_reclamos_o_dudas_en_mensajes". Contalas por separado: las segundas son mensajes reales pero su categoría es aproximada, así que describí lo que dijo el cliente con sus palabras y presentalas como "posibles". Si no hay verificadas, decilo, pero no digas "no hay objeciones" si hay posibles.
 - conversaciones_pendientes: "sin_responder" = el cliente escribió último y falta contestarle; "esperando_al_cliente" = el negocio contestó y el cliente no volvió. Respetá el período que pidieron (por defecto, últimos 7 días) y nunca muestres como "de los últimos 7 días" algo más viejo.
@@ -4465,9 +4589,11 @@ REGLAS ESTRICTAS
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
-    ...history.slice(-8).map((h) => ({
+    // 30 mensajes (15 idas y vueltas): con 8, una pregunta como "elegí uno de
+    // los que me pasaste antes" ya no veía la lista a la que se refería.
+    ...history.slice(-30).map((h) => ({
       role: h.role === "user" ? ("user" as const) : ("assistant" as const),
-      content: h.text,
+      content: (h.text ?? "").slice(0, 3000),
     })),
     { role: "user", content: mensaje },
   ];
@@ -4502,7 +4628,12 @@ REGLAS ESTRICTAS
       // El modelo marca con [[sin_tabla]] cuando la tabla de la última
       // herramienta no tiene que ver con lo que respondió (ej. "no encontré
       // nada de eso" con una tabla de otro tema debajo).
-      const ocultarTabla = /\[\[\s*sin_tabla\s*\]\]/i.test(crudo);
+      // gpt-4o no siempre pone la marca, así que además se oculta la tabla
+      // cuando la respuesta arranca diciendo que no encontró lo pedido.
+      const ocultarTabla =
+        /\[\[\s*sin_tabla\s*\]\]/i.test(crudo) ||
+        (/^(no (encontr[eé]|tengo|hay|pude|se (encontr|registr|detect))|todav[ií]a no (hay|tengo))/i.test(crudo) &&
+          !/\b(pero|sin embargo|aunque|en cambio)\b/i.test(crudo));
       const texto =
         crudo.replace(/\s*\[\[\s*sin_tabla\s*\]\]\s*/gi, " ").trim() ||
         "No encontré datos que respondan eso. ¿Me lo preguntás de otra forma?";
