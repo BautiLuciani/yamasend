@@ -3318,6 +3318,7 @@ const ETIQUETA_OBJECION: Record<string, string> = {
   demora_entrega: "Entrega (posible)",
   atencion: "Atención (posible)",
   stock: "Stock (posible)",
+  problema_pago: "Problema con un pago (posible)",
   duda_confianza: "Duda (posible)",
   reclamo_producto: "Reclamo (posible)",
 };
