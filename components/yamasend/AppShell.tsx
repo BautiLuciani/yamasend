@@ -1222,7 +1222,7 @@ export default function AppShell({
   function buildHistory(): IAHistoryTurn[] {
     return messages
       .filter((m) => m.type === "user" || m.type === "bot")
-      .slice(-8)
+      .slice(-30)
       .map((m) => ({
         role: m.type === "user" ? ("user" as const) : ("assistant" as const),
         text: m.text,
