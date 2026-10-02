@@ -2707,6 +2707,21 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "responder_sin_consultar",
+      description:
+        "Usala SOLO cuando lo que te piden no necesita datos de la cuenta: un saludo, una explicación de cómo funciona YamaSend, o redactar un texto con datos que el usuario mismo te dio. NUNCA para preguntas sobre contactos, clientes, totales, prioridades, quién o cuántos: aunque ya hayas contestado algo parecido antes en la conversación, esos datos se vuelven a consultar con la herramienta que corresponde.",
+      parameters: {
+        type: "object",
+        properties: {
+          motivo: { type: "string", description: "Por qué no hace falta consultar datos (una frase)." },
+        },
+        required: ["motivo"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "listar_audiencias",
       description:
         "Lista las audiencias (listas de contactos) de la cuenta, con su cantidad de contactos y fecha de creación. Usar para cualquier pregunta sobre audiencias: cuántas hay, cuál tiene más/menos contactos, cuál fue la primera o la última, listarlas todas.",
@@ -3596,6 +3611,15 @@ async function ejecutarHerramientaAgente(
     };
   }
 
+  if (nombre === "responder_sin_consultar") {
+    return {
+      datos: {
+        ok: true,
+        recordatorio: "Respondé sin dar ningún número, nombre, teléfono ni dato de la cuenta que no venga de una herramienta. Si al final hace falta un dato, consultalo con la herramienta que corresponde.",
+      },
+    };
+  }
+
   if (nombre === "buscar_contacto_por_nombre") {
     // Cada palabra del nombre tiene que aparecer (sin importar acentos ni
     // mayúsculas): "juan perez" encuentra "Juan Pérez" pero no a "Juan Gómez".
@@ -3654,6 +3678,9 @@ async function ejecutarHerramientaAgente(
     return {
       datos: contarTodo
         ? {
+            // Va primero y en forma de frase: con solo el número, el modelo
+            // igual contestaba "algunos ejemplos" sin decir el total.
+            como_empezar_la_respuesta: `${(data ?? []).length >= 100 ? "Al menos " : ""}${telefonosUnicos.length} contactos ${ETIQUETA_SENAL[tipo as string] ?? "tienen esta señal"}. Estos son los más recientes:`,
             total_contactos_con_esta_senal: telefonosUnicos.length,
             total_citas: filas.length,
             total_recortado_en_100_citas: (data ?? []).length >= 100,
@@ -3762,6 +3789,9 @@ async function ejecutarHerramientaAgente(
       // ahora" (WHEN) — nunca son lo mismo.
       datos: {
         totales_de_la_cuenta: resumenPrioridad,
+        // Total listo para decir: conviene_esperar + no_contactar_por_ahora.
+        // Antes el modelo decía solo uno de los dos (6 en vez de 8).
+        cuantos_prioritarios_no_conviene_escribir_hoy: prioritariosEnEspera.length,
         prioritarios_a_los_que_hoy_no_conviene_escribir: prioritariosEnEspera,
         contactos: filas.slice(0, 40).map((f) => ({
           contacto_nombre: f.contacto_nombre,
@@ -4735,8 +4765,10 @@ BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
 - Totales, panorama, "cuántos contactos tengo", "cuántos están listos para comprar", "cuántos tienen intención fuerte / interés leve" → motor_resumen_cuenta. "Qué es lo que más me consultan" → motor_resumen_cuenta (qué TIPO de consulta: precio, stock, envíos…) y además motor_demanda con atributo producto (QUÉ productos y marcas). Es la ÚNICA fuente para totales: el total de contactos es TOTAL_CONTACTOS_DE_LA_CUENTA (nunca sumes las intensidades para sacar el total, ni uses contactos_con_conversacion_analizada ni plan_candidatos_evaluados como total). Nunca cuentes las filas de otra herramienta (vienen recortadas).
 - Ejemplos de un tipo de señal ("quién preguntó precios", "quién consultó stock", "quién dijo que quería comprar", "quién preguntó por envíos") → motor_oportunidades CON el filtro tipo que corresponda.
-- Productos o marcas más pedidos, cantidades grandes o compras por mayor, zonas o direcciones, envío/retiro → motor_demanda con el atributo que corresponda. Para "más pedidos" o "de qué zonas" usá ranking_por_contactos (es lo que muestra la tabla). Para compras grandes usá posibles_compras_por_mayor y clientes_que_se_presentan_como_comercio: una sola bolsa de 15 o 20 kg es una compra normal, nunca la presentes como compra grande o por mayor; si esas listas están vacías, decí que no encontraste pedidos por mayor.
+- "Cantidades grandes", "por mayor", "mayorista", "compras grandes" → motor_demanda con atributo 'cantidad' (SIEMPRE ese atributo: ya trae también a los que se presentan como comercio). Nunca 'variante' ni 'perfil_grupo' para esta pregunta.
+- Productos o marcas más pedidos, zonas o direcciones, envío/retiro → motor_demanda con el atributo que corresponda. Para "más pedidos" o "de qué zonas" usá ranking_por_contactos (es lo que muestra la tabla). Para compras grandes usá posibles_compras_por_mayor y clientes_que_se_presentan_como_comercio: una sola bolsa de 15 o 20 kg es una compra normal, nunca la presentes como compra grande o por mayor; si esas listas están vacías, decí que no encontraste pedidos por mayor.
 - Objeciones, reclamos, dudas, quejas → motor_objeciones.
+- "Qué opinan de mis precios", "comparan con la competencia", "dicen que es caro" → motor_objeciones. Contá lo que haya de precio y de compra_en_otro_lado (con la cita); si no hay nada, decí que en las conversaciones no aparece, sin ofrecer "revisar" algo que ya revisaste.
 - Quién escribió y quedó sin respuesta o sin cerrar en un período → conversaciones_pendientes.
 - "Qué oportunidades de venta tengo (hoy)" → motor_prioridad_contactos (los mejores para escribir ahora, con su motivo) y, si sirve, motor_resumen_cuenta para el panorama. NO uses motor_oportunidades para esta pregunta: ordena por fecha, no por oportunidad.
 - A quién contactar primero / prioridad → motor_prioridad_contactos. "¿A quién no conviene contactar?" → motor_prioridad_contactos y respondé con prioritarios_a_los_que_hoy_no_conviene_escribir (completa, con su motivo). Un plan de acción → motor_plan_preview.
@@ -4750,13 +4782,13 @@ LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_de_compra)
 - moderada: consulta comercial clara (precio, stock, condiciones) o 1-2 datos concretos de lo que busca.
 - débil: interés vago, un dato aislado o solo el saludo de un anuncio.
 - sin_interes_comercial: charla personal, proveedores, mensajes automáticos.
-- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil. Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
+- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil, copiado TAL CUAL (no lo recalcules ni le sumes nada: ya incluye fuerte + moderada + débil). Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
 
 EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "quién preguntó por precios", "quién debería priorizar", "qué oportunidades tengo" (prioridad), "por qué contactar a este cliente".
 - "¿Qué oportunidades tengo hoy?" significa "qué oportunidades tengo en este momento": NO filtres por la fecha de hoy salvo que pidan explícitamente las de un período ("las de hoy", "esta semana").
 - Leé las citas antes de presentar algo como oportunidad: un pago o una transferencia hecha por error, un reclamo, una devolución o un problema con un pedido NO son una oportunidad de venta — presentalos como algo a resolver ("este cliente tiene un problema pendiente: …"), nunca como "listo para comprar".
-- Cuando motor_oportunidades trae total_contactos_con_esta_senal, arrancá diciendo ese total ("19 contactos consultaron por stock; estos son los más recientes:") y no lo presentes como "algunos ejemplos" sin número. Si total_recortado_en_100_citas es true, decí "al menos N".
+- Cuando motor_oportunidades trae como_empezar_la_respuesta, tu respuesta empieza con esa frase tal cual. Si no, y trae total_contactos_con_esta_senal, arrancá diciendo ese total ("19 contactos consultaron por stock; estos son los más recientes:") y no lo presentes como "algunos ejemplos" sin número. Si total_recortado_en_100_citas es true, decí "al menos N".
 - Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo. Si la ponés entre comillas, tiene que ser EXACTA, letra por letra: no corrijas ortografía, abreviaturas ni mayúsculas, y no le saques emojis (ej. "y q valor tienen" queda así, no "y qué valor tienen"); si la parafraseás, sin comillas. Nunca le agregues un motivo o una intención que el cliente no dijo.
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
@@ -4814,6 +4846,7 @@ BORRADORES DE MENSAJES PARA CLIENTES
 - Cuando te pidan qué escribirle a un cliente, armá el texto SOLO con lo que el cliente dijo (citas reales) y con los DATOS REALES DE ESTA CUENTA. Vos NO sabés si hay stock, cuánto cuesta algo, si se puede entregar en tal horario ni cuánto sale el envío: lo que dijo o preguntó el CLIENTE no es un dato confirmado por el negocio (si el cliente escribió un número, no es un precio).
 - PROHIBIDO en el borrador: "tenemos disponible", "te confirmo", "hay stock", un precio con $, "podemos entregarlo antes de…", "el envío cuesta…", cualquier promoción o descuento. En su lugar poné corchetes: "[confirmar si hay stock]", "[precio]", "[costo de envío]", "[horario de entrega]". Ejemplo correcto: "Hola! Te escribo por el Royal Canin Urinary S/O de 1,5 kg que consultaste el 7/9. [Confirmar si hay stock] y el precio es [precio]. Para Salcedo 3823 el envío sale [costo de envío]. ¿Querés que lo avancemos?"
 - Después del borrador, avisá en una línea qué tiene que completar antes de mandarlo.
+- No repitas en el borrador un horario o fecha de entrega que pidió el cliente ("antes de las 17 h", "mañana a la mañana"): eso también es prometer una entrega. Si hace falta, poné "[confirmar horario de entrega]".
 - Si la conversación con ese cliente es de hace varios días, el borrador no puede sonar como si fuera de hoy ("te escribo por lo que consultaste el 7/9…").
 - Es solo un texto sugerido: nunca digas que lo enviaste ni que lo vas a enviar.
 
@@ -4850,13 +4883,21 @@ REGLAS ESTRICTAS
   for (let i = 0; i < MAX_ITERACIONES_AGENTE; i++) {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
-      temperature: 0.3,
+      // 0: las respuestas son datos de la cuenta, no texto creativo. Con 0.3
+      // a veces recalculaba un total ya dado y lo sumaba mal (331 → 395).
+      temperature: 0,
       // 500 cortaba las respuestas con listas (ej. "los 10 más prioritarios
       // con su motivo"). 900 alcanza para una lista de 10 con una línea cada uno.
       max_tokens: 900,
       // Sin tenant_id no podemos consultar nada: dejamos que responda solo
       // conversacionalmente en vez de fallar con un error técnico.
       tools: tenantId ? HERRAMIENTAS_AGENTE : undefined,
+      // En la primera vuelta tiene que elegir una herramienta: si podía
+      // contestar directo, a veces armaba la respuesta con lo que recordaba
+      // de mensajes anteriores e inventaba (ej. "¿a quién no conviene
+      // contactar?" con contactos que el Motor tenía como "Sí, ahora"). Para
+      // saludos o redacciones existe responder_sin_consultar.
+      tool_choice: tenantId && i === 0 ? "required" : undefined,
       messages,
     });
 
