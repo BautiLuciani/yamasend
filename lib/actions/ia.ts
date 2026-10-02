@@ -3233,6 +3233,10 @@ const PALABRAS_GENERICAS_PRODUCTO = new Set([
   "adulto", "adultos", "adulta", "cachorro", "cachorros", "puppy", "senior", "perro", "perros", "perra",
   "gato", "gatos", "gata", "raza", "razas", "pequena", "pequenas", "pequeno", "mediana", "mediano",
   "grande", "grandes", "chica", "chico", "mini", "medium", "seco", "humedo", "balanceado", "kilo",
+  // sabores y condiciones: describen la variedad, no son una marca
+  "cordero", "pollo", "carne", "salmon", "pescado", "arroz", "vegetales", "renal", "urinary", "urinario",
+  "castrado", "castrados", "castrada", "esterilizado", "esterilizados", "light", "obesity", "sensitive",
+  "indoor", "senior", "cachorrita", "cachorrito",
 ]);
 
 /** Cuántos contactos buscan cosas para perro y cuántos para gato. */
@@ -3290,6 +3294,19 @@ function terminosMasMencionados(filas: { valor: string; telefono: string }[], ex
       sumar(`${a} ${b}`, quien);
     }
   });
+  // Variantes escritas juntas ("proplan") se suman a la forma separada
+  // ("pro plan"); los tamaños ("15kg") no son un producto.
+  for (const clave of [...porTermino.keys()]) {
+    if (clave.includes(" ")) continue;
+    const par = [...porTermino.keys()].find((k) => k.includes(" ") && k.replace(/ /g, "") === clave);
+    if (par) {
+      for (const q of porTermino.get(clave)!) porTermino.get(par)!.add(q);
+      porTermino.delete(clave);
+    }
+  }
+  for (const clave of [...porTermino.keys()]) {
+    if (/\d/.test(clave)) porTermino.delete(clave);
+  }
   const lista = [...porTermino.entries()]
     .map(([termino, quienes]) => ({ termino, contactos: quienes.size }))
     .filter((t) => t.contactos >= 2);
@@ -4620,7 +4637,7 @@ EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "quién preguntó por precios", "quién debería priorizar", "qué oportunidades tengo" (prioridad), "por qué contactar a este cliente".
 - "¿Qué oportunidades tengo hoy?" significa "qué oportunidades tengo en este momento": NO filtres por la fecha de hoy salvo que pidan explícitamente las de un período ("las de hoy", "esta semana").
 - Leé las citas antes de presentar algo como oportunidad: un pago o una transferencia hecha por error, un reclamo, una devolución o un problema con un pedido NO son una oportunidad de venta — presentalos como algo a resolver ("este cliente tiene un problema pendiente: …"), nunca como "listo para comprar".
-- Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo. Si la ponés entre comillas, tiene que ser EXACTA, letra por letra (con sus errores de tipeo); si la parafraseás, sin comillas. Nunca le agregues un motivo o una intención que el cliente no dijo.
+- Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo. Si la ponés entre comillas, tiene que ser EXACTA, letra por letra: no corrijas ortografía, abreviaturas ni mayúsculas, y no le saques emojis (ej. "y q valor tienen" queda así, no "y qué valor tienen"); si la parafraseás, sin comillas. Nunca le agregues un motivo o una intención que el cliente no dijo.
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
 - motor_prioridad_contactos trae "totales_de_la_cuenta" (prioritarios, contactables_ahora, conviene_esperar, no_contactar_por_ahora) y "contactos" (los primeros de la lista, cada uno con "momento", el mismo texto que ve el usuario en la tabla). Para cualquier número usá totales_de_la_cuenta. Lo que digas sobre si se le puede escribir ahora a alguien tiene que coincidir con su "momento": si la tabla dice "Sí, ahora", nunca digas que no se puede contactar.
@@ -4657,6 +4674,9 @@ ACCIONES QUE PODÉS EJECUTAR
 - Si pide MODIFICAR algo que ya existe (renombrar una audiencia o campaña, cambiarle la temperatura a un contacto), usá abrir_flujo con editar_audiencia / editar_campana / editar_contacto. No hace falta que sepas cuál: el asistente le muestra la lista para que elija. Nunca le digas que no podés hacer estos cambios.
 - Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
 - Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes de abrir un flujo.
+
+CÓMO NOMBRAR A LOS CONTACTOS
+- Siempre identificá a cada contacto con su nombre si lo tiene y, si no, con su teléfono, tal cual viene de la herramienta. Nunca uses "Cliente 1", "Cliente 2" ni nombres genéricos: el usuario tiene que poder saber de quién hablás sin mirar la tabla.
 
 CONTACTOS DE UNA RESPUESTA ANTERIOR
 - Si el usuario se refiere a una lista que le diste antes ("uno de los que me pasaste", "el primero", "ese contacto"), buscá esa lista en los mensajes anteriores de esta conversación y elegí un contacto de ESA lista (decí cuál elegiste). Después consultá sus datos con motor_oportunidades filtrando por su teléfono. Nunca elijas un contacto que no estaba en esa lista.
