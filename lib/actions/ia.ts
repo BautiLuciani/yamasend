@@ -2734,7 +2734,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "listar_contactos",
       description:
-        "Lista los contactos/leads de la cuenta, opcionalmente filtrados por temperatura (caliente/tibio/frio). Usar para 'pasame los contactos fríos', 'cuáles son mis leads calientes', 'cuántos contactos tengo', 'quién está hace más tiempo sin responder'. NO usar para buscar por tema, interés o necesidad (para eso está buscar_contactos).",
+        "Lista los contactos/leads de la cuenta, opcionalmente filtrados por temperatura (caliente/tibio/frio). Usar cuando el usuario pide por temperatura ('pasame los contactos fríos', 'cuáles son mis leads calientes') o quién está hace más tiempo inactivo (orden_por 'reciente'). NO usar para totales ('cuántos contactos tengo' → motor_resumen_cuenta), ni para intención de compra fuerte/leve (→ motor_resumen_cuenta), ni para buscar por tema (→ buscar_contactos o motor_demanda), ni para quién escribió en un período y quedó sin respuesta (→ conversaciones_pendientes).",
       parameters: {
         type: "object",
         properties: {
@@ -2783,8 +2783,8 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          desde: { type: "string", description: "Fecha inicio ISO 8601 (YYYY-MM-DD). Omitir para no filtrar." },
-          hasta: { type: "string", description: "Fecha fin ISO 8601 (YYYY-MM-DD), exclusiva. Omitir para no filtrar." },
+          desde: { type: "string", description: "Fecha inicio YYYY-MM-DD (hora de Argentina). Omitir para no filtrar." },
+          hasta: { type: "string", description: "Fecha fin YYYY-MM-DD (hora de Argentina), exclusiva. Omitir para no filtrar." },
           orden_por: {
             type: "string",
             enum: ["fecha", "tasa_respuesta", "contactos", "costo"],
@@ -2841,8 +2841,8 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
-          desde: { type: "string", description: "Fecha inicio ISO 8601 (YYYY-MM-DD)." },
-          hasta: { type: "string", description: "Fecha fin ISO 8601 (YYYY-MM-DD), exclusiva." },
+          desde: { type: "string", description: "Fecha inicio YYYY-MM-DD (hora de Argentina)." },
+          hasta: { type: "string", description: "Fecha fin YYYY-MM-DD (hora de Argentina), exclusiva." },
         },
         required: ["desde", "hasta"],
       },
@@ -2853,7 +2853,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "mejor_horario_envio",
       description:
-        "Analiza el historial de envíos y devuelve la franja horaria con mejor tasa de lectura y respuesta. Usar para 'cuál es el mejor horario para enviar', 'cuándo conviene mandar la campaña'. Puede devolver que no hay datos suficientes todavía.",
+        "Mejor día y horario para escribirles a los clientes. Trae dos cosas: (1) 'por_envios': la franja con mejor tasa de respuesta según campañas ya enviadas (puede no tener datos suficientes todavía) y (2) 'actividad_de_clientes': en qué horarios y días de la semana los clientes escriben por su cuenta (hora de Argentina, últimos 90 días). Usar para 'cuál es el mejor horario para enviar', 'qué día conviene mandar', 'cuándo conviene mandar la campaña'.",
       parameters: { type: "object", properties: {} },
     },
   },
@@ -2877,17 +2877,82 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             enum: [
               "consulta_precio", "interes_producto", "consulta_disponibilidad",
               "consulta_condiciones", "consulta_logistica", "especificacion_demanda",
-              "datos_reserva", "descarte",
+              "intencion_compra", "datos_reserva", "descarte",
+              "objecion_precio", "objecion_tiempo", "objecion_confianza",
+              "restriccion_presupuesto", "comparando_competencia",
             ],
-            description: "Filtro opcional por tipo de evidencia. Omitir para traer todos los tipos ('qué oportunidades detectaste' en general).",
+            description: "Filtro por tipo de evidencia. USALO SIEMPRE que la pregunta sea sobre un tipo concreto: 'quién preguntó precios' → consulta_precio; 'quién consultó stock/disponibilidad' → consulta_disponibilidad; 'quién dijo que quería comprar' → intencion_compra; 'envíos/retiro/entregas' → consulta_logistica; 'cuotas/medios de pago/descuentos' → consulta_condiciones. Omitir solo para 'qué oportunidades detectaste' en general.",
           },
           telefono: {
             type: "string",
             description: "Filtro opcional: solo evidencia de un contacto puntual. Usar el teléfono que ya devolvió motor_prioridad_contactos, listar_contactos o buscar_contactos en esta conversación — no hace falta que sea del mismo turno: es la forma correcta de responder preguntas de seguimiento sobre un contacto ya identificado antes, como '¿por qué debería contactar a esa persona?', '¿qué dijo?', '¿qué evidencia hay?' o '¿por qué tiene esa prioridad?'.",
           },
-          desde: { type: "string", description: "Fecha inicio ISO 8601 (YYYY-MM-DD). Omitir para no filtrar por fecha." },
-          hasta: { type: "string", description: "Fecha fin ISO 8601 (YYYY-MM-DD), exclusiva." },
+          desde: { type: "string", description: "Fecha inicio YYYY-MM-DD (hora de Argentina). Omitir para no filtrar por fecha. NO lo uses cuando preguntan 'qué oportunidades tengo hoy' en el sentido de 'en este momento': solo si piden explícitamente un período ('las de hoy', 'esta semana', 'los últimos 7 días')." },
+          hasta: { type: "string", description: "Fecha fin YYYY-MM-DD (hora de Argentina), exclusiva." },
           limite: { type: "integer", description: "Máximo de resultados (1-100). Por defecto 20." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "motor_resumen_cuenta",
+      description:
+        "Panorama general y NÚMEROS TOTALES reales de la cuenta, calculados por el Motor: total de contactos, cuántas conversaciones se analizaron, cuántos contactos tienen intención de compra fuerte / moderada / débil / sin interés comercial, cuántas señales hay de cada tipo (consultas de precio, de disponibilidad, intenciones de compra, logística, etc.), cuántos contactos son prioritarios y cuántos se pueden contactar AHORA, y si hay catálogo verificado. Usala para 'cuántos contactos tengo', 'resumen del estado comercial', 'cuántos están listos para comprar', 'cuántos tienen intención fuerte/leve', 'qué es lo que más me consultan', 'cómo vienen mis oportunidades'. Es la ÚNICA fuente válida para totales: nunca cuentes filas de otra herramienta (vienen recortadas).",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "motor_demanda",
+      description:
+        "Qué piden concretamente los clientes, extraído por el Motor con cita textual: productos y marcas, variantes, cantidades/pesos, zonas o direcciones (lugar), modalidad (envío/retiro), presupuesto. Devuelve los términos más mencionados (con cuántos contactos distintos los mencionaron) y ejemplos reales. Usala para 'qué productos/marcas me piden más', 'alguien pidió cantidades grandes o por mayor' (atributo cantidad), 'de qué zonas me escriben' (atributo lugar), 'quién pidió envío o retiro' (atributo modalidad), 'quién busca X' cuando X es un producto o marca (atributo producto + texto).",
+      parameters: {
+        type: "object",
+        properties: {
+          atributo: {
+            type: "string",
+            enum: ["producto", "variante", "cantidad", "lugar", "modalidad", "presupuesto", "fecha", "perfil_grupo"],
+            description: "Qué dimensión de la demanda traer. 'producto' para productos y marcas.",
+          },
+          texto: {
+            type: "string",
+            description: "Filtro opcional: palabra o marca a buscar dentro de lo pedido (ej: 'royal', 'gato', 'pipeta'). Una sola palabra o marca, sin frases largas.",
+          },
+        },
+        required: ["atributo"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "motor_objeciones",
+      description:
+        "Objeciones, dudas y reclamos de los clientes: precio, demoras en la entrega, falta de stock, problemas con un producto o con la atención, desconfianza. Combina dos fuentes que NO hay que mezclar: 'motor_verificado' (objeciones que el Motor clasificó y verificó) y 'texto_posible' (mensajes reales de clientes que contienen palabras de reclamo o duda; son citas reales, pero la interpretación es aproximada). Usala para 'qué objeciones aparecen', 'de qué se quejan', 'qué dudas frenan la compra'.",
+      parameters: {
+        type: "object",
+        properties: {
+          dias: { type: "integer", description: "Cuántos días hacia atrás mirar (1-365). Por defecto 90." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "conversaciones_pendientes",
+      description:
+        "Conversaciones que quedaron abiertas en un período, mirando el historial real: 'sin_responder' (el cliente escribió último y el negocio todavía no le contestó; se excluyen los simples 'gracias'/'ok') y 'esperando_al_cliente' (el negocio contestó último en una conversación con interés comercial real y el cliente no volvió a escribir). Cada fila trae la intención comercial del contacto. Usala para 'quiénes me escribieron y quedaron sin respuesta', 'qué conversaciones quedaron sin cerrar', 'a quién no le contesté'.",
+      parameters: {
+        type: "object",
+        properties: {
+          desde: { type: "string", description: "Fecha inicio YYYY-MM-DD (hora de Argentina). Por defecto, hace 7 días." },
+          hasta: { type: "string", description: "Fecha fin YYYY-MM-DD (hora de Argentina), exclusiva. Omitir para hasta ahora." },
         },
         required: [],
       },
@@ -2913,7 +2978,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "motor_plan_preview",
       description:
-        "Arma una propuesta de qué hacer con las oportunidades de la cuenta: prioridad (WHO), momento de contacto (WHEN) y, solo si el catálogo comercial está verificado, qué ofrecerle a cada uno (WHAT) y a quién seleccionar según presupuesto. Es de SOLO LECTURA: no crea ni envía nada, es una propuesta para conversar con el usuario. Usar cuando pida un plan de acción o una selección priorizada, no solo un listado — ej: '¿qué harías con mis oportunidades?', 'armame un plan', '¿a quién contactarías primero y por qué?', '¿qué debería hacer con estos leads?'. Para preguntas puramente informativas seguir usando motor_oportunidades o motor_prioridad_contactos.",
+        "Arma una propuesta de qué hacer con las oportunidades de la cuenta: prioridad (WHO), momento de contacto (WHEN) y, solo si el catálogo comercial está verificado, qué ofrecerle a cada uno (WHAT) y a quién seleccionar según presupuesto. Es de SOLO LECTURA: no crea ni envía nada, es una propuesta para conversar con el usuario. Usar cuando pida un plan de acción o una selección priorizada, no solo un listado — ej: '¿qué harías con mis oportunidades?', 'armame un plan', '¿qué debería hacer con estos leads?'. Para preguntas puramente informativas seguir usando motor_oportunidades o motor_prioridad_contactos.",
       parameters: {
         type: "object",
         properties: {
@@ -3018,9 +3083,183 @@ interface ResultadoHerramienta {
   memoria?: IAFlowState["draft"];
 }
 
+/**
+ * Zona horaria del negocio. Hoy todos los tenants son de Argentina; el
+ * servidor (Vercel) corre en UTC, así que sin esto "hoy" pasaba a ser
+ * "mañana" después de las 21 h y las fechas de las tablas salían corridas.
+ * Argentina no tiene horario de verano desde 2009: el offset fijo es -03:00.
+ */
+const ZONA_HORARIA_NEGOCIO = "America/Argentina/Buenos_Aires";
+const OFFSET_NEGOCIO = "-03:00";
+
 function fechaCorta(v: string | null | undefined): string {
   if (!v) return "—";
-  return new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return new Date(v).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: ZONA_HORARIA_NEGOCIO,
+  });
+}
+
+/**
+ * Convierte una fecha que manda el modelo ("2026-10-01") al instante en que
+ * empieza ese día en hora de Argentina ("2026-10-01T00:00:00-03:00"). Antes
+ * se mandaba tal cual y Postgres la interpretaba como medianoche UTC (21 h
+ * del día anterior en Argentina). Si ya trae hora/zona, se respeta.
+ */
+function fechaLocalAInstante(v: unknown): string | null {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const s = v.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T00:00:00${OFFSET_NEGOCIO}`;
+  // Fecha y hora sin zona → hora de Argentina.
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) return `${s.replace(" ", "T")}${OFFSET_NEGOCIO}`;
+  // ISO completo con zona: se respeta. Cualquier otra cosa ("hoy", "October 1")
+  // se descarta en vez de mandarle a Postgres algo que no sabe leer.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/.test(s)) return s;
+  return null;
+}
+
+/**
+ * Oculta datos sensibles que a veces aparecen en las citas textuales de los
+ * clientes (CBU/CVU, alias bancario, tarjetas, DNI, CUIT, titular de una
+ * cuenta). Se aplica a TODO texto libre que sale de las conversaciones hacia
+ * el modelo o hacia una tabla: el chat no los necesita para responder nada y
+ * no deben aparecer en pantalla. Nunca se aplica a los campos de teléfono.
+ */
+function enmascararDatosSensibles(texto: string | null | undefined): string {
+  if (!texto) return texto ?? "";
+  // Palabras de relleno que suelen ir entre la etiqueta y el dato
+  // ("mi alias ES …", "alias DEL LOCAL: …", "el cbu es …").
+  const relleno = String.raw`(?:\s+(?:es|son|del?|la|el|mi|local|cuenta|negocio|comercio))*\s*[:\-]?\s*`;
+  const nombre = String.raw`[A-Za-zÁÉÍÓÚÜáéíóúüÑñ']+(?:\s+[A-Za-zÁÉÍÓÚÜáéíóúüÑñ']+){0,3}`;
+  return texto
+    .replace(/\b(?:\d[ -]?){21}\d\b/g, "[dato bancario oculto]")
+    .replace(/\b(?:\d{4}[ -]?){3}\d{4}\b/g, "[tarjeta oculta]")
+    .replace(new RegExp(String.raw`\b(cbu|cvu)${relleno}\d[\d -]{5,}\d`, "gi"), "$1 [oculto]")
+    // Un alias bancario tiene forma de alias: palabras unidas por puntos
+    // (juan.perez.mp) o un solo token de 6 a 20 caracteres. "pasame el
+    // alias porfa" no se toca.
+    .replace(
+      new RegExp(String.raw`\b(alias(?:\s*(?:cbu|cvu))?)${relleno}([a-z0-9_-]+(?:\.[a-z0-9_-]+)+|[a-z0-9_-]{6,20}(?![a-z0-9_.-]))`, "gi"),
+      (m, etiqueta: string, valor: string) =>
+        /[.\d_-]/.test(valor) || valor.length >= 10 ? `${etiqueta} [oculto]` : m,
+    )
+    .replace(new RegExp(String.raw`\b(titular(?:\s+de\s+la\s+cuenta)?)${relleno}${nombre}`, "gi"), "$1: [oculto]")
+    .replace(/\b(d\.?\s?n\.?\s?i\.?|documento)\s*(?:n[°º.]?|nro\.?|:)?\s*\d{1,2}\.?\d{3}\.?\d{3}\b/gi, "$1 [oculto]")
+    .replace(/\b(cuit|cuil)\s*[:\-]?\s*\d{2}-?\d{8}-?\d\b/gi, "$1 [oculto]")
+    .replace(/\b\d{2}-\d{8}-\d\b/g, "[CUIT/CUIL oculto]");
+}
+
+/** Estados del plan del Motor en lenguaje del usuario (nunca códigos internos en pantalla). */
+const ETIQUETA_ESTADO_PLAN: Record<string, string> = {
+  LISTO_AHORA: "Listo para escribirle",
+  PROGRAMABLE: "Se puede programar",
+  ESPERAR: "Conviene esperar",
+  OFERTA_NO_VERIFICADA: "Falta cargar el catálogo",
+  SIN_OFERTA: "Sin oferta que le sirva",
+  FUERA_DE_PRESUPUESTO: "Fuera del presupuesto",
+  EXCLUIDO: "No prioritario",
+};
+
+function ordenEstadoPlan(estado: string): number {
+  const orden = ["LISTO_AHORA", "PROGRAMABLE", "FUERA_DE_PRESUPUESTO", "OFERTA_NO_VERIFICADA", "SIN_OFERTA", "ESPERAR", "EXCLUIDO"];
+  const i = orden.indexOf(estado);
+  return i === -1 ? orden.length : i;
+}
+
+const TITULO_DEMANDA: Record<string, string> = {
+  producto: "Productos que piden",
+  variante: "Variantes que piden",
+  cantidad: "Cantidades pedidas",
+  lugar: "Zonas y direcciones",
+  modalidad: "Envío, retiro y entrega",
+  presupuesto: "Presupuestos mencionados",
+  fecha: "Fechas mencionadas",
+  perfil_grupo: "Tipo de cliente",
+};
+
+const ETIQUETA_OBJECION: Record<string, string> = {
+  objecion_precio: "Precio",
+  objecion_tiempo: "Tiempos",
+  objecion_confianza: "Confianza",
+  restriccion_presupuesto: "Presupuesto",
+  descarte: "Descartó",
+  comparando_competencia: "Competencia",
+  precio: "Precio (posible)",
+  demora_entrega: "Entrega (posible)",
+  atencion: "Atención (posible)",
+  stock: "Stock (posible)",
+  duda_confianza: "Duda (posible)",
+  reclamo_producto: "Reclamo (posible)",
+};
+
+const PALABRAS_VACIAS = new Set([
+  "de", "del", "para", "la", "el", "los", "las", "un", "una", "unos", "unas", "y", "o", "con", "en",
+  "x", "kg", "kgs", "kilo", "kilos", "k", "gr", "grs", "por", "que", "al", "sin", "a", "mas", "muy",
+  "tenes", "tienen", "hay", "me", "mi", "lo", "le", "se", "es", "si", "no", "the", "and",
+  "bolsa", "bolsas", "alimento", "alimentos", "comida",
+]);
+
+/**
+ * Cuenta qué términos (palabras sueltas y pares de palabras, ej. "royal
+ * canin", "pro plan") aparecen en lo que piden los clientes, por cantidad de
+ * CONTACTOS distintos — no por menciones, para que un cliente insistente no
+ * infle un producto. Sirve para "qué marcas/productos me piden más".
+ */
+function terminosMasMencionados(filas: { valor: string; telefono: string }[]) {
+  const porTermino = new Map<string, Set<string>>();
+  const sumar = (t: string, quien: string) => {
+    if (!porTermino.has(t)) porTermino.set(t, new Set());
+    porTermino.get(t)!.add(quien);
+  };
+  filas.forEach((f, i) => {
+    const quien = f.telefono || `sin-telefono-${i}`;
+    // Sin acentos (la "ñ" queda como "n" tras quitar las marcas combinadas).
+    const tokens = (f.valor ?? "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 1);
+    for (const t of new Set(tokens)) {
+      if (!PALABRAS_VACIAS.has(t) && !/^\d+$/.test(t)) sumar(t, quien);
+    }
+    // Pares solo de palabras realmente contiguas ("pro plan", "royal canin");
+    // un número o una palabra vacía en el medio corta el par.
+    for (let j = 0; j < tokens.length - 1; j++) {
+      const a = tokens[j];
+      const b = tokens[j + 1];
+      if (PALABRAS_VACIAS.has(a) || PALABRAS_VACIAS.has(b) || /^\d+$/.test(a) || /^\d+$/.test(b)) continue;
+      sumar(`${a} ${b}`, quien);
+    }
+  });
+  const lista = [...porTermino.entries()]
+    .map(([termino, quienes]) => ({ termino, contactos: quienes.size }))
+    .filter((t) => t.contactos >= 2);
+  // Si "royal canin" tiene los mismos contactos que "royal", la palabra
+  // suelta no agrega nada: se descarta para no gastar lugares del top.
+  const pares = lista.filter((t) => t.termino.includes(" "));
+  return lista
+    .filter((t) => t.termino.includes(" ") ||
+      !pares.some((p) => p.contactos === t.contactos && p.termino.split(" ").includes(t.termino)))
+    .sort((x, y) => y.contactos - x.contactos || y.termino.length - x.termino.length)
+    .slice(0, 25);
+}
+
+/** Texto amable para el momento de contacto que calculó WHEN. */
+function momentoContacto(f: {
+  contactable: boolean | null;
+  when_estado: string | null;
+  earliest_contact_at?: string | null;
+}): string {
+  if (f.contactable) return "Sí, ahora";
+  if (f.when_estado === "ESPERAR_HASTA") {
+    return f.earliest_contact_at ? `Esperar (desde ${fechaCorta(f.earliest_contact_at)})` : "Esperar";
+  }
+  if (f.when_estado === "NO_CONTACTAR") return "No por ahora";
+  return "Sin dato";
 }
 
 function pct(v: number | null | undefined): string {
@@ -3158,8 +3397,8 @@ async function ejecutarHerramientaAgente(
   if (nombre === "listar_campanas") {
     const { data, error } = await supabase.rpc("listar_campanas", {
       p_tenant_id: tenantId,
-      p_desde: typeof args.desde === "string" ? args.desde : null,
-      p_hasta: typeof args.hasta === "string" ? args.hasta : null,
+      p_desde: fechaLocalAInstante(args.desde),
+      p_hasta: fechaLocalAInstante(args.hasta),
       p_orden_por: typeof args.orden_por === "string" ? args.orden_por : "fecha",
       p_direccion: typeof args.direccion === "string" ? args.direccion : "desc",
       p_limite: typeof args.limite === "number" ? args.limite : 20,
@@ -3213,15 +3452,15 @@ async function ejecutarHerramientaAgente(
       p_tenant_id: tenantId,
       p_tipo: typeof args.tipo === "string" ? args.tipo : null,
       p_telefono: typeof args.telefono === "string" ? args.telefono : null,
-      p_desde: typeof args.desde === "string" ? args.desde : null,
-      p_hasta: typeof args.hasta === "string" ? args.hasta : null,
+      p_desde: fechaLocalAInstante(args.desde),
+      p_hasta: fechaLocalAInstante(args.hasta),
       p_limite: typeof args.limite === "number" ? args.limite : 20,
     });
     if (error) return { datos: { error: error.message } };
-    const filas = (data ?? []) as {
+    const filas = ((data ?? []) as {
       contacto_nombre: string; telefono: string; tipo: string; cita: string;
       fecha: string; episodio_id: string; mensaje_id: string;
-    }[];
+    }[]).map((f) => ({ ...f, cita: enmascararDatosSensibles(f.cita) }));
     const telefonosUnicos = Array.from(new Set(filas.map((f) => f.telefono)));
     const mapaContactos = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosUnicos);
     return {
@@ -3262,13 +3501,31 @@ async function ejecutarHerramientaAgente(
       p_limite: typeof args.limite === "number" ? args.limite : 20,
     });
     if (error) return { datos: { error: error.message } };
-    const filas = (data ?? []) as {
+    const filas = ((data ?? []) as {
       contacto_nombre: string; telefono: string; elegible: boolean;
       score_normalizado: number | null; motivos_exclusion: unknown;
+      evidencias_utilizadas: { id?: string; tipo?: string; cita?: string }[] | null;
       suprimido_ahora: boolean | null; when_estado: string | null;
       contactable: boolean | null; earliest_contact_at: string | null;
       calculado_at: string;
-    }[];
+    }[]).map((f) => ({
+      ...f,
+      // Hasta 4 evidencias por contacto, citas cortas: con limite alto la
+      // lista completa pasaba el tope de caracteres y se cortaba a la mitad.
+      evidencias_utilizadas: (f.evidencias_utilizadas ?? []).slice(0, 4).map((e) => ({
+        tipo: e.tipo,
+        cita: enmascararDatosSensibles(e.cita).slice(0, 180),
+      })),
+      // Mismo texto que ve el usuario en la tabla, para que la respuesta
+      // escrita y la tabla nunca se contradigan.
+      momento: momentoContacto(f),
+    }));
+    // Totales reales (la lista viene recortada por "limite"): sin esto el
+    // modelo contaba filas y decía cosas como "ninguno se puede contactar"
+    // mientras la tabla mostraba varios "Sí".
+    const { data: resumenCuenta } = await supabase.rpc("chat_resumen_cuenta", { p_tenant_id: tenantId });
+    const resumenPrioridad =
+      (resumenCuenta as { prioridad?: Record<string, number> } | null)?.prioridad ?? null;
     const elegibles = filas.filter((f) => f.elegible);
     // Solo tiene sentido proponer para audiencia a los elegibles (los
     // excluidos ya se explican con su motivo, no son una selección válida).
@@ -3281,17 +3538,31 @@ async function ejecutarHerramientaAgente(
       // Incluye contactable/when_estado/earliest_contact_at para que el
       // modelo pueda distinguir "elegible" (WHO) de "conviene escribirle
       // ahora" (WHEN) — nunca son lo mismo.
-      datos: filas,
+      datos: {
+        totales_de_la_cuenta: resumenPrioridad,
+        contactos: filas.slice(0, 40).map((f) => ({
+          contacto_nombre: f.contacto_nombre,
+          telefono: f.telefono,
+          elegible: f.elegible,
+          score_normalizado: f.score_normalizado,
+          motivos_exclusion: f.elegible ? undefined : f.motivos_exclusion,
+          evidencias_utilizadas: f.evidencias_utilizadas,
+          when_estado: f.when_estado,
+          contactable: f.contactable,
+          earliest_contact_at: f.earliest_contact_at,
+          momento: f.momento,
+        })),
+      },
       tabla: elegibles.length
         ? {
             titulo: "Prioridad de contacto (Motor)",
-            columnas: ["Contacto", "Score", "¿Contactable ahora?"],
+            columnas: ["Contacto", "Score", "¿Escribirle ahora?"],
             filas: elegibles.slice(0, MAX_FILAS_TABLA).map((f) => [
               f.contacto_nombre,
               String(f.score_normalizado ?? "—"),
-              f.contactable ? "Sí" : "No (ver detalle)",
+              f.momento,
             ]),
-            totalDisponible: elegibles.length,
+            totalDisponible: resumenPrioridad?.prioritarios ?? elegibles.length,
           }
         : undefined,
       memoria: telefonosElegibles.length
@@ -3353,8 +3624,16 @@ async function ejecutarHerramientaAgente(
     // candidato con solo los campos que la narración necesita — "motivo"
     // sigue trayendo el detalle estructurado (who/match/cobertura/bucket/
     // when) que reemplaza a los snapshots para explicar el "por qué".
+    // A quién se le puede escribir AHORA no depende del catálogo: se agrega
+    // el total real para que el modelo no lo invente ni cuente filas cuando
+    // el plan está bloqueado por falta de catálogo.
+    const { data: resumenCuentaPlan } = await supabase.rpc("chat_resumen_cuenta", { p_tenant_id: tenantId });
+    const prioridadCuenta =
+      (resumenCuentaPlan as { prioridad?: Record<string, number> } | null)?.prioridad ?? null;
     const resumenPlan = filas[0]
       ? {
+          contactos_para_escribir_ahora: prioridadCuenta?.contactables_ahora ?? null,
+          contactos_prioritarios: prioridadCuenta?.prioritarios ?? null,
           plan_estado: filas[0].plan_estado,
           plan_catalogo_verificado_count: filas[0].plan_catalogo_verificado_count,
           plan_candidatos_evaluados: filas[0].plan_candidatos_evaluados,
@@ -3363,7 +3642,12 @@ async function ejecutarHerramientaAgente(
           plan_n_excluidos: filas[0].plan_n_excluidos,
           plan_costo_estimado_creditos: filas[0].plan_costo_estimado_creditos,
         }
-      : { plan_estado: null, plan_catalogo_verificado_count: 0 };
+      : {
+          plan_estado: null,
+          plan_catalogo_verificado_count: 0,
+          contactos_para_escribir_ahora: prioridadCuenta?.contactables_ahora ?? null,
+          contactos_prioritarios: prioridadCuenta?.prioritarios ?? null,
+        };
     const candidatos = filas.map((f) => ({
       contacto_nombre: f.contacto_nombre,
       estado_candidato: f.estado_candidato,
@@ -3383,18 +3667,43 @@ async function ejecutarHerramientaAgente(
       costo_creditos: f.costo_creditos,
       motivo: f.motivo,
     }));
+    // Con cientos de contactos evaluados, mandar todos los candidatos pasaba
+    // el límite de caracteres del loop y el modelo veía solo los primeros
+    // (casi siempre EXCLUIDOS). Se mandan completos los que tienen algo para
+    // hacer y, de los excluidos, solo la cantidad y algunos ejemplos.
+    // ~450 caracteres por candidato: 30 entran holgados en el tope del loop.
+    const accionables = candidatos
+      .filter((c) => c.estado_candidato !== "EXCLUIDO")
+      .sort((a, b) => ordenEstadoPlan(a.estado_candidato) - ordenEstadoPlan(b.estado_candidato)
+        || (b.who_score ?? -1) - (a.who_score ?? -1));
+    const excluidos = candidatos.filter((c) => c.estado_candidato === "EXCLUIDO");
     return {
-      datos: { resumen_plan: resumenPlan, candidatos },
+      datos: {
+        resumen_plan: resumenPlan,
+        candidatos_con_oportunidad: accionables.slice(0, 30),
+        candidatos_con_oportunidad_total: accionables.length,
+        excluidos: { cantidad: excluidos.length, ejemplos: excluidos.slice(0, 5) },
+      },
       tabla: filas.length
         ? {
             titulo: "Propuesta del Motor",
-            columnas: ["Contacto", "Estado", "Score", "¿Contactable ahora?"],
-            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
-              f.contacto_nombre,
-              f.estado_candidato,
-              String(f.who_score ?? "—"),
-              f.contactable ? "Sí" : "No (ver detalle)",
-            ]),
+            columnas: ["Contacto", "Situación", "Score", "¿Escribirle ahora?"],
+            // Primero los que tienen algo para hacer y al final los excluidos:
+            // antes la tabla abría con filas "EXCLUIDO" que no aportaban nada.
+            filas: [...filas]
+              .sort((a, b) => ordenEstadoPlan(a.estado_candidato) - ordenEstadoPlan(b.estado_candidato)
+                || (b.who_score ?? -1) - (a.who_score ?? -1))
+              .slice(0, MAX_FILAS_TABLA)
+              .map((f) => [
+                f.contacto_nombre,
+                ETIQUETA_ESTADO_PLAN[f.estado_candidato] ?? "—",
+                String(f.who_score ?? "—"),
+                momentoContacto({
+                  contactable: f.contactable,
+                  when_estado: f.when_estado,
+                  earliest_contact_at: f.earliest_contact_at,
+                }),
+              ]),
             totalDisponible: filas.length,
           }
         : undefined,
@@ -3503,7 +3812,7 @@ async function ejecutarHerramientaAgente(
           telefono: f.telefono,
           temperatura: f.temperatura,
           score_interes: f.score_interes,
-          motivo: f.motivo,
+          motivo: enmascararDatosSensibles(f.motivo),
           evidencia_fecha: f.evidencia_fecha,
           // Distingue las coincidencias RESPALDADAS POR UN MENSAJE REAL de
           // las que solo salen del análisis del lead. Es la diferencia entre
@@ -3531,7 +3840,7 @@ async function ejecutarHerramientaAgente(
               f.nombre,
               f.telefono,
               f.temperatura ?? "—",
-              (f.motivo ?? "").replace(/\*\*/g, "").trim() || "—",
+              enmascararDatosSensibles((f.motivo ?? "").replace(/\*\*/g, "").trim()) || "—",
             ]),
             totalDisponible: filas.length,
           }
@@ -3561,8 +3870,8 @@ async function ejecutarHerramientaAgente(
     const { data, error } = await supabase
       .rpc("analytics_resumen_periodo", {
         p_tenant_id: tenantId,
-        p_desde: typeof args.desde === "string" ? args.desde : new Date(Date.now() - 30 * 864e5).toISOString(),
-        p_hasta: typeof args.hasta === "string" ? args.hasta : new Date().toISOString(),
+        p_desde: fechaLocalAInstante(args.desde) ?? new Date(Date.now() - 30 * 864e5).toISOString(),
+        p_hasta: fechaLocalAInstante(args.hasta) ?? new Date().toISOString(),
       })
       .maybeSingle();
     if (error) return { datos: { error: error.message } };
@@ -3609,7 +3918,206 @@ async function ejecutarHerramientaAgente(
       })
       .maybeSingle();
     if (error) return { datos: { error: error.message } };
+
+    // Complemento cuando todavía no hay envíos suficientes: cuándo escriben
+    // los clientes por su cuenta (hora de Argentina). No es una tasa de
+    // respuesta a campañas, y el prompt le pide al modelo aclararlo.
+    const { data: actividad } = await supabase.rpc("chat_actividad_horaria", {
+      p_tenant_id: tenantId,
+      p_dias: 90,
+      p_timezone: ZONA_HORARIA_NEGOCIO,
+    });
+    const act = actividad as {
+      por_hora?: { hora: number; mensajes: number; clientes: number }[];
+      por_dia_semana?: { dia: string; mensajes: number; clientes: number }[];
+      clientes_distintos?: number;
+      mensajes_de_clientes?: number;
+      error?: string;
+    } | null;
+    let actividadDeClientes: unknown = null;
+    if (act && !act.error && (act.mensajes_de_clientes ?? 0) > 0) {
+      // Franjas de 2 horas ordenadas por cantidad de clientes distintos
+      // (no por mensajes: una sola charla larga no debe inflar una franja).
+      const porHora = new Map((act.por_hora ?? []).map((h) => [h.hora, h]));
+      const franjas = Array.from({ length: 12 }, (_, i) => {
+        const a = porHora.get(i * 2);
+        const b = porHora.get(i * 2 + 1);
+        return {
+          franja: `${String(i * 2).padStart(2, "0")}:00 a ${String(i * 2 + 2).padStart(2, "0")}:00`,
+          clientes: (a?.clientes ?? 0) + (b?.clientes ?? 0),
+          mensajes: (a?.mensajes ?? 0) + (b?.mensajes ?? 0),
+        };
+      }).sort((x, y) => y.clientes - x.clientes);
+      actividadDeClientes = {
+        zona_horaria: "hora de Argentina",
+        dias_analizados: 90,
+        clientes_distintos: act.clientes_distintos,
+        mensajes_de_clientes: act.mensajes_de_clientes,
+        franjas_con_mas_clientes: franjas.slice(0, 4),
+        dias_de_la_semana: [...(act.por_dia_semana ?? [])].sort((x, y) => y.clientes - x.clientes),
+      };
+    }
+    return { datos: { por_envios: data ?? {}, actividad_de_clientes: actividadDeClientes } };
+  }
+
+  if (nombre === "motor_resumen_cuenta") {
+    const { data, error } = await supabase.rpc("chat_resumen_cuenta", { p_tenant_id: tenantId });
+    if (error) return { datos: { error: error.message } };
     return { datos: data ?? {} };
+  }
+
+  if (nombre === "motor_demanda") {
+    const atributo = typeof args.atributo === "string" ? args.atributo : "producto";
+    const texto = typeof args.texto === "string" && args.texto.trim() ? args.texto.trim().slice(0, 60) : null;
+    const { data, error } = await supabase.rpc("chat_demanda", {
+      p_tenant_id: tenantId,
+      p_atributo: atributo,
+      p_texto: texto,
+      p_limite: 500,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = ((data ?? []) as {
+      atributo: string; valor: string; rol: string | null; contacto_nombre: string;
+      telefono: string; cita: string; fecha: string;
+    }[]).map((f) => ({
+      ...f,
+      valor: enmascararDatosSensibles(f.valor).slice(0, 120),
+      cita: enmascararDatosSensibles(f.cita).slice(0, 200),
+    }));
+    const contactos = new Set(filas.map((f) => f.telefono).filter(Boolean));
+    return {
+      datos: {
+        atributo,
+        filtro_texto: texto,
+        menciones: filas.length,
+        contactos_distintos: contactos.size,
+        // La RPC trae hasta 500: si llegó al tope, los totales son una muestra.
+        resultado_recortado: filas.length >= 500,
+        terminos_mas_mencionados: atributo === "producto" || atributo === "variante" || atributo === "lugar"
+          ? terminosMasMencionados(filas)
+          : undefined,
+        // Para cantidad/modalidad/presupuesto los valores son pocos y cortos:
+        // van todos para que el modelo pueda juzgar (ej. "10 bolsas de 20 kg").
+        ejemplos: filas.slice(0, atributo === "producto" ? 40 : 60).map((f) => ({
+          contacto: f.contacto_nombre,
+          telefono: f.telefono,
+          valor: f.valor,
+          rol: f.rol,
+          cita: f.cita,
+          fecha: fechaCorta(f.fecha),
+        })),
+      },
+      tabla: filas.length
+        ? {
+            titulo: TITULO_DEMANDA[atributo] ?? "Lo que piden tus clientes",
+            columnas: ["Contacto", "Pidió", "Qué dijo", "Cuándo"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.contacto_nombre,
+              f.valor,
+              f.cita,
+              fechaCorta(f.fecha),
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "motor_objeciones") {
+    const dias =
+      typeof args.dias === "number" && Number.isFinite(args.dias)
+        ? Math.min(365, Math.max(1, Math.round(args.dias)))
+        : 90;
+    const { data, error } = await supabase.rpc("chat_objeciones", {
+      p_tenant_id: tenantId,
+      p_dias: dias,
+      p_limite: 40,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = ((data ?? []) as {
+      fuente: "motor_verificado" | "texto_posible"; categoria: string; contacto_nombre: string;
+      telefono: string; cita: string; fecha: string;
+    }[]).map((f) => ({ ...f, cita: enmascararDatosSensibles(f.cita).slice(0, 220) }));
+    const verificadas = filas.filter((f) => f.fuente === "motor_verificado");
+    const posibles = filas.filter((f) => f.fuente === "texto_posible");
+    const porCategoria: Record<string, number> = {};
+    for (const f of posibles) porCategoria[f.categoria] = (porCategoria[f.categoria] ?? 0) + 1;
+    return {
+      datos: {
+        dias,
+        objeciones_verificadas_por_el_motor: verificadas.map((f) => ({
+          tipo: f.categoria, contacto: f.contacto_nombre, cita: f.cita, fecha: fechaCorta(f.fecha),
+        })),
+        posibles_reclamos_o_dudas_en_mensajes: {
+          aclaracion: "Mensajes reales de clientes con palabras de reclamo o duda (los 40 más recientes como máximo). La categoría es aproximada: leé cada cita antes de afirmar qué le pasó al cliente.",
+          cantidad_por_categoria_en_esta_muestra: porCategoria,
+          muestra_recortada: posibles.length >= 40,
+          mensajes: posibles.map((f) => ({
+            categoria: f.categoria, contacto: f.contacto_nombre, cita: f.cita, fecha: fechaCorta(f.fecha),
+          })),
+        },
+      },
+      tabla: filas.length
+        ? {
+            titulo: "Objeciones y reclamos",
+            columnas: ["Contacto", "Qué dijo", "Tema", "Cuándo"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.contacto_nombre,
+              f.cita,
+              ETIQUETA_OBJECION[f.categoria] ?? "Otro",
+              fechaCorta(f.fecha),
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
+  }
+
+  if (nombre === "conversaciones_pendientes") {
+    const hasta = fechaLocalAInstante(args.hasta);
+    // Sin "desde": los 7 días anteriores a "hasta" (o a ahora).
+    const desde =
+      fechaLocalAInstante(args.desde) ??
+      new Date((hasta ? Date.parse(hasta) : Date.now()) - 7 * 864e5).toISOString();
+    const { data, error } = await supabase.rpc("chat_conversaciones_pendientes", {
+      p_tenant_id: tenantId,
+      p_desde: desde,
+      p_hasta: hasta,
+      p_limite: 50,
+    });
+    if (error) return { datos: { error: error.message } };
+    const filas = ((data ?? []) as {
+      estado: "sin_responder" | "esperando_al_cliente"; contacto_nombre: string; telefono: string;
+      ultimo_mensaje: string; ultimo_mensaje_at: string; mensajes_cliente_sin_respuesta: number;
+      intencion: string;
+    }[]).map((f) => ({ ...f, ultimo_mensaje: enmascararDatosSensibles(f.ultimo_mensaje).slice(0, 200) }));
+    return {
+      datos: {
+        desde: fechaCorta(desde),
+        sin_responder: filas.filter((f) => f.estado === "sin_responder").map((f) => ({
+          contacto: f.contacto_nombre, telefono: f.telefono, ultimo_mensaje_del_cliente: f.ultimo_mensaje,
+          cuando: fechaCorta(f.ultimo_mensaje_at), mensajes_sin_respuesta: f.mensajes_cliente_sin_respuesta,
+          intencion_comercial: f.intencion,
+        })),
+        esperando_al_cliente: filas.filter((f) => f.estado === "esperando_al_cliente").map((f) => ({
+          contacto: f.contacto_nombre, telefono: f.telefono, ultimo_mensaje_del_negocio: f.ultimo_mensaje,
+          cuando: fechaCorta(f.ultimo_mensaje_at), intencion_comercial: f.intencion,
+        })),
+      },
+      tabla: filas.length
+        ? {
+            titulo: "Conversaciones abiertas",
+            columnas: ["Contacto", "Situación", "Último mensaje", "Cuándo"],
+            filas: filas.slice(0, MAX_FILAS_TABLA).map((f) => [
+              f.contacto_nombre,
+              f.estado === "sin_responder" ? "Falta responderle" : "Esperando al cliente",
+              f.ultimo_mensaje,
+              fechaCorta(f.ultimo_mensaje_at),
+            ]),
+            totalDisponible: filas.length,
+          }
+        : undefined,
+    };
   }
 
   if (nombre === "abrir_revision_motor") {
@@ -3817,7 +4325,24 @@ async function responderConAgente(
   tenantId: string | null,
 ): Promise<IAResponse> {
   const openai = getOpenAI();
-  const hoy = new Date().toISOString().slice(0, 10);
+  // "Hoy" en hora de Argentina, no en UTC: el servidor corre en UTC y después
+  // de las 21 h el modelo creía que ya era el día siguiente (y filtraba
+  // "oportunidades de hoy" por una fecha sin datos).
+  const ahora = new Date();
+  const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: ZONA_HORARIA_NEGOCIO }).format(ahora);
+  const hoyLegible = new Intl.DateTimeFormat("es-AR", {
+    timeZone: ZONA_HORARIA_NEGOCIO,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(ahora);
+  const horaLocal = new Intl.DateTimeFormat("es-AR", {
+    timeZone: ZONA_HORARIA_NEGOCIO,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(ahora);
 
   const lineasContexto = contexto
     ? [
@@ -3833,7 +4358,7 @@ async function responderConAgente(
       ].filter(Boolean)
     : [];
 
-  const systemPrompt = `Sos el asistente de YamaSend, una plataforma de mensajería masiva por WhatsApp. Estás charlando con el dueño o encargado de la cuenta, dentro del panel de la app. Hoy es ${hoy}.
+  const systemPrompt = `Sos el asistente de YamaSend, una plataforma de mensajería masiva por WhatsApp. Estás charlando con el dueño o encargado de la cuenta, dentro del panel de la app. Hoy es ${hoyLegible} (${hoy}) y son las ${horaLocal}, hora de Argentina. Todas las fechas que les pases a las herramientas (YYYY-MM-DD) se interpretan en hora de Argentina.
 
 CÓMO HABLAR
 - Como una persona real: natural, cercano, español rioplatense (voseo: "vos", "tenés", "querés"). Nada de tono robótico ni de manual.
@@ -3857,18 +4382,39 @@ BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 - Nunca hables de dólares, ni del costo real que nos cobra Meta por mensaje: eso es información interna, el usuario solo debe pensar en créditos. Si el presupuesto viene en pesos, en dólares o en cualquier otra moneda, NO lo conviertas ni lo estimes vos. Decile con franqueza que la plataforma trabaja en créditos (1 crédito = 1 mensaje) y preguntale a cuántos créditos equivale su presupuesto, y con esa respuesta hacé la búsqueda.
 - Cuando recortaste por presupuesto, aclaralo: cuántos entran y cuántos quedaron afuera.
 
+QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
+- Totales, panorama, "cuántos contactos tengo", "cuántos están listos para comprar", "cuántos tienen intención fuerte / interés leve" → motor_resumen_cuenta. "Qué es lo que más me consultan" → motor_resumen_cuenta (qué TIPO de consulta: precio, stock, envíos…) y además motor_demanda con atributo producto (QUÉ productos y marcas). Es la ÚNICA fuente para totales: nunca cuentes las filas de otra herramienta (vienen recortadas) ni uses plan_candidatos_evaluados como total de contactos (son solo los que tienen una conversación analizada).
+- Ejemplos de un tipo de señal ("quién preguntó precios", "quién consultó stock", "quién dijo que quería comprar", "quién preguntó por envíos") → motor_oportunidades CON el filtro tipo que corresponda.
+- Productos o marcas más pedidos, cantidades grandes o compras por mayor, zonas o direcciones, envío/retiro → motor_demanda con el atributo que corresponda.
+- Objeciones, reclamos, dudas, quejas → motor_objeciones.
+- Quién escribió y quedó sin respuesta o sin cerrar en un período → conversaciones_pendientes.
+- A quién contactar primero / prioridad → motor_prioridad_contactos. Un plan de acción → motor_plan_preview.
+- Mejor día y horario para escribir → mejor_horario_envio.
+- Interés por un tema descrito libremente ("los que buscan alimento para gato") → buscar_contactos (o motor_demanda si es un producto o marca concreta).
+- Si ninguna herramienta trae el dato que piden (facturación, ventas, ganancias, stock real del local, precios del catálogo, opiniones sobre la competencia que nadie expresó), decí con franqueza que ese dato no lo tenés y qué sí podés mostrar. No llames a una herramienta "por las dudas" para rellenar.
+
+LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_por_contacto)
+- fuerte: el cliente expresó intención de compra concreta, pidió reservar o pasó datos para concretar (o dio 3+ datos concretos más una consulta comercial).
+- moderada: consulta comercial clara (precio, stock, condiciones) o 1-2 datos concretos de lo que busca.
+- débil: interés vago, un dato aislado o solo el saludo de un anuncio.
+- sin_interes_comercial: charla personal, proveedores, mensajes automáticos.
+- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "sin interés" = sin_interes_comercial. Aclará que es una clasificación por la conversación, no una venta confirmada.
+
 EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "qué conversaciones importantes tuve", "quién preguntó por precios", "qué oportunidades detectaste", "quién debería priorizar", "por qué contactar a este cliente".
+- "¿Qué oportunidades tengo hoy?" significa "qué oportunidades tengo en este momento": NO filtres por la fecha de hoy salvo que pidan explícitamente las de un período ("las de hoy", "esta semana").
 - Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo (podés parafrasear la cita, pero el hecho de que lo dijo tiene que salir de un resultado real, nunca inventado).
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
+- motor_prioridad_contactos trae "totales_de_la_cuenta" (prioritarios, contactables_ahora, conviene_esperar, no_contactar_por_ahora) y "contactos" (los primeros de la lista, cada uno con "momento", el mismo texto que ve el usuario en la tabla). Para cualquier número usá totales_de_la_cuenta. Lo que digas sobre si se le puede escribir ahora a alguien tiene que coincidir con su "momento": si la tabla dice "Sí, ahora", nunca digas que no se puede contactar.
 - motor_prioridad_contactos trae DOS cosas que NUNCA hay que confundir: "elegible" (prioridad comercial, decidida por WHO) y "contactable" (si conviene escribirle AHORA, decidido por WHEN — puede ser distinto de elegible). Al recomendar a quién contactar primero, priorizá siempre "contactable": a un elegible con contactable=false hay que presentarlo como "es prioritario, pero conviene esperar" (usando when_estado para explicar por qué, y earliest_contact_at para decir desde cuándo), nunca como "contactalo ahora".
 - Una recomendación de prioridad siempre tiene que poder respaldarse con evidencia verificable, nunca solo con el score: el score por sí solo no es una explicación. motor_prioridad_contactos ya trae evidencias_utilizadas con tipo y cita real por contacto — usalo para explicar el "por qué" si alcanza. Si necesitás más detalle o más contexto del que trae esa lista, llamá motor_oportunidades filtrando por ese mismo teléfono.
 
 EL MOTOR DE DECISIÓN — PROPUESTA DE PLAN (motor_plan_preview)
-- Usala cuando te pidan un plan de acción o una selección priorizada, no solo un listado: "¿qué harías con mis oportunidades?", "armame un plan", "¿a quién contactarías primero y por qué?", "¿qué debería hacer con estos leads?". Para preguntas puramente informativas seguí usando motor_oportunidades / motor_prioridad_contactos como hasta ahora.
+- Usala cuando te pidan un plan de acción o una selección priorizada, no solo un listado: "¿qué harías con mis oportunidades?", "armame un plan", "¿qué debería hacer con estos leads?". Para preguntas puramente informativas seguí usando motor_oportunidades / motor_prioridad_contactos como hasta ahora.
 - Es de SOLO LECTURA: no crea audiencias, campañas ni nada — es una propuesta calculada para que la charlemos con el usuario, nunca la presentes como una acción ya hecha.
-- El resultado trae "resumen_plan" (una vez) y "candidatos" (uno por contacto evaluado). Basate ÚNICAMENTE en esos campos. Nunca inventes una oferta, un costo, un timing, un score o un motivo que no esté ahí. No hay snapshots crudos que consultar: todo lo que necesitás para explicar el "por qué" ya está en "motivo" de cada candidato (trae el código y los valores — who/match/cobertura/bucket/when — que llevaron a esa clasificación).
+- El plan responde QUÉ OFRECERLE a cada uno. Si está bloqueado porque falta el catálogo (plan_catalogo_verificado_count = 0), eso NO significa que no se le pueda escribir a nadie: a quién y cuándo escribir lo sigue diciendo motor_prioridad_contactos. Nunca digas "no hay contactos listos" solo porque el plan está bloqueado por catálogo; decí cuántos contactos hay para escribirles ahora (resumen_plan.contactos_para_escribir_ahora) y que, para recomendar qué ofrecerle a cada uno, falta cargar el catálogo.
+- El resultado trae "resumen_plan" (una vez), "candidatos_con_oportunidad" (los que no quedaron excluidos) y "excluidos" (cantidad y ejemplos). Basate ÚNICAMENTE en esos campos. Nunca inventes una oferta, un costo, un timing, un score o un motivo que no esté ahí. No hay snapshots crudos que consultar: todo lo que necesitás para explicar el "por qué" ya está en "motivo" de cada candidato (trae el código y los valores — who/match/cobertura/bucket/when — que llevaron a esa clasificación).
 - "resumen_plan.plan_catalogo_verificado_count" te dice CUÁNTAS ofertas verificadas hay ahora mismo, no es un valor fijo — puede ser 0 o puede no serlo, depende de la cuenta y el momento:
   - Si es 0: el catálogo comercial todavía no está verificado. Podés hablar de prioridad (WHO) y de cuándo conviene escribirle (WHEN), pero no de qué ofrecerle a cada uno. Nunca elijas vos una oferta ni completes una moneda faltante para simular que sí hay catálogo.
   - Si es mayor a 0: el catálogo YA está verificado. Nunca digas "el catálogo no está verificado" ni "todavía no se verificó el catálogo" en ese caso — sería directamente falso.
@@ -3895,9 +4441,27 @@ ACCIONES QUE PODÉS EJECUTAR
 - Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
 - Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes de abrir un flujo.
 
+OBJECIONES, PENDIENTES Y HORARIOS
+- motor_objeciones separa "objeciones_verificadas_por_el_motor" de "posibles_reclamos_o_dudas_en_mensajes". Contalas por separado: las segundas son mensajes reales pero su categoría es aproximada, así que describí lo que dijo el cliente con sus palabras y presentalas como "posibles". Si no hay verificadas, decilo, pero no digas "no hay objeciones" si hay posibles.
+- conversaciones_pendientes: "sin_responder" = el cliente escribió último y falta contestarle; "esperando_al_cliente" = el negocio contestó y el cliente no volvió. Respetá el período que pidieron (por defecto, últimos 7 días) y nunca muestres como "de los últimos 7 días" algo más viejo.
+- mejor_horario_envio: si "por_envios" no alcanza el mínimo de datos, usá "actividad_de_clientes" y aclaralo: "todavía no hay campañas suficientes para medir respuestas; por ahora, tus clientes te escriben más entre tal y tal hora y los días X". Es una buena referencia, no una tasa de respuesta medida.
+
+BORRADORES DE MENSAJES PARA CLIENTES
+- Cuando te pidan qué escribirle a un cliente, armá el texto SOLO con lo que el cliente dijo (citas reales) y con los DATOS REALES DE ESTA CUENTA. Nunca afirmes stock, disponibilidad, precios, promociones, descuentos, plazos ni horarios de entrega que no estén en esos datos: en su lugar dejá un espacio para completar entre corchetes, ej. "[confirmar stock]", "[precio]", "[horario de entrega]", y avisá en una línea qué tiene que completar antes de mandarlo.
+- Si la conversación con ese cliente es de hace varios días, el borrador no puede sonar como si fuera de hoy ("te escribo por lo que consultaste el 7/9…").
+- Es solo un texto sugerido: nunca digas que lo enviaste ni que lo vas a enviar.
+
+DATOS QUE NO TENÉS
+- No tenés datos de facturación, ventas, cobros ni ganancias. Si preguntan cuánto facturaron o vendieron, decí que ese dato no está en YamaSend. Los créditos son lo que la cuenta GASTA en mensajes, nunca lo que vende: no los ofrezcas como respuesta a una pregunta de facturación.
+- Si en una cita aparece "[oculto]" o "[dato bancario oculto]", es un dato sensible que se ocultó a propósito: nunca intentes reconstruirlo ni lo menciones.
+
+LA TABLA QUE SE MUESTRA DEBAJO DE TU RESPUESTA
+- Debajo de tu respuesta se muestra automáticamente la tabla de la última herramienta que trajo datos. Si esa tabla NO sirve para la pregunta (por ejemplo, la herramienta no tenía lo que buscabas, o trajo cosas de otro tema), terminá tu respuesta con la marca [[sin_tabla]] y no se va a mostrar. Si la tabla sí sirve, no pongas la marca.
+
 REGLAS ESTRICTAS
 - NUNCA inventes números, nombres, fechas, IDs ni ningún dato de la cuenta. Todo dato concreto que digas tiene que venir de una herramienta que llamaste en este mismo turno.
-- Si no tenés una herramienta que responda algo, decí con franqueza que ese dato todavía no lo podés consultar, en vez de responder con algo parecido pero distinto.`;
+- Si no tenés una herramienta que responda algo, decí con franqueza que ese dato todavía no lo podés consultar, en vez de responder con algo parecido pero distinto.
+- Lo que digas en el texto y lo que muestra la tabla tienen que coincidir: mismos números, mismos contactos, mismo estado.`;
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
@@ -3918,7 +4482,9 @@ REGLAS ESTRICTAS
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       temperature: 0.3,
-      max_tokens: 500,
+      // 500 cortaba las respuestas con listas (ej. "los 10 más prioritarios
+      // con su motivo"). 900 alcanza para una lista de 10 con una línea cada uno.
+      max_tokens: 900,
       // Sin tenant_id no podemos consultar nada: dejamos que responda solo
       // conversacionalmente en vez de fallar con un error técnico.
       tools: tenantId ? HERRAMIENTAS_AGENTE : undefined,
@@ -3931,11 +4497,18 @@ REGLAS ESTRICTAS
     const toolCalls = msg.tool_calls ?? [];
 
     if (toolCalls.length === 0) {
-      const texto = msg.content?.trim();
-      if (!texto) break;
+      const crudo = msg.content?.trim();
+      if (!crudo) break;
+      // El modelo marca con [[sin_tabla]] cuando la tabla de la última
+      // herramienta no tiene que ver con lo que respondió (ej. "no encontré
+      // nada de eso" con una tabla de otro tema debajo).
+      const ocultarTabla = /\[\[\s*sin_tabla\s*\]\]/i.test(crudo);
+      const texto =
+        crudo.replace(/\s*\[\[\s*sin_tabla\s*\]\]\s*/gi, " ").trim() ||
+        "No encontré datos que respondan eso. ¿Me lo preguntás de otra forma?";
       return {
         text: texto,
-        payload: ultimaTabla ? { kind: "tabla_datos", ...ultimaTabla } : undefined,
+        payload: ultimaTabla && !ocultarTabla ? { kind: "tabla_datos", ...ultimaTabla } : undefined,
         flowState: { ...IA_FLOW_IDLE, draft: memoriaHerramientas },
       };
     }
@@ -3969,17 +4542,15 @@ REGLAS ESTRICTAS
         memoriaHerramientas = { ...memoriaHerramientas, ...resultado.memoria };
       }
 
-      // Antes en 6000: con tenants de ~20+ contactos, motor_plan_preview
-      // (que manda un objeto por candidato) superaba ese límite y el JSON
-      // se cortaba a mitad de camino — el modelo terminaba viendo un
-      // fragmento invalido de los primeros 1-2 contactos nada más, sin
-      // llegar nunca a los que en realidad importaban para la pregunta.
-      // 20000 le da margen a esa herramienta (y a cualquier otra con varios
-      // contactos) sin disparar el costo de tokens de forma relevante.
+      // Tope de caracteres por resultado (antes 6000 y luego 20000: el JSON
+      // se cortaba a mitad de camino con cuentas de cientos de contactos y el
+      // modelo veía un fragmento inválido). Las herramientas ya recortan su
+      // propia salida (ver motor_* y conversaciones_pendientes); esto es
+      // solo la red de seguridad.
       messages.push({
         role: "tool",
         tool_call_id: tc.id,
-        content: JSON.stringify(resultado.datos).slice(0, 20000),
+        content: JSON.stringify(resultado.datos).slice(0, 30000),
       });
     }
   }
