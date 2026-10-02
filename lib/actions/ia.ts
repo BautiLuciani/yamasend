@@ -2757,6 +2757,21 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "buscar_contacto_por_nombre",
+      description:
+        "Busca contactos por su NOMBRE (ej. 'Juan Pérez', 'Maia'). Usala siempre que el usuario nombre a una persona, antes de buscar qué dijo. Devuelve nombre y teléfono; con el teléfono podés llamar a motor_oportunidades. Si no devuelve nada, ese contacto no existe en la cuenta.",
+      parameters: {
+        type: "object",
+        properties: {
+          nombre: { type: "string", description: "Nombre o nombre y apellido, tal como lo dijo el usuario." },
+        },
+        required: ["nombre"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "listar_templates",
       description:
         "Lista los templates de mensajes de la cuenta con su estado de aprobación de Meta. Estados posibles: 'borrador' (no enviado a Meta), 'enviado' (en revisión), 'verificado' (aprobado), 'rechazado', 'error'. Usar para 'cuántos templates aprobados tengo', 'qué templates me rechazaron y por qué', 'listame mis templates'.",
@@ -2921,6 +2936,10 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           texto: {
             type: "string",
             description: "Filtro opcional: palabra o marca a buscar dentro de lo pedido (ej: 'royal', 'gato', 'pipeta'). Una sola palabra o marca, sin frases largas.",
+          },
+          por_mascota: {
+            type: "boolean",
+            description: "true (con atributo 'producto' y sin texto) para '¿quiénes buscan para perro y quiénes para gato?': devuelve cuántos contactos y la lista de cada uno.",
           },
         },
         required: ["atributo"],
@@ -3251,6 +3270,27 @@ function contarPorEspecie(filas: { valor: string; cita: string; telefono: string
   return { perro: perro.size, gato: gato.size };
 }
 
+/** Un ejemplo (la cita más reciente) por contacto, separado por perro y gato. */
+function clientesPorEspecie<T extends { valor: string; cita: string; telefono: string }>(filas: T[]) {
+  const perro = new Map<string, T>();
+  const gato = new Map<string, T>();
+  for (const f of filas) {
+    const t = `${f.valor} ${f.cita}`.toLowerCase();
+    if (/\b(perr[oa]s?|cachorr[oa]s?|puppy|dog)\b/.test(t) && !perro.has(f.telefono)) perro.set(f.telefono, f);
+    if (/\b(gat[oa]s?|felin[oa]s?|cat)\b/.test(t) && !gato.has(f.telefono)) gato.set(f.telefono, f);
+  }
+  return { perro: Array.from(perro.values()), gato: Array.from(gato.values()) };
+}
+
+/** Texto que habla de envío, retiro o entrega (para depurar "modalidad"). */
+const RE_LOGISTICA = /(env[ií]o|envi[aá]|mand[aá]|entreg|domicilio|delivery|retir|sucursal|local|pas(o|ar|amos) a buscar|buscarlo|moto|cadete|correo|horario|\d+\s*(hs|h\b|:\d\d))/i;
+
+/**
+ * Citas que de verdad preguntan si hay stock. El extractor a veces etiqueta
+ * como consulta_disponibilidad un reclamo o "¿hacen envío?".
+ */
+const RE_CONSULTA_STOCK = /(stock|disponib|ten[eé]s|tienen|ten[ií]an|tendr[aá]n|tendr[ií]as|\bhay\b|quedan?\b|entra(r[ií]a|n)?\b|lleg(a|ue|ar[aá])|ingres|consegu|venden|vend[eé]s|trabajan|cu[aá]ndo est[aá]|avis(en|ame|ar))/i;
+
 /** Cuántas unidades pide un texto ("10 bolsas de 20k" → 10; "una bolsa de 15 kg" → 0). */
 function unidadesPedidas(texto: string): number {
   let max = 0;
@@ -3556,24 +3596,70 @@ async function ejecutarHerramientaAgente(
     };
   }
 
+  if (nombre === "buscar_contacto_por_nombre") {
+    // Cada palabra del nombre tiene que aparecer (sin importar acentos ni
+    // mayúsculas): "juan perez" encuentra "Juan Pérez" pero no a "Juan Gómez".
+    const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    const palabras = sinAcentos(typeof args.nombre === "string" ? args.nombre : "")
+      .split(/\s+/)
+      .filter((p) => p.length >= 2)
+      .slice(0, 4);
+    if (palabras.length === 0) return { datos: { encontrados: 0, contactos: [] } };
+    const { data, error } = await supabase
+      .from("yamas_send_contactos")
+      .select("nombre, telefono")
+      .eq("tenant_id", tenantId)
+      // Las vocales van como comodín para que "perez" también encuentre "Pérez".
+      .ilike("nombre", `%${palabras[0].replace(/[%_\\]/g, "").replace(/[aeiou]/g, "_")}%`)
+      .limit(500);
+    if (error) return { datos: { error: error.message } };
+    const contactos = (data ?? [])
+      .filter((c) => c.nombre && palabras.every((p) => sinAcentos(c.nombre as string).includes(p)))
+      .slice(0, 10)
+      .map((c) => ({ nombre: c.nombre, telefono: c.telefono }));
+    return {
+      datos: {
+        encontrados: contactos.length,
+        contactos,
+        ...(contactos.length === 0 ? { nota: "No hay ningún contacto con ese nombre en la cuenta." } : {}),
+      },
+    };
+  }
+
   if (nombre === "motor_oportunidades") {
+    const tipo = typeof args.tipo === "string" ? args.tipo : null;
+    const telefono = typeof args.telefono === "string" ? args.telefono : null;
+    const limite = typeof args.limite === "number" ? args.limite : 20;
+    // Con un tipo y sin teléfono se trae todo (hasta 100) para poder decir el
+    // TOTAL de contactos con esa señal, no solo "algunos ejemplos".
+    const contarTodo = Boolean(tipo) && !telefono;
     const { data, error } = await supabase.rpc("chat_oportunidades", {
       p_tenant_id: tenantId,
-      p_tipo: typeof args.tipo === "string" ? args.tipo : null,
-      p_telefono: typeof args.telefono === "string" ? args.telefono : null,
+      p_tipo: tipo,
+      p_telefono: telefono,
       p_desde: fechaLocalAInstante(args.desde),
       p_hasta: fechaLocalAInstante(args.hasta),
-      p_limite: typeof args.limite === "number" ? args.limite : 20,
+      p_limite: contarTodo ? 100 : limite,
     });
     if (error) return { datos: { error: error.message } };
-    const filas = ((data ?? []) as {
+    let filas = ((data ?? []) as {
       contacto_nombre: string; telefono: string; tipo: string; cita: string;
       fecha: string; episodio_id: string; mensaje_id: string;
     }[]).map((f) => ({ ...f, cita: enmascararDatosSensibles(f.cita) }));
+    if (tipo === "consulta_disponibilidad" && !telefono) {
+      filas = filas.filter((f) => RE_CONSULTA_STOCK.test(f.cita));
+    }
     const telefonosUnicos = Array.from(new Set(filas.map((f) => f.telefono)));
     const mapaContactos = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosUnicos);
     return {
-      datos: filas,
+      datos: contarTodo
+        ? {
+            total_contactos_con_esta_senal: telefonosUnicos.length,
+            total_citas: filas.length,
+            total_recortado_en_100_citas: (data ?? []).length >= 100,
+            filas: filas.slice(0, Math.max(limite, 1)),
+          }
+        : filas,
       tabla: filas.length
         ? {
             titulo: "Oportunidades detectadas por el Motor",
@@ -4144,6 +4230,12 @@ async function ejecutarHerramientaAgente(
     } catch (e) {
       return { datos: { error: (e as Error).message } };
     }
+    // El extractor a veces etiqueta como "modalidad" algo que no es logística
+    // (ej. "la bolsa más grande"), y el chat terminaba diciendo que el cliente
+    // preguntó por la entrega. Solo quedan las que hablan de envío/retiro.
+    if (atributo === "modalidad") {
+      filas = filas.filter((f) => RE_LOGISTICA.test(`${f.valor} ${f.cita}`));
+    }
     const contactos = new Set(filas.map((f) => f.telefono).filter(Boolean));
     const ejemplo = (f: FilaDemanda) => ({
       contacto: f.contacto_nombre,
@@ -4160,6 +4252,32 @@ async function ejecutarHerramientaAgente(
       // La RPC trae hasta 500: si llegó al tope, los totales son una muestra.
       resultado_recortado: filas.length >= 500,
     };
+
+    // "¿Quiénes buscan para perro y quiénes para gato?": totales y la lista de
+    // cada uno (un contacto por fila), no un puñado de ejemplos sueltos.
+    if (args.por_mascota === true && atributo === "producto") {
+      const { perro, gato } = clientesPorEspecie(filas);
+      const fila = (m: string) => (f: FilaDemanda) => [m, f.contacto_nombre, f.valor, fechaCorta(f.fecha)];
+      const todas = [...perro.map(fila("Perro")), ...gato.map(fila("Gato"))];
+      return {
+        datos: {
+          ...base,
+          contactos_que_buscan_para_perro: perro.length,
+          contactos_que_buscan_para_gato: gato.length,
+          nota: "Un contacto puede estar en las dos listas si pidió para perro y para gato. Los que no dijeron la mascota no están en ninguna.",
+          perro: perro.slice(0, 40).map(ejemplo),
+          gato: gato.slice(0, 40).map(ejemplo),
+        },
+        tabla: todas.length
+          ? {
+              titulo: "Qué buscan para perro y para gato",
+              columnas: ["Mascota", "Contacto", "Pidió", "Cuándo"],
+              filas: todas.slice(0, MAX_FILAS_TABLA),
+              totalDisponible: todas.length,
+            }
+          : undefined,
+      };
+    }
 
     // "Qué productos/marcas/zonas piden más": la respuesta es un RANKING, y la
     // tabla también (antes mostraba las últimas filas, que no decían nada de
@@ -4623,7 +4741,8 @@ QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
 - "Qué oportunidades de venta tengo (hoy)" → motor_prioridad_contactos (los mejores para escribir ahora, con su motivo) y, si sirve, motor_resumen_cuenta para el panorama. NO uses motor_oportunidades para esta pregunta: ordena por fecha, no por oportunidad.
 - A quién contactar primero / prioridad → motor_prioridad_contactos. "¿A quién no conviene contactar?" → motor_prioridad_contactos y respondé con prioritarios_a_los_que_hoy_no_conviene_escribir (completa, con su motivo). Un plan de acción → motor_plan_preview.
 - Mejor día y horario para escribir → mejor_horario_envio.
-- Interés por un tema descrito libremente ("los que buscan alimento para gato") → buscar_contactos (o motor_demanda si es un producto o marca concreta).
+- "Quiénes buscan para perro / para gato", "cuántos tienen perro y cuántos gato" → motor_demanda con atributo 'producto' y por_mascota=true. Arrancá con los dos totales y después nombrá a los contactos de cada lista.
+- Interés por un tema descrito libremente que no sea perro/gato ni un producto concreto → buscar_contactos (o motor_demanda si es un producto o marca concreta).
 - Si ninguna herramienta trae el dato que piden (facturación, ventas, ganancias, stock real del local, precios del catálogo, opiniones sobre la competencia que nadie expresó), decí con franqueza que ese dato no lo tenés y qué sí podés mostrar. No llames a una herramienta "por las dudas" para rellenar.
 
 LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_de_compra)
@@ -4637,6 +4756,7 @@ EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "quién preguntó por precios", "quién debería priorizar", "qué oportunidades tengo" (prioridad), "por qué contactar a este cliente".
 - "¿Qué oportunidades tengo hoy?" significa "qué oportunidades tengo en este momento": NO filtres por la fecha de hoy salvo que pidan explícitamente las de un período ("las de hoy", "esta semana").
 - Leé las citas antes de presentar algo como oportunidad: un pago o una transferencia hecha por error, un reclamo, una devolución o un problema con un pedido NO son una oportunidad de venta — presentalos como algo a resolver ("este cliente tiene un problema pendiente: …"), nunca como "listo para comprar".
+- Cuando motor_oportunidades trae total_contactos_con_esta_senal, arrancá diciendo ese total ("19 contactos consultaron por stock; estos son los más recientes:") y no lo presentes como "algunos ejemplos" sin número. Si total_recortado_en_100_citas es true, decí "al menos N".
 - Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo. Si la ponés entre comillas, tiene que ser EXACTA, letra por letra: no corrijas ortografía, abreviaturas ni mayúsculas, y no le saques emojis (ej. "y q valor tienen" queda así, no "y qué valor tienen"); si la parafraseás, sin comillas. Nunca le agregues un motivo o una intención que el cliente no dijo.
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
@@ -4698,7 +4818,8 @@ BORRADORES DE MENSAJES PARA CLIENTES
 - Es solo un texto sugerido: nunca digas que lo enviaste ni que lo vas a enviar.
 
 DATOS QUE NO TENÉS
-- No tenés datos de facturación, ventas, cobros ni ganancias. Si preguntan cuánto facturaron o vendieron, decí que ese dato no está en YamaSend. Los créditos son lo que la cuenta GASTA en mensajes, nunca lo que vende: no los ofrezcas como respuesta a una pregunta de facturación.
+- No tenés datos de facturación, ventas, cobros ni ganancias. Si preguntan cuánto facturaron o vendieron, decí que ese dato no está en YamaSend. Los créditos son lo que la cuenta GASTA en mensajes, nunca lo que vende: no los ofrezcas como respuesta a una pregunta de facturación. PROHIBIDO en esa respuesta mencionar créditos u ofrecer "cuántos créditos usaste" como alternativa. Respuesta correcta: "Ese dato no lo tengo: YamaSend no registra ventas ni cobros, solo las conversaciones. Si querés, te puedo decir cuántos clientes mostraron intención de compra en ese período."
+- Si preguntan por una persona por su nombre ("qué me dijo Juan Pérez"), primero buscala con buscar_contacto_por_nombre. Si no hay ningún contacto con ese nombre, decilo así: "No tenés ningún contacto que se llame Juan Pérez". No digas "no encontré conversaciones recientes de Juan Pérez" (da a entender que esa persona existe).
 - Si en una cita aparece "[oculto]" o "[dato bancario oculto]", es un dato sensible que se ocultó a propósito: nunca intentes reconstruirlo ni lo menciones.
 
 LA TABLA QUE SE MUESTRA DEBAJO DE TU RESPUESTA
@@ -4790,7 +4911,16 @@ REGLAS ESTRICTAS
       // confirmación paso a paso.
       if (resultado.accion) return resultado.accion;
 
-      if (resultado.tabla) ultimaTabla = resultado.tabla;
+      // Si una tabla nueva solo repite filas que ya estaban en la anterior
+      // (ej. "por mayor" ya incluye a los comercios y después el modelo pide
+      // perfil_grupo), se queda la anterior, que es la más completa.
+      if (resultado.tabla) {
+        const previas = new Set((ultimaTabla?.filas ?? []).map((f) => JSON.stringify(f)));
+        const repetida = Boolean(ultimaTabla) &&
+          JSON.stringify(ultimaTabla?.columnas) === JSON.stringify(resultado.tabla.columnas) &&
+          resultado.tabla.filas.every((f) => previas.has(JSON.stringify(f)));
+        if (!repetida) ultimaTabla = resultado.tabla;
+      }
       if (resultado.memoria) {
         memoriaHerramientas = { ...memoriaHerramientas, ...resultado.memoria };
       }
