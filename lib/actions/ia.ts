@@ -2868,7 +2868,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "motor_oportunidades",
       description:
-        "Trae evidencia comercial REAL y VERIFICADA que el Motor de Decisión extrajo de las conversaciones de WhatsApp: quién preguntó precio, quién mostró interés en un producto, consultas de disponibilidad o condiciones, etc. Cada resultado es una cita textual de un mensaje real, con quién la dijo y cuándo. Usar para 'qué conversaciones importantes tuve', 'quién preguntó por precios', 'qué oportunidades detectaste', 'hay conversaciones que necesiten seguimiento'. Si no hay resultados, decilo con franqueza: puede ser que el Motor todavía no haya encontrado evidencia comercial en las conversaciones de esta cuenta.",
+        "Trae evidencia comercial REAL y VERIFICADA que el Motor de Decisión extrajo de las conversaciones de WhatsApp: quién preguntó precio, quién mostró interés en un producto, consultas de disponibilidad o condiciones, etc. Cada resultado es una cita textual de un mensaje real, con quién la dijo y cuándo. Usar para ejemplos de un tipo de señal ('quién preguntó por precios', 'quién consultó stock') o para ver qué dijo un contacto puntual (filtro telefono). Para 'qué oportunidades tengo' usar motor_prioridad_contactos (prioriza), no esta (ordena por fecha). Si no hay resultados, decilo con franqueza: puede ser que el Motor todavía no haya encontrado evidencia comercial en las conversaciones de esta cuenta.",
       parameters: {
         type: "object",
         properties: {
@@ -3033,7 +3033,12 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           contacto_ids: {
             type: "array",
             items: { type: "string" },
-            description: "IDs de contactos de una consulta hecha en este mismo turno. Omitir si usás filtro_temperatura.",
+            description: "IDs de contactos de una consulta hecha en este mismo turno (listar_contactos/buscar_contactos). Omitir si usás filtro_temperatura o telefonos.",
+          },
+          telefonos: {
+            type: "array",
+            items: { type: "string" },
+            description: "Teléfonos de los contactos, tal cual los devolvió una herramienta del Motor (motor_prioridad_contactos, motor_oportunidades, motor_demanda, conversaciones_pendientes) en este turno o en la conversación. Es la forma correcta de armar una audiencia con contactos del Motor: los teléfonos no cambian entre mensajes.",
           },
         },
         required: ["nombre"],
@@ -3168,6 +3173,21 @@ function ordenEstadoPlan(estado: string): number {
   return i === -1 ? orden.length : i;
 }
 
+const ETIQUETA_SENAL: Record<string, string> = {
+  especificacion_demanda: "detallaron qué producto buscan (marca, tamaño, variedad, cantidad o zona)",
+  consulta_precio: "preguntaron precios",
+  consulta_disponibilidad: "preguntaron si hay stock o disponibilidad",
+  intencion_compra: "dijeron que querían comprar",
+  interes_producto: "mostraron interés en un producto sin dar detalles",
+  consulta_condiciones: "preguntaron por medios de pago, cuotas o descuentos",
+  consulta_logistica: "preguntaron por envíos, retiro o entregas",
+  datos_reserva: "pasaron datos para concretar una compra o un pago",
+  descarte: "dijeron que no les interesaba",
+  objecion_precio: "objetaron el precio",
+  objecion_tiempo: "objetaron los tiempos",
+  objecion_confianza: "mostraron desconfianza",
+};
+
 const TITULO_DEMANDA: Record<string, string> = {
   producto: "Productos que piden",
   variante: "Variantes que piden",
@@ -3207,6 +3227,25 @@ const PALABRAS_VACIAS_LUGAR = new Set([
   "sucursal", "calle", "av", "avenida", "timbre", "piso", "depto", "dpto", "entre", "esquina",
   "local", "casa", "barrio", "zona", "provincia", "pcia", "prov", "nro", "numero", "altura",
 ]);
+
+/** Palabras que describen el producto pero no son una marca ni un producto ("adulto", "perro"…). */
+const PALABRAS_GENERICAS_PRODUCTO = new Set([
+  "adulto", "adultos", "adulta", "cachorro", "cachorros", "puppy", "senior", "perro", "perros", "perra",
+  "gato", "gatos", "gata", "raza", "razas", "pequena", "pequenas", "pequeno", "mediana", "mediano",
+  "grande", "grandes", "chica", "chico", "mini", "medium", "seco", "humedo", "balanceado", "kilo",
+]);
+
+/** Cuántos contactos buscan cosas para perro y cuántos para gato. */
+function contarPorEspecie(filas: { valor: string; cita: string; telefono: string }[]) {
+  const perro = new Set<string>();
+  const gato = new Set<string>();
+  for (const f of filas) {
+    const t = `${f.valor} ${f.cita}`.toLowerCase();
+    if (/\b(perr[oa]s?|cachorr[oa]s?|puppy|dog)\b/.test(t)) perro.add(f.telefono);
+    if (/\b(gat[oa]s?|felin[oa]s?|cat)\b/.test(t)) gato.add(f.telefono);
+  }
+  return { perro: perro.size, gato: gato.size };
+}
 
 /** Cuántas unidades pide un texto ("10 bolsas de 20k" → 10; "una bolsa de 15 kg" → 0). */
 function unidadesPedidas(texto: string): number {
@@ -3257,9 +3296,11 @@ function terminosMasMencionados(filas: { valor: string; telefono: string }[], ex
   // Si "royal canin" tiene los mismos contactos que "royal", la palabra
   // suelta no agrega nada: se descarta para no gastar lugares del top.
   const pares = lista.filter((t) => t.termino.includes(" "));
+  // Si un par ("royal canin", 21) cubre casi todas las menciones de una
+  // palabra suelta ("royal", 25), la palabra suelta no agrega nada.
   return lista
     .filter((t) => t.termino.includes(" ") ||
-      !pares.some((p) => p.contactos === t.contactos && p.termino.split(" ").includes(t.termino)))
+      !pares.some((p) => p.contactos >= 0.7 * t.contactos && p.termino.split(" ").includes(t.termino)))
     .sort((x, y) => y.contactos - x.contactos || y.termino.length - x.termino.length)
     .slice(0, 25);
 }
@@ -3574,10 +3615,23 @@ async function ejecutarHerramientaAgente(
     // Totales reales (la lista viene recortada por "limite"): sin esto el
     // modelo contaba filas y decía cosas como "ninguno se puede contactar"
     // mientras la tabla mostraba varios "Sí".
-    const [{ data: resumenCuenta }, { data: motivosEspera }] = await Promise.all([
+    const [{ data: resumenCuenta }, { data: motivosEspera }, { data: enEspera }] = await Promise.all([
       supabase.rpc("chat_resumen_cuenta", { p_tenant_id: tenantId }),
       supabase.rpc("chat_motivos_espera", { p_tenant_id: tenantId }),
+      supabase.rpc("chat_prioritarios_en_espera", { p_tenant_id: tenantId }),
     ]);
+    // TODOS los prioritarios a los que hoy no conviene escribir (la lista de
+    // arriba viene recortada por score y dejaba afuera a varios).
+    const prioritariosEnEspera = ((enEspera ?? []) as {
+      contacto_nombre: string; telefono: string; score: number | null; when_estado: string | null;
+      earliest_contact_at: string | null; motivos: string[] | null;
+    }[]).map((e) => ({
+      contacto: e.contacto_nombre,
+      telefono: e.telefono,
+      score: e.score,
+      momento: momentoContacto({ contactable: false, when_estado: e.when_estado, earliest_contact_at: e.earliest_contact_at }),
+      motivo: (e.motivos ?? []).map((c) => MOTIVO_MOMENTO[c]).filter(Boolean).join("; ") || "regla de momento del Motor",
+    }));
     const resumenPrioridad =
       (resumenCuenta as { prioridad?: Record<string, number> } | null)?.prioridad ?? null;
     // Por qué conviene esperar / no escribirle, en palabras (antes el modelo
@@ -3605,6 +3659,7 @@ async function ejecutarHerramientaAgente(
       // ahora" (WHEN) — nunca son lo mismo.
       datos: {
         totales_de_la_cuenta: resumenPrioridad,
+        prioritarios_a_los_que_hoy_no_conviene_escribir: prioritariosEnEspera,
         contactos: filas.slice(0, 40).map((f) => ({
           contacto_nombre: f.contacto_nombre,
           telefono: f.telefono,
@@ -4027,7 +4082,19 @@ async function ejecutarHerramientaAgente(
   if (nombre === "motor_resumen_cuenta") {
     const { data, error } = await supabase.rpc("chat_resumen_cuenta", { p_tenant_id: tenantId });
     if (error) return { datos: { error: error.message } };
-    return { datos: data ?? {} };
+    // Los tipos de señal van con su nombre en criollo: con el código interno
+    // ("especificacion_demanda") el chat lo repetía tal cual al usuario.
+    const resumen = (data ?? {}) as { senales_por_tipo?: { tipo: string; menciones: number; contactos: number }[] };
+    return {
+      datos: {
+        ...resumen,
+        senales_por_tipo: (resumen.senales_por_tipo ?? []).map((s) => ({
+          que_hicieron: ETIQUETA_SENAL[s.tipo] ?? s.tipo,
+          menciones: s.menciones,
+          contactos: s.contactos,
+        })),
+      },
+    };
   }
 
   if (nombre === "motor_demanda") {
@@ -4053,7 +4120,10 @@ async function ejecutarHerramientaAgente(
     };
     let filas: FilaDemanda[];
     try {
-      filas = await traer(atributo, texto);
+      // Para "por mayor" siempre se miran TODAS las cantidades: un filtro de
+      // texto ("mayor", "grande") dejaba la lista vacía y el chat decía que no
+      // había pedidos grandes cuando sí los había.
+      filas = await traer(atributo, atributo === "cantidad" ? null : texto);
     } catch (e) {
       return { datos: { error: (e as Error).message } };
     }
@@ -4078,9 +4148,18 @@ async function ejecutarHerramientaAgente(
     // tabla también (antes mostraba las últimas filas, que no decían nada de
     // qué era lo más pedido).
     if (!texto && (atributo === "producto" || atributo === "variante" || atributo === "lugar")) {
-      const ranking = terminosMasMencionados(filas, atributo === "lugar" ? PALABRAS_VACIAS_LUGAR : undefined);
+      const ranking = terminosMasMencionados(
+        filas,
+        atributo === "lugar" ? PALABRAS_VACIAS_LUGAR : PALABRAS_GENERICAS_PRODUCTO,
+      );
+      const porEspecie = atributo === "producto" ? contarPorEspecie(filas) : undefined;
       return {
-        datos: { ...base, ranking_por_contactos: ranking, ejemplos: filas.slice(0, 25).map(ejemplo) },
+        datos: {
+          ...base,
+          ranking_por_contactos: ranking,
+          contactos_por_tipo_de_mascota: porEspecie,
+          ejemplos: filas.slice(0, 25).map(ejemplo),
+        },
         tabla: ranking.length
           ? {
               titulo: TITULO_DEMANDA[atributo] ?? "Lo que piden tus clientes",
@@ -4095,7 +4174,7 @@ async function ejecutarHerramientaAgente(
     // 20 kg es el tamaño normal de venta, no una compra grande. Se marca como
     // posible compra por mayor solo cuando piden VARIAS unidades, o cuando el
     // cliente se presenta como comercio (perfil_grupo, ej. "pet shop").
-    if (atributo === "cantidad" && !texto) {
+    if (atributo === "cantidad") {
       let perfiles: FilaDemanda[] = [];
       try {
         perfiles = await traer("perfil_grupo", null);
@@ -4301,8 +4380,23 @@ async function ejecutarHerramientaAgente(
     // es solo texto, sin los resultados de herramientas de turnos
     // anteriores).
     let idsValidos: string[];
+    const telefonosPedidos = Array.isArray(args.telefonos)
+      ? args.telefonos.filter((v): v is string => typeof v === "string").map((t) => t.replace(/\D/g, "")).filter(Boolean)
+      : [];
 
-    if (filtroTemp) {
+    if (telefonosPedidos.length && !filtroTemp && idsPedidos.length === 0) {
+      // Contactos que vienen del Motor: se resuelven por teléfono contra la
+      // base (los teléfonos sí sobreviven entre mensajes; los ids no).
+      const mapa = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosPedidos.slice(0, 500));
+      idsValidos = Array.from(new Set(Array.from(mapa.values()).map((v) => v.id)));
+      if (idsValidos.length === 0) {
+        return {
+          datos: {
+            error: "Ninguno de esos teléfonos corresponde a un contacto activo de la cuenta. Volvé a consultarlos con la herramienta del Motor y reintentá con los teléfonos que devuelva.",
+          },
+        };
+      }
+    } else if (filtroTemp) {
       const { data, error } = await supabase
         .from("yamas_send_leads")
         .select("id")
@@ -4509,7 +4603,8 @@ QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
 - Productos o marcas más pedidos, cantidades grandes o compras por mayor, zonas o direcciones, envío/retiro → motor_demanda con el atributo que corresponda. Para "más pedidos" o "de qué zonas" usá ranking_por_contactos (es lo que muestra la tabla). Para compras grandes usá posibles_compras_por_mayor y clientes_que_se_presentan_como_comercio: una sola bolsa de 15 o 20 kg es una compra normal, nunca la presentes como compra grande o por mayor; si esas listas están vacías, decí que no encontraste pedidos por mayor.
 - Objeciones, reclamos, dudas, quejas → motor_objeciones.
 - Quién escribió y quedó sin respuesta o sin cerrar en un período → conversaciones_pendientes.
-- A quién contactar primero / prioridad → motor_prioridad_contactos. Un plan de acción → motor_plan_preview.
+- "Qué oportunidades de venta tengo (hoy)" → motor_prioridad_contactos (los mejores para escribir ahora, con su motivo) y, si sirve, motor_resumen_cuenta para el panorama. NO uses motor_oportunidades para esta pregunta: ordena por fecha, no por oportunidad.
+- A quién contactar primero / prioridad → motor_prioridad_contactos. "¿A quién no conviene contactar?" → motor_prioridad_contactos y respondé con prioritarios_a_los_que_hoy_no_conviene_escribir (completa, con su motivo). Un plan de acción → motor_plan_preview.
 - Mejor día y horario para escribir → mejor_horario_envio.
 - Interés por un tema descrito libremente ("los que buscan alimento para gato") → buscar_contactos (o motor_demanda si es un producto o marca concreta).
 - Si ninguna herramienta trae el dato que piden (facturación, ventas, ganancias, stock real del local, precios del catálogo, opiniones sobre la competencia que nadie expresó), decí con franqueza que ese dato no lo tenés y qué sí podés mostrar. No llames a una herramienta "por las dudas" para rellenar.
@@ -4522,8 +4617,9 @@ LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_de_compra)
 - "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil. Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
 
 EL MOTOR DE DECISIÓN (oportunidades y prioridad)
-- motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "qué conversaciones importantes tuve", "quién preguntó por precios", "qué oportunidades detectaste", "quién debería priorizar", "por qué contactar a este cliente".
+- motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "quién preguntó por precios", "quién debería priorizar", "qué oportunidades tengo" (prioridad), "por qué contactar a este cliente".
 - "¿Qué oportunidades tengo hoy?" significa "qué oportunidades tengo en este momento": NO filtres por la fecha de hoy salvo que pidan explícitamente las de un período ("las de hoy", "esta semana").
+- Leé las citas antes de presentar algo como oportunidad: un pago o una transferencia hecha por error, un reclamo, una devolución o un problema con un pedido NO son una oportunidad de venta — presentalos como algo a resolver ("este cliente tiene un problema pendiente: …"), nunca como "listo para comprar".
 - Cada resultado de motor_oportunidades es una cita textual real: cuando la uses, citá lo que la persona dijo. Si la ponés entre comillas, tiene que ser EXACTA, letra por letra (con sus errores de tipeo); si la parafraseás, sin comillas. Nunca le agregues un motivo o una intención que el cliente no dijo.
 - Si motor_oportunidades o motor_prioridad_contactos devuelven vacío, o todos los contactos vienen sin elegible, NO digas "no tenés oportunidades" sin más: mirá el motivo que trae el dato (por ejemplo, falta de evidencia comercial verificada todavía) y contalo con naturalidad — es información real sobre el estado del análisis, no una falla.
 - Estas dos herramientas son de solo consulta: nunca generan ni ejecutan ninguna campaña, audiencia ni envío por sí mismas.
@@ -4565,13 +4661,19 @@ ACCIONES QUE PODÉS EJECUTAR
 CONTACTOS DE UNA RESPUESTA ANTERIOR
 - Si el usuario se refiere a una lista que le diste antes ("uno de los que me pasaste", "el primero", "ese contacto"), buscá esa lista en los mensajes anteriores de esta conversación y elegí un contacto de ESA lista (decí cuál elegiste). Después consultá sus datos con motor_oportunidades filtrando por su teléfono. Nunca elijas un contacto que no estaba en esa lista.
 
+ENVIAR MENSAJES O PROMOS
+- Desde el chat nunca se envía nada directamente. Si piden mandar un mensaje o una promo a ciertos contactos: explicá en una o dos líneas cómo es (se arma una audiencia con esos contactos, se elige un template aprobado por Meta y se crea la campaña, que el usuario confirma) y ofrecé armar la audiencia. Si dice que sí (o ya lo pidió directamente), usá crear_audiencia_con_estos_contactos con el parámetro telefonos (los teléfonos que te dio la herramienta del Motor), nunca con ids inventados.
+- No digas que algo "falló" si la herramienta no devolvió un error; y si devolvió uno, leelo y corregilo en el mismo turno antes de responder.
+
 OBJECIONES, PENDIENTES Y HORARIOS
 - motor_objeciones separa "objeciones_verificadas_por_el_motor" de "posibles_reclamos_o_dudas_en_mensajes". Contalas por separado: las segundas son mensajes reales pero su categoría es aproximada, así que describí lo que dijo el cliente con sus palabras y presentalas como "posibles". Si no hay verificadas, decilo, pero no digas "no hay objeciones" si hay posibles.
 - conversaciones_pendientes: "sin_responder" = el cliente escribió último y falta contestarle; "esperando_al_cliente" = el negocio contestó y el cliente no volvió. Respetá el período que pidieron (por defecto, últimos 7 días) y nunca muestres como "de los últimos 7 días" algo más viejo.
 - mejor_horario_envio: si "por_envios" no alcanza el mínimo de datos, usá "actividad_de_clientes" y aclaralo: "todavía no hay campañas suficientes para medir respuestas; por ahora, tus clientes te escriben más entre tal y tal hora y los días X". Es una buena referencia, no una tasa de respuesta medida.
 
 BORRADORES DE MENSAJES PARA CLIENTES
-- Cuando te pidan qué escribirle a un cliente, armá el texto SOLO con lo que el cliente dijo (citas reales) y con los DATOS REALES DE ESTA CUENTA. Nunca afirmes stock, disponibilidad, precios, promociones, descuentos, plazos ni horarios de entrega que no estén en esos datos: en su lugar dejá un espacio para completar entre corchetes, ej. "[confirmar stock]", "[precio]", "[horario de entrega]", y avisá en una línea qué tiene que completar antes de mandarlo.
+- Cuando te pidan qué escribirle a un cliente, armá el texto SOLO con lo que el cliente dijo (citas reales) y con los DATOS REALES DE ESTA CUENTA. Vos NO sabés si hay stock, cuánto cuesta algo, si se puede entregar en tal horario ni cuánto sale el envío: lo que dijo o preguntó el CLIENTE no es un dato confirmado por el negocio (si el cliente escribió un número, no es un precio).
+- PROHIBIDO en el borrador: "tenemos disponible", "te confirmo", "hay stock", un precio con $, "podemos entregarlo antes de…", "el envío cuesta…", cualquier promoción o descuento. En su lugar poné corchetes: "[confirmar si hay stock]", "[precio]", "[costo de envío]", "[horario de entrega]". Ejemplo correcto: "Hola! Te escribo por el Royal Canin Urinary S/O de 1,5 kg que consultaste el 7/9. [Confirmar si hay stock] y el precio es [precio]. Para Salcedo 3823 el envío sale [costo de envío]. ¿Querés que lo avancemos?"
+- Después del borrador, avisá en una línea qué tiene que completar antes de mandarlo.
 - Si la conversación con ese cliente es de hace varios días, el borrador no puede sonar como si fuera de hoy ("te escribo por lo que consultaste el 7/9…").
 - Es solo un texto sugerido: nunca digas que lo enviaste ni que lo vas a enviar.
 
