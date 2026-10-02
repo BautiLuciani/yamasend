@@ -3073,6 +3073,10 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             items: { type: "string" },
             description: "IDs de contactos de una consulta hecha en este mismo turno (listar_contactos/buscar_contactos). Omitir si usás filtro_temperatura o telefonos.",
           },
+          prioritarios_top: {
+            type: "integer",
+            description: "Para 'los N más prioritarios' / 'los N con más prioridad': se resuelven en el momento los N primeros de la prioridad del Motor a los que se puede escribir ahora. Usalo SIEMPRE para ese pedido, en vez de pasar teléfonos.",
+          },
           telefonos: {
             type: "array",
             items: { type: "string" },
@@ -4592,9 +4596,25 @@ async function ejecutarHerramientaAgente(
     // es solo texto, sin los resultados de herramientas de turnos
     // anteriores).
     let idsValidos: string[];
-    const telefonosPedidos = Array.isArray(args.telefonos)
+    let telefonosPedidos = Array.isArray(args.telefonos)
       ? args.telefonos.filter((v): v is string => typeof v === "string").map((t) => t.replace(/\D/g, "")).filter(Boolean)
       : [];
+
+    // "Los N más prioritarios": se resuelve acá contra la prioridad del Motor.
+    // Con teléfonos que el modelo arrastraba de la conversación llegó a armar
+    // la audiencia con los contactos de OTRA respuesta (pendientes, etc.).
+    const top = typeof args.prioritarios_top === "number" ? Math.min(Math.max(Math.round(args.prioritarios_top), 1), 100) : 0;
+    if (top > 0) {
+      const { data: prio, error: errPrio } = await supabase.rpc("chat_prioridad_contactos", { p_tenant_id: tenantId, p_limite: 100 });
+      if (errPrio) return { datos: { error: errPrio.message } };
+      telefonosPedidos = ((prio ?? []) as {
+        telefono: string; elegible: boolean; contactable: boolean | null;
+        when_estado: string | null; earliest_contact_at: string | null;
+      }[])
+        .filter((f) => f.elegible && estaContactableAhora(f))
+        .slice(0, top)
+        .map((f) => f.telefono.replace(/\D/g, ""));
+    }
 
     if (telefonosPedidos.length && !filtroTemp && idsPedidos.length === 0) {
       // Contactos que vienen del Motor: se resuelven por teléfono contra la
@@ -4881,7 +4901,7 @@ CONTACTOS DE UNA RESPUESTA ANTERIOR
 - Si el usuario se refiere a una lista que le diste antes ("uno de los que me pasaste", "el primero", "ese contacto"), buscá esa lista en los mensajes anteriores de esta conversación y elegí un contacto de ESA lista (decí cuál elegiste). Después consultá sus datos con motor_oportunidades filtrando por su teléfono. Nunca elijas un contacto que no estaba en esa lista.
 
 ENVIAR MENSAJES O PROMOS
-- Desde el chat nunca se envía nada directamente. Si piden mandar un mensaje o una promo a ciertos contactos: explicá en una o dos líneas cómo es (se arma una audiencia con esos contactos, se elige un template aprobado por Meta y se crea la campaña, que el usuario confirma) y ofrecé armar la audiencia. Si dice que sí (o ya lo pidió directamente), usá crear_audiencia_con_estos_contactos con el parámetro telefonos (los teléfonos que te dio la herramienta del Motor), nunca con ids inventados.
+- Desde el chat nunca se envía nada directamente. Si piden mandar un mensaje o una promo a ciertos contactos: explicá en una o dos líneas cómo es (se arma una audiencia con esos contactos, se elige un template aprobado por Meta y se crea la campaña, que el usuario confirma) y ofrecé armar la audiencia. Si dice que sí (o ya lo pidió directamente), usá crear_audiencia_con_estos_contactos: si son "los N más prioritarios", con prioritarios_top=N (se resuelven solos); si son los contactos de una lista concreta que diste antes, con telefonos (exactamente los de ESA lista, no los de la última respuesta); nunca con ids inventados.
 - No digas que algo "falló" si la herramienta no devolvió un error; y si devolvió uno, leelo y corregilo en el mismo turno antes de responder.
 
 OBJECIONES, PENDIENTES Y HORARIOS
