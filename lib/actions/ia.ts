@@ -2676,6 +2676,71 @@ export async function iniciarAudienciaDesdeResultadosBusquedaAction(
 // =======================================================================
 
 const MAX_ITERACIONES_AGENTE = 5;
+
+/** Todos los textos (≥ 8 caracteres) que trae el resultado de una herramienta. */
+function textosDeResultado(v: unknown, out: string[] = []): string[] {
+  if (typeof v === "string") {
+    if (v.length >= 8) out.push(v);
+  } else if (Array.isArray(v)) {
+    for (const x of v) textosDeResultado(x, out);
+  } else if (v && typeof v === "object") {
+    for (const x of Object.values(v as Record<string, unknown>)) textosDeResultado(x, out);
+  }
+  return out;
+}
+
+function distanciaEdicion(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = tmp;
+    }
+  }
+  return prev[b.length];
+}
+
+/**
+ * Las citas entre comillas tienen que ser textuales. gpt-4o a veces
+ * "corregía" la ortografía del cliente ("Sino comoro en otro lado por que Me
+ * quede sin" → "Sino compro en otro lado porque me quedé sin"). Si una cita
+ * no aparece tal cual en los datos pero hay un fragmento casi igual, se
+ * reemplaza por el original.
+ */
+function restaurarCitasTextuales(texto: string, fuentes: string[]): string {
+  if (fuentes.length === 0) return texto;
+  return texto.replace(/(["“])([^"”\n]{12,250})(["”])/g, (todo, abre: string, cita: string, cierra: string) => {
+    if (fuentes.some((f) => f.includes(cita))) return todo;
+    const palabras = cita.trim().split(/\s+/).length;
+    const objetivo = cita.toLowerCase();
+    let mejor: { txt: string; dist: number } | null = null;
+    const claves = objetivo.split(/\s+/).filter((w) => w.length >= 4);
+    for (const f of fuentes) {
+      // Filtro barato: la fuente tiene que compartir la mayoría de las palabras.
+      const fl = f.toLowerCase();
+      if (claves.length && claves.filter((w) => fl.includes(w)).length < claves.length / 2) continue;
+      const tokens = f.split(/\s+/);
+      for (let largo = Math.max(1, palabras - 2); largo <= palabras + 2; largo++) {
+        for (let i = 0; i + largo <= tokens.length; i++) {
+          const ventana = tokens.slice(i, i + largo).join(" ");
+          if (Math.abs(ventana.length - cita.length) > cita.length * 0.25) continue;
+          const d = distanciaEdicion(ventana.toLowerCase(), objetivo);
+          const dl = Math.abs(ventana.length - cita.length);
+          if (!mejor || d < mejor.dist || (d === mejor.dist && dl < Math.abs(mejor.txt.length - cita.length))) {
+            mejor = { txt: ventana, dist: d };
+          }
+        }
+      }
+    }
+    if (mejor && mejor.dist > 0 && mejor.dist <= Math.max(2, Math.floor(cita.length * 0.2))) {
+      return `${abre}${mejor.txt}${cierra}`;
+    }
+    return todo;
+  });
+}
 const MAX_FILAS_TABLA = 12;
 
 /**
@@ -3818,6 +3883,9 @@ async function ejecutarHerramientaAgente(
         // Total listo para decir: conviene_esperar + no_contactar_por_ahora.
         // Antes el modelo decía solo uno de los dos (6 en vez de 8).
         cuantos_prioritarios_no_conviene_escribir_hoy: prioritariosEnEspera.length,
+        frase_no_conviene_escribir_hoy: resumenPrioridad
+          ? `A ${prioritariosEnEspera.length} prioritarios no conviene escribirles hoy: con ${resumenPrioridad.conviene_esperar ?? 0} conviene esperar unos días (charla reciente) y ${resumenPrioridad.no_contactar_por_ahora ?? 0} no respondieron los últimos mensajes.`
+          : undefined,
         prioritarios_a_los_que_hoy_no_conviene_escribir: prioritariosEnEspera,
         contactos: filas.slice(0, 40).map((f) => ({
           contacto_nombre: f.contacto_nombre,
@@ -4686,7 +4754,11 @@ async function ejecutarHerramientaAgente(
     return {
       datos: { ok: true, contactos_incluidos: idsValidos.length },
       accion: {
-        text: `Dale, armemos la audiencia "${nombreAudiencia}" con ${idsValidos.length} contacto${idsValidos.length === 1 ? "" : "s"}. Revisá la selección y confirmá.`,
+        text: `Dale, armemos la audiencia "${nombreAudiencia}" con ${idsValidos.length} contacto${idsValidos.length === 1 ? "" : "s"}.${
+          top > 0
+            ? ` Son los ${idsValidos.length} más prioritarios del Motor a los que se puede escribir ahora (los que conviene esperar quedaron afuera).`
+            : ""
+        } Revisá la selección y confirmá. Después elegís el template aprobado y armás la campaña: no se envía nada sin tu confirmación.`,
         payload: {
           kind: "seleccionar_contactos",
           preselectedIds: idsValidos,
@@ -4838,7 +4910,7 @@ QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
 - "Qué opinan de mis precios", "comparan con la competencia", "dicen que es caro" → motor_objeciones. Contá lo que haya de precio y de compra_en_otro_lado (con la cita); si no hay nada, decí que en las conversaciones no aparece, sin ofrecer "revisar" algo que ya revisaste.
 - Quién escribió y quedó sin respuesta o sin cerrar en un período → conversaciones_pendientes.
 - "Qué oportunidades de venta tengo (hoy)" → motor_prioridad_contactos (los mejores para escribir ahora, con su motivo) y, si sirve, motor_resumen_cuenta para el panorama. NO uses motor_oportunidades para esta pregunta: ordena por fecha, no por oportunidad.
-- A quién contactar primero / prioridad → motor_prioridad_contactos. "¿A quién no conviene contactar?", "¿a quién tengo que esperar?" → motor_prioridad_contactos con solo_en_espera=true, y nombrá a TODOS los que trae (no "algunos"), con su motivo. Un plan de acción → motor_plan_preview.
+- A quién contactar primero / prioridad → motor_prioridad_contactos. Si mencionás a los prioritarios a los que no conviene escribir dentro de otra respuesta, usá frase_no_conviene_escribir_hoy tal cual. "¿A quién no conviene contactar?", "¿a quién tengo que esperar?" → motor_prioridad_contactos con solo_en_espera=true, y nombrá a TODOS los que trae (no "algunos"), con su motivo. Un plan de acción → motor_plan_preview.
 - Mejor día y horario para escribir → mejor_horario_envio.
 - "Quiénes buscan para perro / para gato", "cuántos tienen perro y cuántos gato" → motor_demanda con atributo 'producto' y por_mascota=true. Arrancá con los dos totales y después nombrá a los contactos de cada lista.
 - Interés por un tema descrito libremente que no sea perro/gato ni un producto concreto → buscar_contactos (o motor_demanda si es un producto o marca concreta).
@@ -4942,6 +5014,9 @@ REGLAS ESTRICTAS
   ];
 
   let ultimaTabla: ResultadoHerramienta["tabla"];
+  // Textos reales que trajeron las herramientas en este turno (para
+  // restaurar citas que el modelo haya "corregido").
+  const fuentesCitas: string[] = [];
   // Memoria que dejan las herramientas para el turno siguiente (ver
   // ResultadoHerramienta.memoria). Se acumula acá y se adjunta al flowState
   // que se devuelve, aunque el flujo quede idle.
@@ -4986,7 +5061,7 @@ REGLAS ESTRICTAS
         (/^(no (encontr[eé]|tengo|hay|pude|se (encontr|registr|detect))|todav[ií]a no (hay|tengo))/i.test(crudo) &&
           !/\b(pero|sin embargo|aunque|en cambio)\b/i.test(crudo));
       const texto =
-        crudo.replace(/\s*\[\[\s*sin_tabla\s*\]\]\s*/gi, " ").trim() ||
+        restaurarCitasTextuales(crudo.replace(/\s*\[\[\s*sin_tabla\s*\]\]\s*/gi, " ").trim(), fuentesCitas) ||
         "No encontré datos que respondan eso. ¿Me lo preguntás de otra forma?";
       return {
         text: texto,
@@ -5018,6 +5093,7 @@ REGLAS ESTRICTAS
       // la máquina de estados, que sigue desde acá con su UI de
       // confirmación paso a paso.
       if (resultado.accion) return resultado.accion;
+      fuentesCitas.push(...textosDeResultado(resultado.datos));
 
       // Si una tabla nueva solo repite filas que ya estaban en la anterior
       // (ej. "por mayor" ya incluye a los comercios y después el modelo pide
