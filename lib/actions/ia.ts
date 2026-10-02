@@ -3002,6 +3002,10 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         type: "object",
         properties: {
           limite: { type: "integer", description: "Máximo de contactos a traer (1-100). Por defecto 20." },
+          solo_en_espera: {
+            type: "boolean",
+            description: "true para '¿a quién no conviene contactar ahora?' / '¿a quién tengo que esperar?': trae SOLO los prioritarios a los que hoy no conviene escribir, todos, con su motivo y desde cuándo se puede.",
+          },
         },
         required: [],
       },
@@ -3385,7 +3389,7 @@ function momentoContacto(f: {
 }): string {
   if (estaContactableAhora(f)) return "Sí, ahora";
   if (f.when_estado === "ESPERAR_HASTA") {
-    return f.earliest_contact_at ? `Esperar (desde ${fechaHoraCorta(f.earliest_contact_at)})` : "Esperar";
+    return f.earliest_contact_at ? `Esperar hasta el ${fechaHoraCorta(f.earliest_contact_at)}` : "Esperar";
   }
   if (f.when_estado === "NO_CONTACTAR") return "No por ahora";
   return "Sin dato";
@@ -3764,6 +3768,24 @@ async function ejecutarHerramientaAgente(
     }));
     const resumenPrioridad =
       (resumenCuenta as { prioridad?: Record<string, number> } | null)?.prioridad ?? null;
+    if (args.solo_en_espera === true) {
+      return {
+        datos: {
+          como_empezar_la_respuesta: `${prioritariosEnEspera.length} contactos prioritarios no conviene contactarlos ahora:`,
+          total: prioritariosEnEspera.length,
+          indicacion: "Nombrá a TODOS, uno por uno, con su motivo y desde cuándo se puede escribirles (si tiene fecha). No agregues motivos que no estén acá.",
+          contactos: prioritariosEnEspera,
+        },
+        tabla: prioritariosEnEspera.length
+          ? {
+              titulo: "No conviene escribirles ahora",
+              columnas: ["Contacto", "Por qué", "Cuándo escribirle"],
+              filas: prioritariosEnEspera.slice(0, MAX_FILAS_TABLA).map((e) => [e.contacto, e.motivo, e.momento]),
+              totalDisponible: prioritariosEnEspera.length,
+            }
+          : undefined,
+      };
+    }
     // Por qué conviene esperar / no escribirle, en palabras (antes el modelo
     // lo deducía de las citas y llegó a inventar "por un error de transferencia").
     const motivoPorTelefono = new Map<string, string>();
@@ -4233,9 +4255,19 @@ async function ejecutarHerramientaAgente(
         disp.contactos = new Set(filtradas.map((f) => f.telefono)).size;
       }
     }
+    const ic = (resumen as { intencion_de_compra?: Record<string, number> }).intencion_de_compra;
     return {
       datos: {
         ...resumen,
+        // Frases listas: el modelo a veces contestaba "interés leve" sin
+        // mencionar a los de intención moderada (que quedaban afuera).
+        frases_para_responder: ic
+          ? {
+              intencion_fuerte: `${ic.fuerte} contactos con intención de compra fuerte (listos para comprar)`,
+              interes_leve_y_moderado: `${ic.debil} con interés leve y otros ${ic.moderada} con interés moderado (hicieron consultas comerciales claras)`,
+              clientes_potenciales: `${ic.clientes_potenciales_fuerte_moderada_o_debil} clientes potenciales (fuerte + moderada + débil)`,
+            }
+          : undefined,
         senales_por_tipo: [...(resumen.senales_por_tipo ?? [])].sort((x, y) => y.contactos - x.contactos).map((s) => ({
           que_hicieron: ETIQUETA_SENAL[s.tipo] ?? s.tipo,
           menciones: s.menciones,
@@ -4786,7 +4818,7 @@ QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)
 - "Qué opinan de mis precios", "comparan con la competencia", "dicen que es caro" → motor_objeciones. Contá lo que haya de precio y de compra_en_otro_lado (con la cita); si no hay nada, decí que en las conversaciones no aparece, sin ofrecer "revisar" algo que ya revisaste.
 - Quién escribió y quedó sin respuesta o sin cerrar en un período → conversaciones_pendientes.
 - "Qué oportunidades de venta tengo (hoy)" → motor_prioridad_contactos (los mejores para escribir ahora, con su motivo) y, si sirve, motor_resumen_cuenta para el panorama. NO uses motor_oportunidades para esta pregunta: ordena por fecha, no por oportunidad.
-- A quién contactar primero / prioridad → motor_prioridad_contactos. "¿A quién no conviene contactar?" → motor_prioridad_contactos y respondé con prioritarios_a_los_que_hoy_no_conviene_escribir (completa, con su motivo). Un plan de acción → motor_plan_preview.
+- A quién contactar primero / prioridad → motor_prioridad_contactos. "¿A quién no conviene contactar?", "¿a quién tengo que esperar?" → motor_prioridad_contactos con solo_en_espera=true, y nombrá a TODOS los que trae (no "algunos"), con su motivo. Un plan de acción → motor_plan_preview.
 - Mejor día y horario para escribir → mejor_horario_envio.
 - "Quiénes buscan para perro / para gato", "cuántos tienen perro y cuántos gato" → motor_demanda con atributo 'producto' y por_mascota=true. Arrancá con los dos totales y después nombrá a los contactos de cada lista.
 - Interés por un tema descrito libremente que no sea perro/gato ni un producto concreto → buscar_contactos (o motor_demanda si es un producto o marca concreta).
@@ -4797,7 +4829,7 @@ LAS TRES INTENSIDADES DE INTERÉS (motor_resumen_cuenta.intencion_de_compra)
 - moderada: consulta comercial clara (precio, stock, condiciones) o 1-2 datos concretos de lo que busca.
 - débil: interés vago, un dato aislado o solo el saludo de un anuncio.
 - sin_interes_comercial: charla personal, proveedores, mensajes automáticos.
-- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; "interés leve" = débil, pero mencioná también a los de intención moderada aparte para que no queden afuera ("223 con interés leve y otros 64 con interés moderado"); "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil, copiado TAL CUAL (no lo recalcules ni le sumes nada: ya incluye fuerte + moderada + débil). Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
+- "Listos para comprar" ≈ fuerte; "solo consultaron" ≈ moderada + débil; si preguntan por intención fuerte y/o interés leve, usá las frases de frases_para_responder tal cual (la de interés leve SIEMPRE incluye a los moderados); "sin interés" = sin_interes_comercial. "Clientes potenciales" = clientes_potenciales_fuerte_moderada_o_debil, copiado TAL CUAL (no lo recalcules ni le sumes nada: ya incluye fuerte + moderada + débil). Aclará que es una clasificación por la conversación, no una venta confirmada, y que hay contactos_sin_conversacion_para_analizar que no entran en esa cuenta.
 
 EL MOTOR DE DECISIÓN (oportunidades y prioridad)
 - motor_oportunidades y motor_prioridad_contactos consultan lo que el Motor de Decisión ya analizó de las conversaciones reales. Son la fuente correcta para "quién preguntó por precios", "quién debería priorizar", "qué oportunidades tengo" (prioridad), "por qué contactar a este cliente".
@@ -4861,7 +4893,7 @@ BORRADORES DE MENSAJES PARA CLIENTES
 - Cuando te pidan qué escribirle a un cliente, armá el texto SOLO con lo que el cliente dijo (citas reales) y con los DATOS REALES DE ESTA CUENTA. Vos NO sabés si hay stock, cuánto cuesta algo, si se puede entregar en tal horario ni cuánto sale el envío: lo que dijo o preguntó el CLIENTE no es un dato confirmado por el negocio (si el cliente escribió un número, no es un precio).
 - PROHIBIDO en el borrador: "tenemos disponible", "te confirmo", "hay stock", un precio con $, "podemos entregarlo antes de…", "el envío cuesta…", cualquier promoción o descuento. En su lugar poné corchetes: "[confirmar si hay stock]", "[precio]", "[costo de envío]", "[horario de entrega]". Ejemplo correcto: "Hola! Te escribo por el Royal Canin Urinary S/O de 1,5 kg que consultaste el 7/9. [Confirmar si hay stock] y el precio es [precio]. Para Salcedo 3823 el envío sale [costo de envío]. ¿Querés que lo avancemos?"
 - Después del borrador, avisá en una línea qué tiene que completar antes de mandarlo.
-- No repitas en el borrador un horario o fecha de entrega que pidió el cliente ("antes de las 17 h", "mañana a la mañana"): eso también es prometer una entrega. Si hace falta, poné "[confirmar horario de entrega]".
+- No repitas en el borrador un horario o fecha de entrega que pidió el cliente ("antes de las 17 h", "mañana a la mañana"): eso también es prometer una entrega. Ni siquiera al lado del corchete. MAL: "[Confirmar horario de entrega] antes de las 17 h". BIEN: "[confirmar horario de entrega]" solo, sin la hora que pidió el cliente.
 - Si la conversación con ese cliente es de hace varios días, el borrador no puede sonar como si fuera de hoy ("te escribo por lo que consultaste el 7/9…").
 - Es solo un texto sugerido: nunca digas que lo enviaste ni que lo vas a enviar.
 
