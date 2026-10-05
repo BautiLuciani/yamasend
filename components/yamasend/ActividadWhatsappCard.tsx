@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { getActividadWhatsappAction } from "@/lib/actions/novedades";
+import { fetchActividadWhatsapp } from "@/lib/novedades/cliente";
 import type { ActividadWhatsapp } from "@/lib/types";
 
 /**
@@ -46,7 +46,7 @@ export default function ActividadWhatsappCard({
   const [cargando, setCargando] = useState(true);
 
   const cargar = useCallback(async () => {
-    const res = await getActividadWhatsappAction();
+    const res = await fetchActividadWhatsapp();
     // Si falla un refresco, se conserva el último dato bueno en vez de
     // vaciar la card.
     if (res) setDatos(res);
@@ -57,7 +57,7 @@ export default function ActividadWhatsappCard({
     let intervalo: ReturnType<typeof setInterval> | null = null;
 
     const arrancar = () => {
-      if (intervalo) return;
+      if (intervalo || document.visibilityState !== "visible") return;
       intervalo = setInterval(cargar, REFRESCO_MS);
     };
     const frenar = () => {

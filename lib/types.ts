@@ -812,5 +812,6 @@ export interface Novedades {
   contactosNuevoAt: string | null;
   dashboardRespuestaAt: string | null;
   dashboardSistemaAt: string | null;
-  whatsappEstado: string | null;
+  /** Hubo conexión de WhatsApp y ya no está conectada (no cuenta vínculos sin terminar). */
+  whatsappDesvinculado: boolean;
 }

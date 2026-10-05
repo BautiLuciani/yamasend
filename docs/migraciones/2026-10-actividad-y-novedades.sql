@@ -1,9 +1,13 @@
 -- =====================================================================
--- Card "Actividad de WhatsApp" + avisos del sidebar (oct 2026)
+-- Card "Actividad de WhatsApp" + avisos del sidebar (oct 2026) — vigente
 -- Aplicadas en Supabase (proyecto Yamas.AI) vía migraciones:
---   yamas_send_actividad_whatsapp, yamas_send_novedades
+--   yamas_send_actividad_whatsapp, yamas_send_actividad_whatsapp_v2_nuevos_entrantes,
+--   yamas_send_novedades, yamas_send_novedades_v2_eventos,
+--   yamas_send_novedades_v3_desvinculado
 -- Ambas resuelven el tenant con auth.uid() (patrón de
 -- yamas_send_analisis_solicitar) y solo las puede ejecutar authenticated.
+-- La app las llama desde el navegador (cliente de Supabase con la sesión),
+-- no con server actions, para no encolar polling delante de los clicks.
 -- =====================================================================
 
 CREATE OR REPLACE FUNCTION public.yamas_send_actividad_whatsapp()
@@ -15,14 +19,13 @@ SET search_path TO 'public', 'pg_temp'
 AS $function$
 -- Resumen de actividad de WhatsApp del tenant logueado para la card de
 -- Contactos (reemplaza al viejo botón "Analizar"). Se calcula sobre el
--- historial de mensajes, que se actualiza en tiempo real, y NO sobre
--- yamas_send_leads (que solo se refresca al re-analizar).
+-- historial de mensajes (tiempo real), no sobre yamas_send_leads.
 --  - escribieron: contactos distintos con al menos un mensaje ENTRANTE en el período
 --  - mensajes:    mensajes entrantes en el período
---  - nuevos:      contactos cuyo PRIMER mensaje cae en el período (no usa
---                 created_at: la importación inicial crea todo de golpe)
--- Excluye los números de motor.numeros_internos activos (lista "excluidos
--- del motor"): no son clientes.
+--  - nuevos:      contactos que te escribieron POR PRIMERA VEZ en el período
+--                 (su primer mensaje de la historia es entrante y cae en el
+--                 período; no cuenta a quien le escribiste vos primero)
+-- Excluye los números de motor.numeros_internos activos (no son clientes).
 DECLARE
   v_tenant text;
   v_res jsonb := '{}'::jsonb;
@@ -38,24 +41,27 @@ BEGIN
   FOR v_clave, v_horas IN SELECT * FROM (VALUES ('h24', 24), ('d7', 168)) t(k, h) LOOP
     v_desde := now() - make_interval(hours => v_horas);
     v_res := v_res || jsonb_build_object(v_clave, (
-      WITH excl AS (
-        SELECT ni.telefono FROM motor.numeros_internos ni
-         WHERE ni.tenant_id = v_tenant AND ni.activo
-      ), recientes AS (
-        SELECT h.telefono, h.enviado_por_mi
+      WITH recientes AS (
+        SELECT h.telefono, h.enviado_por_mi, h.fecha
           FROM public.yamas_send_mensajes_historico h
          WHERE h.tenant_id = v_tenant AND h.fecha > v_desde
            AND h.telefono IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM excl WHERE excl.telefono = h.telefono)
+           AND NOT EXISTS (SELECT 1 FROM motor.numeros_internos ni
+                            WHERE ni.tenant_id = v_tenant AND ni.activo AND ni.telefono = h.telefono)
+      ), primero AS (
+        SELECT DISTINCT ON (r.telefono) r.telefono, r.enviado_por_mi
+          FROM recientes r
+         ORDER BY r.telefono, r.fecha ASC
       )
       SELECT jsonb_build_object(
         'escribieron', (SELECT count(DISTINCT r.telefono) FROM recientes r WHERE NOT r.enviado_por_mi),
         'mensajes',    (SELECT count(*) FROM recientes r WHERE NOT r.enviado_por_mi),
-        'nuevos',      (SELECT count(*) FROM (SELECT DISTINCT r.telefono FROM recientes r) t
-                         WHERE NOT EXISTS (
-                           SELECT 1 FROM public.yamas_send_mensajes_historico p
-                            WHERE p.tenant_id = v_tenant AND p.telefono = t.telefono
-                              AND p.fecha <= v_desde))
+        'nuevos',      (SELECT count(*) FROM primero pr
+                         WHERE NOT pr.enviado_por_mi
+                           AND NOT EXISTS (
+                             SELECT 1 FROM public.yamas_send_mensajes_historico p
+                              WHERE p.tenant_id = v_tenant AND p.telefono = pr.telefono
+                                AND p.fecha <= v_desde))
       )
     ));
   END LOOP;
@@ -75,15 +81,17 @@ SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $function$
 -- Último momento en que pasó "algo nuevo" en cada sección del panel, para
--- los avisos (puntitos) del sidebar. El cliente compara contra la última
--- vez que el usuario visitó cada sección. Solo eventos que NO dispara el
--- propio usuario con un click (esos ya los ve en el momento):
---   templates: Meta aprobó / rechazó un template
---   campanas:  una campaña terminó de enviarse / falló
---   contactos: llegó un contacto nuevo (te escribió alguien nuevo)
---   dashboard: respondieron un mensaje de campaña, o hubo un evento del
---              sistema (WhatsApp conectado/desconectado, análisis)
--- whatsapp_estado: para el aviso de atención si se desvinculó el celular.
+-- los avisos (puntitos) del sidebar. Se basa en EVENTOS (log de actividad
+-- que escribe n8n, primer mensaje entrante) y no en updated_at, que cambia
+-- por cualquier edición y daba avisos falsos.
+--   templates: Meta aprobó / rechazó (activity_log template_estado, n8n)
+--   campanas:  campaña completada (activity_log campana_completada, n8n);
+--              "error" si tuvo mensajes con error
+--   contactos: alguien te escribió por primera vez (primer mensaje del
+--              contacto, entrante, recibido en tiempo real: no importaciones)
+--   dashboard: respondieron un mensaje de campaña, o se desvinculó el WhatsApp
+-- whatsapp_desvinculado: hubo conexión y ya no está conectada (no cuenta
+--   sesiones que nunca terminaron de vincularse).
 DECLARE
   v_tenant text;
 BEGIN
@@ -95,32 +103,45 @@ BEGIN
   RETURN jsonb_build_object(
     'ahora', now(),
     'templates_aprobado_at', (
-      SELECT max(coalesce(t.aprobado_at, t.updated_at)) FROM public.yamas_send_templates t
-       WHERE t.tenant_id = v_tenant AND t.status IN ('verificado', 'APPROVED')),
+      SELECT max(a.created_at) FROM public.yamas_send_activity_log a
+       WHERE a.tenant_id = v_tenant AND a.tipo = 'template_estado'
+         AND a.metadata->>'status' = 'verificado'),
     'templates_rechazado_at', (
-      SELECT max(t.updated_at) FROM public.yamas_send_templates t
-       WHERE t.tenant_id = v_tenant AND t.status = 'rechazado'),
+      SELECT max(a.created_at) FROM public.yamas_send_activity_log a
+       WHERE a.tenant_id = v_tenant AND a.tipo = 'template_estado'
+         AND a.metadata->>'status' = 'rechazado'),
     'campanas_enviada_at', (
-      SELECT max(coalesce(c.updated_at, c.enviado_at)) FROM public.yamas_send_campanas c
-       WHERE c.tenant_id = v_tenant AND c.status = 'enviado'),
+      SELECT max(a.created_at) FROM public.yamas_send_activity_log a
+       WHERE a.tenant_id = v_tenant AND a.tipo = 'campana_completada'),
     'campanas_error_at', (
-      SELECT max(c.updated_at) FROM public.yamas_send_campanas c
-       WHERE c.tenant_id = v_tenant AND c.status = 'error'),
+      SELECT max(a.created_at) FROM public.yamas_send_activity_log a
+       WHERE a.tenant_id = v_tenant AND a.tipo = 'campana_completada'
+         AND coalesce(nullif(a.metadata->>'mensajes_error', '')::int, 0) > 0),
     'contactos_nuevo_at', (
-      SELECT max(c.created_at) FROM public.yamas_send_contactos c
-       WHERE c.tenant_id = v_tenant
+      SELECT max(h.created_at)
+        FROM public.yamas_send_mensajes_historico h
+       WHERE h.tenant_id = v_tenant
+         AND NOT h.enviado_por_mi
+         AND h.telefono IS NOT NULL
+         AND h.fecha > now() - interval '7 days'
+         -- recibido en tiempo real (una importación trae fechas viejas)
+         AND h.created_at - h.fecha < interval '1 hour'
+         -- es el primer mensaje que existe con ese contacto
+         AND NOT EXISTS (SELECT 1 FROM public.yamas_send_mensajes_historico p
+                          WHERE p.tenant_id = v_tenant AND p.telefono = h.telefono
+                            AND p.fecha < h.fecha)
          AND NOT EXISTS (SELECT 1 FROM motor.numeros_internos ni
-                          WHERE ni.tenant_id = v_tenant AND ni.activo AND ni.telefono = c.telefono)),
+                          WHERE ni.tenant_id = v_tenant AND ni.activo AND ni.telefono = h.telefono)),
     'dashboard_respuesta_at', (
       SELECT max(m.respondido_at) FROM public.yamas_send_mensajes m
        WHERE m.tenant_id = v_tenant),
     'dashboard_sistema_at', (
       SELECT max(a.created_at) FROM public.yamas_send_activity_log a
-       WHERE a.tenant_id = v_tenant
-         AND a.tipo IN ('whatsapp_conectado', 'whatsapp_desconectado', 'contactos_importados', 'ia_analisis')),
-    'whatsapp_estado', (
-      SELECT s.estado FROM public.yamas_send_waha_sessions s
-       WHERE s.tenant_id = v_tenant ORDER BY s.updated_at DESC NULLS LAST LIMIT 1)
+       WHERE a.tenant_id = v_tenant AND a.tipo = 'whatsapp_desconectado'),
+    'whatsapp_desvinculado', coalesce((
+      SELECT s.estado <> 'conectada' AND (s.fecha_conexion IS NOT NULL OR s.fecha_desconexion IS NOT NULL OR s.ultimo_analisis_at IS NOT NULL)
+        FROM public.yamas_send_waha_sessions s
+       WHERE s.tenant_id = v_tenant ORDER BY s.updated_at DESC NULLS LAST LIMIT 1), false)
   );
 END $function$;
 

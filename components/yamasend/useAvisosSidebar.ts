@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getNovedadesAction } from "@/lib/actions/novedades";
+import { fetchNovedades } from "@/lib/novedades/cliente";
 import type { AppSection, Novedades } from "@/lib/types";
 
 /**
@@ -53,12 +53,24 @@ function leerVistas(tenantId: string): Vistas | null {
   }
 }
 
-function guardarVistas(tenantId: string, vistas: Vistas) {
+/**
+ * Guarda combinando con lo que ya hay (máximo por sección): con varias
+ * pestañas abiertas, una pestaña vieja no pisa lo que otra ya marcó como
+ * visto. Devuelve lo que quedó guardado.
+ */
+function guardarVistas(tenantId: string, vistas: Vistas): Vistas {
+  const actuales = leerVistas(tenantId);
+  const combinadas = actuales
+    ? (Object.fromEntries(
+        SECCIONES.map((s) => [s, maxIso(vistas[s], actuales[s])]),
+      ) as Vistas)
+    : vistas;
   try {
-    window.localStorage.setItem(claveStorage(tenantId), JSON.stringify(vistas));
+    window.localStorage.setItem(claveStorage(tenantId), JSON.stringify(combinadas));
   } catch {
     // Sin storage (modo privado, etc.): los avisos funcionan igual durante la sesión.
   }
+  return combinadas;
 }
 
 /** true si `evento` es posterior a `visto`. */
@@ -70,7 +82,12 @@ function despues(evento: string | null, visto: string): boolean {
 }
 
 function maxIso(a: string, b: string): string {
-  return Date.parse(a) >= Date.parse(b) ? a : b;
+  const ma = Date.parse(a);
+  const mb = Date.parse(b);
+  // Un valor corrupto en storage no debe ganarle a uno válido.
+  if (!Number.isFinite(ma)) return b;
+  if (!Number.isFinite(mb)) return a;
+  return ma >= mb ? a : b;
 }
 
 export function useAvisosSidebar({
@@ -111,16 +128,14 @@ export function useAvisosSidebar({
         const s = seccion as SeccionConAviso;
         const nuevo = maxIso(prev[s], ahora);
         if (nuevo === prev[s]) return prev;
-        const next = { ...prev, [s]: nuevo };
-        guardarVistas(tenantId, next);
-        return next;
+        return guardarVistas(tenantId, { ...prev, [s]: nuevo });
       });
     },
     [tenantId],
   );
 
   const consultar = useCallback(async () => {
-    const n = await getNovedadesAction();
+    const n = await fetchNovedades();
     if (!n) return;
     const serverMs = Date.parse(n.ahora);
     if (Number.isFinite(serverMs)) relojRef.current = { serverMs, clienteMs: Date.now() };
@@ -135,8 +150,7 @@ export function useAvisosSidebar({
         templates: n.ahora,
         campanas: n.ahora,
       };
-      if (!guardadas) guardarVistas(tenantId, iniciales);
-      return iniciales;
+      return guardadas ?? guardarVistas(tenantId, iniciales);
     });
     marcarVista(activeRef.current, n.ahora);
   }, [tenantId, marcarVista]);
@@ -145,7 +159,7 @@ export function useAvisosSidebar({
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
     const arrancar = () => {
-      if (!timer) timer = setInterval(consultar, POLL_MS);
+      if (!timer && document.visibilityState === "visible") timer = setInterval(consultar, POLL_MS);
     };
     const frenar = () => {
       if (timer) clearInterval(timer);
@@ -170,6 +184,22 @@ export function useAvisosSidebar({
     };
   }, [consultar]);
 
+  // Otras pestañas del mismo usuario: si marcan algo como visto, se refleja acá.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== claveStorage(tenantId)) return;
+      const otras = leerVistas(tenantId);
+      if (!otras) return;
+      setVistas((prev) =>
+        prev
+          ? (Object.fromEntries(SECCIONES.map((s) => [s, maxIso(prev[s], otras[s])])) as Vistas)
+          : otras,
+      );
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [tenantId]);
+
   // Al navegar se marcan como vistas la sección que se deja (lo que pasó
   // mientras estaba abierta ya se vio) y la que se abre.
   const marcarSecciones = useCallback(
@@ -192,8 +222,9 @@ export function useAvisosSidebar({
   else if (despues(novedades.campanasEnviadaAt, vistas.campanas)) avisos.campanas = "novedad";
 
   // WhatsApp desvinculado: es un estado, no un evento. Se muestra mientras
-  // dure (hay sesión pero no está conectada) y se apaga solo al reconectar.
-  const whatsappCaido = whatsappConectado === false && novedades.whatsappEstado !== null;
+  // dure (estuvo conectado y ya no) y se apaga solo al reconectar: el estado
+  // en tiempo real de AppShell gana apenas vuelve a "conectada".
+  const whatsappCaido = novedades.whatsappDesvinculado && whatsappConectado !== true;
   if (whatsappCaido) avisos.contactos = "atencion";
   else if (despues(novedades.contactosNuevoAt, vistas.contactos)) avisos.contactos = "novedad";
 

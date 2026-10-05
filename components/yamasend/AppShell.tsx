@@ -1009,9 +1009,16 @@ export default function AppShell({
   const [actividadVersion, setActividadVersion] = useState(0);
 
   const recargarExcluidos = useCallback(async () => {
-    const lista = await getExcluidosMotorAction();
-    setExcluidos(lista);
-    setExcluidosCargando(false);
+    try {
+      const lista = await getExcluidosMotorAction();
+      // null = falló la carga: se conserva la última lista conocida en vez
+      // de "vaciarla" (eso haría reaparecer en silencio a los excluidos).
+      if (lista) setExcluidos(lista);
+    } catch {
+      // Error de red: idem, se conserva la última lista.
+    } finally {
+      setExcluidosCargando(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -1037,7 +1044,13 @@ export default function AppShell({
   );
 
   async function excluirDelMotor(telefonos: string[]): Promise<boolean> {
-    const res = await setExclusionMotorAction(telefonos, true);
+    let res: Awaited<ReturnType<typeof setExclusionMotorAction>>;
+    try {
+      res = await setExclusionMotorAction(telefonos, true);
+    } catch {
+      notificar("No se pudo excluir del motor. Revisá tu conexión y probá de nuevo.", "error");
+      return false;
+    }
     if (!res.ok) {
       notificar(res.error ?? "No se pudo excluir del motor.", "error");
       return false;
@@ -1066,12 +1079,20 @@ export default function AppShell({
     setExcluyendo(false);
     if (ok) {
       setExcluirModalOpen(false);
-      handleClearSel();
+      // Solo se limpia la selección (no los filtros ni el template elegido).
+      setSel(new Set());
+      setStatus("idle");
     }
   }
 
   async function handleIncluirEnMotor(telefono: string) {
-    const res = await setExclusionMotorAction([telefono], false);
+    let res: Awaited<ReturnType<typeof setExclusionMotorAction>>;
+    try {
+      res = await setExclusionMotorAction([telefono], false);
+    } catch {
+      notificar("No se pudo volver a incluir el contacto. Revisá tu conexión y probá de nuevo.", "error");
+      return;
+    }
     if (!res.ok) {
       notificar(res.error ?? "No se pudo volver a incluir el contacto.", "error");
       return;
