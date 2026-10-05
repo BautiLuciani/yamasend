@@ -24,6 +24,10 @@ import {
 } from "@/lib/actions/write";
 import { getDashboardStatsAction } from "@/lib/actions/stats";
 import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
+import {
+  CATEGORIA_TEMPLATE_UNICA,
+  validarVariablesTemplate,
+} from "@/lib/templates/config";
 import type { Contact, Membership, Template } from "@/lib/types";
 import {
   crearCodigoConfirmacion,
@@ -381,9 +385,11 @@ function contactoResumido(c: Contact) {
 // Validaciones compartidas entre "preparar" y "confirmar"
 // ---------------------------------------------------------------------------
 
-const CATEGORIAS_TEMPLATE = ["marketing", "utility", "authentication"] as const;
+// Incluye las categorías viejas solo para poder etiquetar templates que ya
+// existen; las nuevas siempre son CATEGORIA_TEMPLATE_UNICA (Marketing).
+type CategoriasTemplateConocidas = "marketing" | "utility" | "authentication";
 
-const ETIQUETA_CATEGORIA: Record<(typeof CATEGORIAS_TEMPLATE)[number], string> = {
+const ETIQUETA_CATEGORIA: Record<CategoriasTemplateConocidas, string> = {
   marketing: "Marketing",
   utility: "Utilidad",
   authentication: "Autenticación",
@@ -392,7 +398,7 @@ const ETIQUETA_CATEGORIA: Record<(typeof CATEGORIAS_TEMPLATE)[number], string> =
 interface DatosTemplate {
   nombre: string;
   contenido: string;
-  categoria: (typeof CATEGORIAS_TEMPLATE)[number];
+  categoria: CategoriasTemplateConocidas;
   borrador_id: string | null;
 }
 
@@ -409,6 +415,9 @@ async function validarEnvioTemplate(
   if (datos.contenido.trim().length < 10) {
     return { ok: false, error: "El mensaje del template tiene que tener al menos 10 caracteres." };
   }
+
+  const errorVariables = validarVariablesTemplate(datos.contenido);
+  if (errorVariables) return { ok: false, error: errorVariables };
 
   const wa = await estadoWhatsapp();
   if (!wa.listo) {
@@ -904,11 +913,18 @@ export function registrarToolsYamasend(server: McpServer): void {
       }),
   );
 
+  // Por ahora la única categoría es Marketing (lib/templates/config.ts). Se
+  // deja opcional para no romper a un cliente que ya la mandaba, y el valor
+  // que se usa siempre es CATEGORIA_TEMPLATE_UNICA.
   const categoriaSchema = z
-    .enum(CATEGORIAS_TEMPLATE)
+    .enum([CATEGORIA_TEMPLATE_UNICA])
+    .optional()
     .describe(
-      "Categoría de Meta: 'marketing' (promociones, novedades), 'utility' (avisos de un trámite o compra), 'authentication' (códigos de verificación).",
+      "Categoría de Meta. Por ahora la única disponible es 'marketing' (promociones, novedades); se puede omitir.",
     );
+
+  const contenidoTemplateDescripcion =
+    "Texto del mensaje, exactamente como va a salir. Por ahora NO puede llevar variables como {{1}}: escribí el mensaje completo, igual para todos los contactos.";
 
   server.registerTool(
     "guardar_template_borrador",
@@ -918,7 +934,7 @@ export function registrarToolsYamasend(server: McpServer): void {
         "Guarda un template como borrador en YamaSend, sin mandarlo a Meta. Si se pasa borrador_id, actualiza ese borrador.",
       inputSchema: z.object({
         nombre: z.string().min(1).max(120),
-        contenido: z.string().max(1024).describe("Texto del mensaje."),
+        contenido: z.string().max(1024).describe(contenidoTemplateDescripcion),
         categoria: categoriaSchema,
         borrador_id: z.string().optional().describe("ID de un borrador existente para actualizarlo."),
       }),
@@ -929,7 +945,8 @@ export function registrarToolsYamasend(server: McpServer): void {
         const c = await contextoEmpleado();
         if (!c.ok) return falla(c.error);
 
-        const r = await saveTemplateDraftAction(nombre, contenido, categoria, borrador_id ?? null);
+        void categoria; // siempre Marketing, lo fuerza saveTemplateDraftAction
+        const r = await saveTemplateDraftAction(nombre, contenido, CATEGORIA_TEMPLATE_UNICA, borrador_id ?? null);
         if (r.error || !r.id) return falla(r.error ?? "No se pudo guardar el borrador.");
         return exito({ borrador_id: r.id, nombre: nombre.trim(), estado: "borrador" });
       }),
@@ -937,7 +954,7 @@ export function registrarToolsYamasend(server: McpServer): void {
 
   const datosTemplateSchema = z.object({
     nombre: z.string().min(1).max(120).describe("Nombre del template."),
-    contenido: z.string().min(10).max(1024).describe("Texto del mensaje, exactamente como va a salir."),
+    contenido: z.string().min(10).max(1024).describe(contenidoTemplateDescripcion),
     categoria: categoriaSchema,
     borrador_id: z
       .string()
@@ -959,7 +976,7 @@ export function registrarToolsYamasend(server: McpServer): void {
         const datos: DatosTemplate = {
           nombre: args.nombre.trim(),
           contenido: args.contenido.trim(),
-          categoria: args.categoria,
+          categoria: CATEGORIA_TEMPLATE_UNICA,
           borrador_id: args.borrador_id ?? null,
         };
         const v = await validarEnvioTemplate(datos);
@@ -999,7 +1016,7 @@ export function registrarToolsYamasend(server: McpServer): void {
         const datos: DatosTemplate = {
           nombre: args.nombre.trim(),
           contenido: args.contenido.trim(),
-          categoria: args.categoria,
+          categoria: CATEGORIA_TEMPLATE_UNICA,
           borrador_id: args.borrador_id ?? null,
         };
 

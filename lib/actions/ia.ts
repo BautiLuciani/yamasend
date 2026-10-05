@@ -27,6 +27,7 @@ import {
   getCampaignsForTenant,
 } from "@/lib/actions/campaigns";
 import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
+import { CATEGORIA_TEMPLATE_UNICA } from "@/lib/templates/config";
 import {
   generarEmbeddingConsulta,
   sincronizarEmbeddingsLeads,
@@ -807,16 +808,12 @@ async function aplicarCorreccionEnFlujo(
 
   // ---- Categoría (solo templates) ------------------------------------
   if (campo === "categoria") {
-    if (flowState.kind !== "crear_template") {
-      return {
-        text: "La categoría se elige cuando creás un template. Seguimos donde estábamos.",
-        flowState,
-      };
-    }
+    // Por ahora todos los templates son de Marketing (ver
+    // lib/templates/config.ts): no hay otra categoría a la cual cambiar, así
+    // que se avisa y se sigue en el mismo paso sin perder el progreso.
     return {
-      text: "Dale, elegí la categoría del template.",
-      payload: { kind: "elegir_categoria_template" },
-      flowState: { kind: "crear_template", step: "template_esperando_categoria", draft },
+      text: "Por ahora todos los templates son de Marketing, así que no hace falta cambiar la categoría. Seguimos donde estábamos.",
+      flowState,
     };
   }
 
@@ -1412,13 +1409,15 @@ export async function getContactsForIAAction(): Promise<Contact[]> {
 // -----------------------------------------------------------------------
 // Flujo: crear_template
 // Mismas reglas que TemplateCreateModal.tsx (el modal manual): nombre >= 3
-// caracteres, categoría entre las 4 fijas de Meta, contenido > 10
+// caracteres, categoría fija en Marketing (lib/templates/config.ts), contenido > 10
 // caracteres para poder enviar a Meta. La sugerencia de IA reusa el mismo
 // webhook de n8n (generarTemplateConIAAction) que ya usa el modal.
 // -----------------------------------------------------------------------
 
-const CATEGORIAS_TEMPLATE = ["marketing", "utility", "authentication"] as const;
-type CategoriaTemplate = (typeof CATEGORIAS_TEMPLATE)[number];
+// Incluye las categorías viejas solo para poder etiquetar templates que ya
+// existen; las nuevas siempre son CATEGORIA_TEMPLATE_UNICA (Marketing).
+type CategoriasTemplateConocidas = "marketing" | "utility" | "authentication";
+type CategoriaTemplate = CategoriasTemplateConocidas;
 
 const CATEGORIA_LABELS: Record<CategoriaTemplate, string> = {
   marketing: "Marketing",
@@ -1426,9 +1425,8 @@ const CATEGORIA_LABELS: Record<CategoriaTemplate, string> = {
   authentication: "Autenticación",
 };
 
-function esCategoriaValida(v: string): v is CategoriaTemplate {
-  return (CATEGORIAS_TEMPLATE as readonly string[]).includes(v);
-}
+const PEDIDO_DESCRIPCION_TEMPLATE =
+  'Contame en pocas palabras qué querés comunicar y te armo una propuesta de mensaje — por ejemplo: "quiero avisar que tenemos 20% de descuento en agosto".';
 
 function iniciarFlujoCrearTemplate(): IAResponse {
   return {
@@ -1465,25 +1463,30 @@ async function handleCrearTemplateStep(
       };
     }
     const nombre = texto.trim().slice(0, 120);
+    // Ya no se pregunta la categoría: por ahora todos los templates son de
+    // Marketing (ver lib/templates/config.ts), así que se fija acá y se pasa
+    // directo a la descripción.
     return {
-      text: `Buenísimo, "${nombre}". Ahora elegí la categoría del template.`,
-      payload: { kind: "elegir_categoria_template" },
+      text: `Buenísimo, "${nombre}". ${PEDIDO_DESCRIPCION_TEMPLATE}`,
       flowState: {
         kind: "crear_template",
-        step: "template_esperando_categoria",
-        draft: { ...draft, nombre },
+        step: "template_esperando_descripcion",
+        draft: { ...draft, nombre, categoria: CATEGORIA_TEMPLATE_UNICA },
       },
     };
   }
 
   if (step === "template_esperando_categoria") {
-    // Este paso se resuelve por click en la tarjeta (ver
-    // seleccionarCategoriaTemplateAction), no por texto libre. Si el
-    // usuario igual escribe, lo guiamos de vuelta a la tarjeta.
+    // Paso que ya no se usa. Solo puede llegar acá una conversación que quedó
+    // a mitad de camino antes del cambio: la destrabamos fijando Marketing y
+    // pidiendo la descripción, en vez de mostrar el selector viejo.
     return {
-      text: "Elegí una categoría desde las opciones de arriba.",
-      payload: { kind: "elegir_categoria_template" },
-      flowState,
+      text: `Ahora todos los templates son de Marketing, así que no hace falta elegir categoría. ${PEDIDO_DESCRIPCION_TEMPLATE}`,
+      flowState: {
+        kind: "crear_template",
+        step: "template_esperando_descripcion",
+        draft: { ...draft, categoria: CATEGORIA_TEMPLATE_UNICA },
+      },
     };
   }
 
@@ -1520,20 +1523,18 @@ export async function seleccionarCategoriaTemplateAction(
     };
   }
 
-  if (!esCategoriaValida(categoria)) {
-    return {
-      text: "Esa categoría no es válida. Elegí una de las opciones de arriba.",
-      payload: { kind: "elegir_categoria_template" },
-      flowState,
-    };
-  }
+  // La tarjeta de categoría ya no se muestra en conversaciones nuevas, pero
+  // puede seguir en el historial de una conversación vieja. Si alguien la
+  // toca, se ignora lo que eligió y se fija Marketing, igual que en el resto
+  // de la app (ver lib/templates/config.ts).
+  void categoria;
 
   return {
-    text: `"${CATEGORIA_LABELS[categoria]}", listo. Contame en pocas palabras qué querés comunicar y te armo una propuesta de mensaje — por ejemplo: "quiero avisar que tenemos 20% de descuento en agosto".`,
+    text: `"${CATEGORIA_LABELS[CATEGORIA_TEMPLATE_UNICA]}", listo. ${PEDIDO_DESCRIPCION_TEMPLATE}`,
     flowState: {
       kind: "crear_template",
       step: "template_esperando_descripcion",
-      draft: { ...flowState.draft, categoria },
+      draft: { ...flowState.draft, categoria: CATEGORIA_TEMPLATE_UNICA },
     },
   };
 }

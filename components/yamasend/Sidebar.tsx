@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import type { AppSection } from "@/lib/types";
 import { useLang } from "./LangContext";
+import NavIaItem from "./NavIaItem";
 
 interface SidebarProps {
   active: AppSection;
@@ -116,7 +117,20 @@ export default function Sidebar({
       </div>
 
       <div className="flex flex-col gap-[3px]">
-        {NAV_ITEMS.filter((item) => !hiddenSections.includes(item.key)).map((item) => {
+        {/* IA va destacada, separada del resto del nav (ver NavIaItem). */}
+        {!hiddenSections.includes("ia") && (
+          <>
+            <NavIaItem
+              label={t("nav_ai")}
+              isActive={active === "ia"}
+              onClick={() => onNavigate("ia")}
+            />
+            <div className="h-px bg-ys-border-softest mx-1.5 my-2.5" />
+          </>
+        )}
+        {NAV_ITEMS.filter(
+          (item) => item.key !== "ia" && !hiddenSections.includes(item.key),
+        ).map((item) => {
           const isActive = active === item.key;
           return (
             <button

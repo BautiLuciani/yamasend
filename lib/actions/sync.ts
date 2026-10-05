@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { assertPermiso } from "@/lib/auth/permisos";
 import type { SyncConfig, SyncResult } from "@/lib/types";
 import { logActivity } from "@/lib/actions/activity";
+import { CATEGORIA_TEMPLATE_UNICA } from "@/lib/templates/config";
 
 // Webhook del workflow "Yamasend: Sincronizar Contactos + Análisis de Chats (v2)"
 // en n8n. El nodo "0. Resolver auth.uid" del workflow espera el token en el
@@ -175,8 +176,12 @@ export interface GenerarTemplateIAResult {
  */
 export async function generarTemplateConIAAction(
   descripcion: string,
-  categoria: string,
+  // Se ignora: por ahora todos los templates son de Marketing (ver
+  // lib/templates/config.ts). Queda en la firma para no romper a los que llaman.
+  _categoria: string,
 ): Promise<GenerarTemplateIAResult> {
+  void _categoria;
+  const categoria = CATEGORIA_TEMPLATE_UNICA;
   // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
   // escondido no impide invocar el server action directamente.
   const gate = await assertPermiso("crear_templates");
