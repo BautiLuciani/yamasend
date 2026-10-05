@@ -38,6 +38,7 @@ import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
 const IA_CONVERSACION_ABIERTA_KEY = "ys-ia-conversacion-abierta";
 import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
+import Perfil from "./Perfil";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
 import ConfiguracionModal from "./ConfiguracionModal";
@@ -445,6 +446,7 @@ export default function AppShell({
     "grupos",
     "templates",
     "campanas",
+    "perfil",
     "ia",
   ];
 
@@ -1681,6 +1683,8 @@ export default function AppShell({
           />
         </div>
       )}
+
+      {activeSection === "perfil" && <Perfil tieneOrganizacion={user.orgId !== null} />}
 
       {activeSection === "ia" && (
         <IA

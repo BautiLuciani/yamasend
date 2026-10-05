@@ -664,6 +664,7 @@ export type AppSection =
   | "grupos"
   | "templates"
   | "campanas"
+  | "perfil"
   | "ia";
 
 export type StatusState =
@@ -767,4 +768,94 @@ export interface SugerenciaHorario {
   tasaRespuesta: number;
   /** Total de mensajes analizados en toda la cuenta. */
   totalAnalizados: number;
+}
+
+// ---------------------------------------------------------------------------
+// Perfil inteligente del negocio
+//
+// Propuesta que infiere la IA (workflow n8n "Perfil del negocio (IA)") a partir
+// de las conversaciones de WhatsApp. Vive en yamas_send_perfil_negocio y NO
+// toca "Datos de la empresa" hasta que el usuario la aplica campo por campo.
+// ---------------------------------------------------------------------------
+
+export type CampoPerfil =
+  | "nombre_empresa"
+  | "rubro"
+  | "descripcion_negocio"
+  | "publico_objetivo"
+  | "zona_cobertura"
+  | "diferenciales"
+  | "tono_comunicacion"
+  | "productos";
+
+export interface PerfilCampoInferido {
+  valor: string;
+  /** 0 a 1: cuánto respaldo tiene en las conversaciones. */
+  confianza: number;
+  /** Citas cortas de los mensajes en los que se apoya. */
+  evidencia: string[];
+  /** Solo en zona_cobertura: lugares puntuales detectados. */
+  ubicaciones?: string[];
+}
+
+export interface PerfilProductoInferido {
+  nombre: string;
+  precio: string;
+  descripcion: string;
+  confianza: number;
+  evidencia: string[];
+}
+
+export interface PerfilNegocioInferido {
+  nombre_empresa?: PerfilCampoInferido;
+  rubro?: PerfilCampoInferido;
+  descripcion_negocio?: PerfilCampoInferido;
+  publico_objetivo?: PerfilCampoInferido;
+  zona_cobertura?: PerfilCampoInferido;
+  diferenciales?: PerfilCampoInferido;
+  tono_comunicacion?: PerfilCampoInferido;
+  productos?: PerfilProductoInferido[];
+}
+
+export type PerfilNegocioEstado = "generando" | "listo" | "error";
+export type DecisionPerfil = "aplicado" | "descartado";
+
+export interface PerfilNegocio {
+  estado: PerfilNegocioEstado;
+  perfil: PerfilNegocioInferido;
+  decisiones: Partial<Record<CampoPerfil, DecisionPerfil>>;
+  /** Claves de novedades que el usuario ignoró (ver lib/perfil/novedades.ts). */
+  ignorados: string[];
+  generadoAt: string | null;
+  mensajesAnalizados: number;
+  /** "sin_conversaciones" o un mensaje legible cuando estado === "error". */
+  error: string | null;
+}
+
+/**
+ * Cambios que el asistente propone sobre "Datos de la empresa". Nunca se
+ * aplican solos: el usuario los revisa y confirma con un botón.
+ */
+export interface PropuestaPerfil {
+  nombreEmpresa?: string;
+  rubro?: string;
+  descripcionNegocio?: string;
+  publicoObjetivo?: string;
+  tonoComunicacion?: string;
+  zonaCobertura?: string;
+  diferenciales?: string;
+  reglasEvitar?: string;
+  /** Alta o actualización por nombre: si existe se pisan precio/descripcion. */
+  productosUpsert?: Producto[];
+  /** Nombres de productos a quitar. */
+  productosQuitar?: string[];
+}
+
+export interface PerfilChatMensaje {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  propuesta?: PropuestaPerfil;
+  /** La propuesta ya se aplicó (o se descartó) y no debe mostrar botones. */
+  propuestaEstado?: "aplicada" | "descartada";
 }

@@ -18,7 +18,7 @@ interface MobileDrawerProps {
   hiddenSections?: AppSection[];
 }
 
-const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
+const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_profile" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
   {
     key: "ia",
     labelKey: "nav_ai",
@@ -79,6 +79,17 @@ const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" |
       <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
         <path d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z" stroke={c} strokeWidth="1.5" strokeLinejoin="round" />
         <path d="M12 6v4" stroke={c} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    key: "perfil",
+    labelKey: "nav_profile",
+    icon: (c) => (
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+        <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke={c} strokeWidth="1.5" />
+        <circle cx="8" cy="6.6" r="1.7" stroke={c} strokeWidth="1.4" />
+        <path d="M4.9 12c.4-1.4 1.6-2.2 3.1-2.2s2.7.8 3.1 2.2" stroke={c} strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     ),
   },

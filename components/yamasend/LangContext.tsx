@@ -15,6 +15,7 @@ const i18n = {
     nav_groups: "Audiencias",
     nav_templates: "Templates",
     nav_campaigns: "Campañas",
+    nav_profile: "Perfil",
     nav_ai: "IA",
     nav_logout: "Cerrar sesión",
 
@@ -189,6 +190,7 @@ const i18n = {
     nav_groups: "Audiences",
     nav_templates: "Templates",
     nav_campaigns: "Campaigns",
+    nav_profile: "Profile",
     nav_ai: "AI",
     nav_logout: "Log out",
 
