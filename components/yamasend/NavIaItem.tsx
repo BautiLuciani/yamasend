@@ -61,15 +61,19 @@ export default function NavIaItem({
         </svg>
       </span>
       <span className="flex-1 min-w-0 truncate">{label}</span>
-      {/* Indicador "vivo": punto verde que pulsa, refuerza que es el
-          asistente y no una sección estática. */}
-      <span className="relative flex-none w-2 h-2 mr-1">
-        <span
-          className="absolute inset-0 rounded-full bg-ys-green opacity-60"
-          style={{ animation: "ys-spark 1.8s ease-in-out infinite" }}
-        />
-        <span className="absolute inset-[1px] rounded-full bg-ys-green" />
-      </span>
+      {/* Flecha "ir" en vez de un punto: los puntitos a la derecha del nav
+          ahora son avisos de novedades (AvisoDot), y un punto acá se leía
+          como una notificación que no es. */}
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 16 16"
+        fill="none"
+        className="flex-none mr-0.5 opacity-60 transition-transform group-hover:translate-x-0.5 group-hover:opacity-100"
+        aria-hidden="true"
+      >
+        <path d="m6 3.5 4.5 4.5L6 12.5" stroke="var(--ys-dark-accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
     </button>
   );
 }

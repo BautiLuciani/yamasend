@@ -258,3 +258,9 @@ a:hover {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Aviso del sidebar (AvisoDot): onda que se expande y desvanece. */
+@keyframes ys-aviso-ping {
+  0% { transform: scale(1); opacity: .7; }
+  75%, 100% { transform: scale(2.6); opacity: 0; }
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import type { KpiFilterKey } from "@/lib/types";
+import ActividadWhatsappCard from "./ActividadWhatsappCard";
 
 interface KpiCounts {
   total: number;
@@ -18,7 +19,6 @@ interface KpiRowProps {
   onSelectTotal: () => void;
   onToggleFilter: (key: KpiFilterKey) => void;
   onImportClick: () => void;
-  onAnalyzeClick: () => void;
   /**
    * false NO esconde el botón: lo deja visible y bloqueado, para que el
    * permiso revocado sea visible en vez de una sección que pierde opciones
@@ -41,6 +41,8 @@ interface KpiRowProps {
    * alcance a abrir el QR en ese instante.
    */
   verificandoVinculo?: boolean;
+  /** Se pasa a la card de actividad para forzar un refresco. */
+  actividadVersion?: number;
   importing: boolean;
 }
 
@@ -50,11 +52,11 @@ export default function KpiRow({
   onSelectTotal,
   onToggleFilter,
   onImportClick,
-  onAnalyzeClick,
   puedeImportar = true,
   onSinPermiso,
   yaVinculado = false,
   verificandoVinculo = false,
+  actividadVersion = 0,
   importing,
 }: KpiRowProps) {
   const isTotalOn = activeFilters.size === 0;
@@ -112,35 +114,13 @@ export default function KpiRow({
           </span>
         </button>
 
-        <button
-          onClick={puedeImportar ? onAnalyzeClick : onSinPermiso}
-          className={`bg-white border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left transition-colors ${
-            puedeImportar
-              ? "border-ys-border cursor-pointer hover:border-ys-green-border"
-              : "border-ys-border opacity-60 cursor-not-allowed"
-          }`}
-        >
-            <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-dark flex items-center justify-center">
-              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
-                <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#3ddb8f" strokeWidth="1.4" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div className="text-sm font-extrabold text-ys-text">Analizar conversaciones</div>
-              <div className="text-[12.5px] text-ys-dim font-medium truncate">
-                Usá IA para detectar oportunidades comerciales entre tus contactos.
-              </div>
-            </div>
-          <span
-            className={`flex-none text-[13px] font-bold bg-white border rounded-[10px] px-4 py-2.5 ${
-              puedeImportar
-                ? "text-ys-text border-ys-green-border"
-                : "text-ys-faint border-ys-border"
-            }`}
-          >
-            Analizar
-          </span>
-        </button>
+        {/* Antes: botón "Analizar conversaciones". El análisis ahora corre solo
+            al vincular el WhatsApp (y se puede pedir de nuevo desde el chat de
+            IA), así que este lugar muestra la actividad de las conversaciones. */}
+        <ActividadWhatsappCard
+          whatsappVinculado={verificandoVinculo ? null : yaVinculado}
+          version={actividadVersion}
+        />
       </div>
 
       {/* Métricas — también funcionan como filtros (funcionalidad real) */}

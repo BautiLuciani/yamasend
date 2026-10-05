@@ -768,3 +768,49 @@ export interface SugerenciaHorario {
   /** Total de mensajes analizados en toda la cuenta. */
   totalAnalizados: number;
 }
+
+/* ───────────── Actividad de WhatsApp (card de Contactos) ───────────── */
+
+/** Métricas de un período, calculadas sobre el historial de mensajes. */
+export interface ActividadPeriodo {
+  /** Contactos distintos que mandaron al menos un mensaje. */
+  escribieron: number;
+  /** Mensajes entrantes. */
+  mensajes: number;
+  /** Contactos cuyo primer mensaje cae en el período. */
+  nuevos: number;
+}
+
+export interface ActividadWhatsapp {
+  h24: ActividadPeriodo;
+  d7: ActividadPeriodo;
+  generadoAt: string;
+}
+
+/* ───────────── Contactos excluidos del Motor ───────────── */
+
+export interface ContactoExcluido {
+  telefono: string;
+  nombre: string | null;
+  /** "excluido_usuario" si lo excluyó el usuario; otras (ej. "equipo") vienen de antes. */
+  categoria: string;
+  excluidoAt: string;
+}
+
+/* ───────────── Avisos del sidebar ───────────── */
+
+/**
+ * Último momento (ISO) en que pasó algo nuevo en cada sección. null = nunca.
+ * Ver yamas_send_novedades() en docs/migraciones/2026-10-actividad-y-novedades.sql.
+ */
+export interface Novedades {
+  ahora: string;
+  templatesAprobadoAt: string | null;
+  templatesRechazadoAt: string | null;
+  campanasEnviadaAt: string | null;
+  campanasErrorAt: string | null;
+  contactosNuevoAt: string | null;
+  dashboardRespuestaAt: string | null;
+  dashboardSistemaAt: string | null;
+  whatsappEstado: string | null;
+}

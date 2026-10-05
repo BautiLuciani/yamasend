@@ -11,6 +11,7 @@ import type {
   ChatPayload,
   Contact,
   ContactList,
+  ContactoExcluido,
   IAFlowState,
   IAHistoryTurn,
   KpiFilterKey,
@@ -21,6 +22,7 @@ import type {
 } from "@/lib/types";
 import { IA_FLOW_IDLE } from "@/lib/types";
 import Sidebar from "./Sidebar";
+import { useAvisosSidebar } from "./useAvisosSidebar";
 import MobileHeader from "./MobileHeader";
 import MobileDrawer from "./MobileDrawer";
 import Dashboard from "./Dashboard";
@@ -49,6 +51,12 @@ import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
 import WahaRequiredModal from "./WahaRequiredModal";
 import ContactDetailModal from "./ContactDetailModal";
+import ExcluirMotorModal from "./ExcluirMotorModal";
+import ContactosExcluidosLista, { VistaContactosTabs } from "./ContactosExcluidosLista";
+import {
+  getExcluidosMotorAction,
+  setExclusionMotorAction,
+} from "@/lib/actions/novedades";
 import { CreateAudienceModal, AddToAudienceModal } from "./AudienciaModals";
 import {
   saveListAction,
@@ -129,6 +137,11 @@ function qrPollDelay(openedAt: number): number {
 // Pasados estos ms sin conectar, se le pide a n8n que reinicie la sesión WAHA.
 // Cubre el caso en que WAHA queda pegado en SCAN_QR_CODE después de escanear.
 const QR_REFRESH_AFTER_MS = 60_000;
+
+/** Teléfono solo con dígitos, igual que lo guarda motor.numeros_internos. */
+function soloDigitos(tel: string): string {
+  return (tel || "").replace(/\D/g, "");
+}
 
 interface AppShellProps {
   user: AppUser;
@@ -472,7 +485,22 @@ export default function AppShell({
 
   const [activeSection, setActiveSectionState] = useState<AppSection>(getInitialSection);
 
+  // Avisos (puntitos) del sidebar: "pasó algo en esta sección". Ver
+  // useAvisosSidebar para qué secciones tienen aviso y por qué.
+  const { avisos: avisosSidebar, marcarSecciones } = useAvisosSidebar({
+    tenantId: user.tenantId,
+    activeSection,
+    whatsappConectado: wahaConectada,
+  });
+  const avisoMenuMobile = Object.values(avisosSidebar).includes("atencion")
+    ? "atencion"
+    : Object.keys(avisosSidebar).length > 0
+      ? "novedad"
+      : null;
+
   function setActiveSection(section: AppSection) {
+    // La sección que se deja y la que se abre quedan como vistas.
+    marcarSecciones([activeSection, section]);
     setActiveSectionState(section);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -966,10 +994,97 @@ export default function AppShell({
     return { error: null };
   }
 
+  // ── Contactos excluidos del motor ──
+  // Lista editable de números que no son clientes (otras sucursales,
+  // proveedores, el equipo). Vive en motor.numeros_internos; el motor ya la
+  // respeta. En Contactos, los excluidos salen de la lista principal y de los
+  // contadores de leads, y se gestionan desde la pestaña "Excluidos".
+  const [excluidos, setExcluidos] = useState<ContactoExcluido[]>([]);
+  const [excluidosCargando, setExcluidosCargando] = useState(true);
+  const [vistaContactos, setVistaContactos] = useState<"todos" | "excluidos">("todos");
+  const [excluirModalOpen, setExcluirModalOpen] = useState(false);
+  const [excluyendo, setExcluyendo] = useState(false);
+  // Se incrementa al cambiar la lista para que la card de actividad (que
+  // tampoco cuenta a los excluidos) se refresque en el acto.
+  const [actividadVersion, setActividadVersion] = useState(0);
+
+  const recargarExcluidos = useCallback(async () => {
+    const lista = await getExcluidosMotorAction();
+    setExcluidos(lista);
+    setExcluidosCargando(false);
+  }, []);
+
+  useEffect(() => {
+    // Carga inicial agendada (no en el cuerpo del efecto).
+    const t = setTimeout(recargarExcluidos, 0);
+    return () => clearTimeout(t);
+  }, [recargarExcluidos]);
+
+  const excluidosSet = useMemo(
+    () => new Set(excluidos.map((e) => e.telefono)),
+    [excluidos],
+  );
+
+  // Contactos que cuentan: todos menos los excluidos del motor. Audiencias,
+  // IA y los modales siguen recibiendo `contacts` completo a propósito (una
+  // audiencia ya armada no tiene por qué perder gente sin aviso).
+  const contactsActivos = useMemo(
+    () =>
+      excluidosSet.size === 0
+        ? contacts
+        : contacts.filter((c) => !excluidosSet.has(soloDigitos(c.tel))),
+    [contacts, excluidosSet],
+  );
+
+  async function excluirDelMotor(telefonos: string[]): Promise<boolean> {
+    const res = await setExclusionMotorAction(telefonos, true);
+    if (!res.ok) {
+      notificar(res.error ?? "No se pudo excluir del motor.", "error");
+      return false;
+    }
+    await recargarExcluidos();
+    setActividadVersion((v) => v + 1);
+    const n = telefonos.length;
+    notificar(
+      n === 1
+        ? "Listo, el motor ya no tiene en cuenta ese contacto. Lo ves en la pestaña “Excluidos”."
+        : `Listo, el motor ya no tiene en cuenta esos ${n} contactos. Los ves en la pestaña “Excluidos”.`,
+    );
+    return true;
+  }
+
+  async function confirmarExcluirSeleccion() {
+    const telefonos = contacts
+      .filter((c) => sel.has(c.id) && c.tel)
+      .map((c) => c.tel);
+    if (telefonos.length === 0) {
+      setExcluirModalOpen(false);
+      return;
+    }
+    setExcluyendo(true);
+    const ok = await excluirDelMotor(telefonos);
+    setExcluyendo(false);
+    if (ok) {
+      setExcluirModalOpen(false);
+      handleClearSel();
+    }
+  }
+
+  async function handleIncluirEnMotor(telefono: string) {
+    const res = await setExclusionMotorAction([telefono], false);
+    if (!res.ok) {
+      notificar(res.error ?? "No se pudo volver a incluir el contacto.", "error");
+      return;
+    }
+    await recargarExcluidos();
+    setActividadVersion((v) => v + 1);
+    notificar("Listo, el motor vuelve a tener en cuenta ese contacto.");
+  }
+
   // ── filtrado combinado, replicando la lógica del original ──
   const visibleContacts = useMemo(() => {
     const q = contactSearch.trim().toLowerCase();
-    return contacts.filter((c) => {
+    return contactsActivos.filter((c) => {
       if (c.bloqueado && !modo24h) return false;
       if (filt.has("24h") && !c.en24h) return false;
       if (filt.has("cliente") && c.etapa !== "cerrado") return false;
@@ -986,7 +1101,7 @@ export default function AppShell({
       }
       return true;
     });
-  }, [contacts, filt, modo24h, contactSearch]);
+  }, [contactsActivos, filt, modo24h, contactSearch]);
 
   const contactTotalPages = Math.max(
     1,
@@ -1000,23 +1115,23 @@ export default function AppShell({
 
   const counts = useMemo(
     () => ({
-      total: contacts.filter((c) => !c.bloqueado).length,
-      clientes: contacts.filter((c) => !c.bloqueado && c.etapa === "cliente")
+      total: contactsActivos.filter((c) => !c.bloqueado).length,
+      clientes: contactsActivos.filter((c) => !c.bloqueado && c.etapa === "cliente")
         .length,
-      ai: contacts.filter((c) => c.enListaAI).length,
-      h24: contacts.filter((c) => c.en24h).length,
-      caliente: contacts.filter((c) => !c.bloqueado && c.score === "caliente")
+      ai: contactsActivos.filter((c) => c.enListaAI).length,
+      h24: contactsActivos.filter((c) => c.en24h).length,
+      caliente: contactsActivos.filter((c) => !c.bloqueado && c.score === "caliente")
         .length,
-      tibio: contacts.filter((c) => !c.bloqueado && c.score === "tibio")
+      tibio: contactsActivos.filter((c) => !c.bloqueado && c.score === "tibio")
         .length,
-      frio: contacts.filter((c) => !c.bloqueado && c.score === "frio").length,
+      frio: contactsActivos.filter((c) => !c.bloqueado && c.score === "frio").length,
     }),
-    [contacts],
+    [contactsActivos],
   );
 
   function recomputeSelFromFilters(nextFilt: Set<KpiFilterKey>, next24h: boolean) {
     const next = new Set<string>();
-    contacts.forEach((c) => {
+    contactsActivos.forEach((c) => {
       if (c.bloqueado && !next24h) return;
       if (nextFilt.has("24h") && !c.en24h) return;
       if (nextFilt.has("cliente") && c.etapa !== "cerrado") return;
@@ -1040,7 +1155,7 @@ export default function AppShell({
     setFilt(new Set());
     setModo24h(false);
     setContactPage(1);
-    const next = new Set(contacts.filter((c) => !c.bloqueado).map((c) => c.id));
+    const next = new Set(contactsActivos.filter((c) => !c.bloqueado).map((c) => c.id));
     setSel(next);
     setStatus(next.size > 0 ? "need-tpl" : "idle");
     addMsg(
@@ -1569,9 +1684,10 @@ export default function AppShell({
         onOpenMyProfile={() => setMyProfileOpen(true)}
         onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
+        avisos={avisosSidebar}
       />
 
-      <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} />
+      <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} aviso={avisoMenuMobile} />
       <MobileDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -1583,6 +1699,7 @@ export default function AppShell({
         onOpenMyProfile={() => setMyProfileOpen(true)}
         onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
+        avisos={avisosSidebar}
       />
 
       <ProfileDrawer
@@ -1736,25 +1853,27 @@ export default function AppShell({
         onSelectTotal={handleSelectTotal}
         onToggleFilter={handleToggleFilter}
         onImportClick={() => setQrOpen(true)}
-        onAnalyzeClick={() => {
-          if (wahaConectada) {
-            setSyncModalOpen(true);
-          } else {
-            setWahaRequiredOpen(true);
-          }
-        }}
+        // El botón "Analizar" se reemplazó por la card de actividad (ver
+        // ActividadWhatsappCard). SyncConfigModal queda montado más abajo sin
+        // disparador en esta pantalla; el análisis a pedido sigue disponible
+        // desde el chat de IA.
         importing={false}
         puedeImportar={user.permisos.importar_contactos}
         onSinPermiso={() => avisarSinPermiso("importar contactos")}
         yaVinculado={wahaConectada === true}
         verificandoVinculo={wahaConectada === null}
+        actividadVersion={actividadVersion}
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
       <div className="hidden md:flex relative px-[38px] pb-[34px]">
         <div className="flex flex-col flex-1 relative bg-white border border-ys-border rounded-2xl">
           <div className="flex items-center gap-3 px-6 pt-[18px] pb-4 flex-none">
-            <div className="text-[15px] font-extrabold text-ys-text">Todos los contactos</div>
+            <VistaContactosTabs
+              vista={vistaContactos}
+              cantidadExcluidos={excluidos.length}
+              onChange={setVistaContactos}
+            />
             <div className="ml-auto flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 w-[250px] transition-colors focus-within:border-ys-green-border">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
                 <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
@@ -1769,6 +1888,17 @@ export default function AppShell({
               />
             </div>
           </div>
+          {vistaContactos === "excluidos" ? (
+            <div className="overflow-hidden rounded-b-2xl">
+              <ContactosExcluidosLista
+                excluidos={excluidos}
+                busqueda={contactSearch}
+                cargando={excluidosCargando}
+                onIncluir={handleIncluirEnMotor}
+              />
+            </div>
+          ) : (
+            <>
           <div className="overflow-hidden rounded-b-2xl">
             <ContactsTable
               contacts={paginatedContacts}
@@ -1786,9 +1916,11 @@ export default function AppShell({
             perPage={CONTACTS_PER_PAGE}
             onChange={setContactPage}
           />
+            </>
+          )}
         </div>
       </div>
-      {sel.size > 0 && (
+      {sel.size > 0 && vistaContactos === "todos" && (
         <div
           className="hidden md:flex fixed bottom-6 left-[calc(248px+38px)] right-[38px] z-[9] bg-ys-dark rounded-2xl pl-[18px] pr-3.5 py-3 items-center gap-3.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
           style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
@@ -1803,6 +1935,17 @@ export default function AppShell({
             Deseleccionar
           </button>
           <div className="ml-auto flex items-center gap-2.5">
+            <button
+              onClick={() =>
+                user.permisos.importar_contactos
+                  ? setExcluirModalOpen(true)
+                  : avisarSinPermiso("gestionar contactos")
+              }
+              title="Para números que no son clientes: otras sucursales, proveedores, tu equipo"
+              className="text-[13px] font-bold text-[#9aa9a3] rounded-[10px] px-3 py-2.5 cursor-pointer transition-colors hover:text-white hover:bg-[#1e2a24]"
+            >
+              Excluir del motor
+            </button>
             <button
               onClick={() => setAddToGroupOpen(true)}
               className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
@@ -1823,7 +1966,13 @@ export default function AppShell({
       <div className="flex md:hidden flex-col px-4 pb-4">
         <div className="flex flex-col relative bg-white border border-ys-border rounded-2xl">
           <div className="px-4 pt-4 pb-3 flex-none">
-            <div className="text-sm font-extrabold text-ys-text mb-3">Todos los contactos</div>
+            <div className="mb-3 -ml-2.5">
+              <VistaContactosTabs
+                vista={vistaContactos}
+                cantidadExcluidos={excluidos.length}
+                onChange={setVistaContactos}
+              />
+            </div>
             <div className="flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 transition-colors focus-within:border-ys-green-border">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
                 <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
@@ -1838,6 +1987,18 @@ export default function AppShell({
               />
             </div>
           </div>
+          {vistaContactos === "excluidos" ? (
+            <div className="overflow-hidden rounded-b-2xl">
+              <ContactosExcluidosLista
+                excluidos={excluidos}
+                busqueda={contactSearch}
+                cargando={excluidosCargando}
+                onIncluir={handleIncluirEnMotor}
+                compact
+              />
+            </div>
+          ) : (
+            <>
           <div className="overflow-hidden rounded-b-2xl">
             <ContactsTable
               contacts={paginatedContacts}
@@ -1856,9 +2017,11 @@ export default function AppShell({
             onChange={setContactPage}
             compact
           />
+            </>
+          )}
         </div>
       </div>
-      {sel.size > 0 && (
+      {sel.size > 0 && vistaContactos === "todos" && (
         <div
           className="flex md:hidden fixed bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
           style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
@@ -1869,6 +2032,16 @@ export default function AppShell({
             className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
           >
             Deseleccionar
+          </button>
+          <button
+            onClick={() =>
+              user.permisos.importar_contactos
+                ? setExcluirModalOpen(true)
+                : avisarSinPermiso("gestionar contactos")
+            }
+            className="ml-auto text-xs font-bold text-[#9aa9a3] cursor-pointer"
+          >
+            Excluir del motor
           </button>
           <div className="w-full flex items-center gap-2 mt-1">
             <button
@@ -2134,9 +2307,33 @@ export default function AppShell({
         }}
       />
 
+      <ExcluirMotorModal
+        open={excluirModalOpen}
+        cantidad={sel.size}
+        guardando={excluyendo}
+        onCancel={() => setExcluirModalOpen(false)}
+        onConfirm={confirmarExcluirSeleccion}
+      />
+
       <ContactDetailModal
         contact={detailContact}
         onClose={() => setDetailContact(null)}
+        onExcluirMotor={
+          user.permisos.importar_contactos
+            ? async (c) => {
+                const ok = await excluirDelMotor([c.tel]);
+                if (ok) {
+                  setDetailContact(null);
+                  setSel((prev) => {
+                    if (!prev.has(c.id)) return prev;
+                    const next = new Set(prev);
+                    next.delete(c.id);
+                    return next;
+                  });
+                }
+              }
+            : undefined
+        }
         onSetTemperaturaManual={async (contactId, temperatura) => {
           const result = await setTemperaturaManualAction(contactId, temperatura);
           if (result.error) {
