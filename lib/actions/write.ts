@@ -6,6 +6,10 @@ import type { Template } from "@/lib/types";
 import { logActivity } from "@/lib/actions/activity";
 import { getTemplatesForTenant } from "@/lib/actions/campaigns";
 import {
+  CATEGORIA_TEMPLATE_UNICA,
+  validarVariablesTemplate,
+} from "@/lib/templates/config";
+import {
   reservarCreditosCampana,
   reservaSegunEstado,
 } from "@/lib/creditos/reserva";
@@ -737,9 +741,13 @@ export async function deleteTemplateDraftAction(
 export async function saveTemplateDraftAction(
   nombre: string,
   contenido: string,
-  categoria: string,
+  // Se mantiene en la firma para no romper a los que llaman (panel, chat de
+  // IA, conector MCP), pero se ignora: por ahora todos los templates son de
+  // Marketing (ver lib/templates/config.ts).
+  _categoria: string,
   templateId?: string | null,
 ): Promise<SaveResult> {
+  const categoria = CATEGORIA_TEMPLATE_UNICA;
   // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
   // escondido no impide invocar el server action directamente.
   const gate = await assertPermiso("crear_templates");
@@ -841,7 +849,8 @@ export interface SendTemplateResult {
 export async function sendTemplateToMetaAction(
   nombre: string,
   contenido: string,
-  categoria: string,
+  // Se ignora: siempre se manda como Marketing (ver lib/templates/config.ts).
+  _categoria: string,
   /**
    * Conversación de IA desde la que se está enviando, si es que viene de
    * ahí. Se guarda en el template para que el aviso de Meta aterrice en ESE
@@ -881,6 +890,16 @@ export async function sendTemplateToMetaAction(
       error: "El template necesita un nombre y un mensaje de al menos 10 caracteres.",
     };
   }
+
+  // Variables deshabilitadas por ahora: el workflow de aprobación no manda
+  // los ejemplos que Meta exige, así que un template con {{1}} terminaría en
+  // error/rechazo. Se corta acá, antes de llamar a n8n.
+  const errorVariables = validarVariablesTemplate(contenido);
+  if (errorVariables) {
+    return { ok: false, templateId: null, status: null, mensaje: "", error: errorVariables };
+  }
+
+  const categoria = CATEGORIA_TEMPLATE_UNICA;
 
   const { data: cliente, error: clienteError } = await supabase
     .from("yamas_inmo_clientes")

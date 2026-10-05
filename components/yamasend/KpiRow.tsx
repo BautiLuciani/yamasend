@@ -27,6 +27,20 @@ interface KpiRowProps {
   puedeImportar?: boolean;
   /** Se dispara al tocar el botón sin permiso. Muestra el aviso. */
   onSinPermiso?: () => void;
+  /**
+   * true cuando el WhatsApp del tenant ya está vinculado (sesión WAHA en
+   * estado "conectada"). Deja el botón "Vincular" deshabilitado: no tiene
+   * sentido volver a escanear un QR con un celular que ya está conectado.
+   * Se actualiza en tiempo real desde AppShell, así que si se desvincula
+   * desde el celular el botón vuelve a habilitarse solo.
+   */
+  yaVinculado?: boolean;
+  /**
+   * true mientras AppShell todavía no sabe si hay un WhatsApp vinculado
+   * (carga inicial). Se bloquea el botón para que un usuario ya vinculado no
+   * alcance a abrir el QR en ese instante.
+   */
+  verificandoVinculo?: boolean;
   importing: boolean;
 }
 
@@ -39,9 +53,16 @@ export default function KpiRow({
   onAnalyzeClick,
   puedeImportar = true,
   onSinPermiso,
+  yaVinculado = false,
+  verificandoVinculo = false,
   importing,
 }: KpiRowProps) {
   const isTotalOn = activeFilters.size === 0;
+  // El botón de vincular solo está activo si tiene permiso Y todavía no hay
+  // un celular vinculado.
+  const puedeVincular = puedeImportar && !yaVinculado && !verificandoVinculo;
+  // Bloqueado "de verdad" (sin aviso de permiso): ya vinculado o verificando.
+  const bloqueadoPorVinculo = puedeImportar && (yaVinculado || verificandoVinculo);
 
   return (
     <div
@@ -52,11 +73,19 @@ export default function KpiRow({
       {/* Acciones principales */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
         <button
-          onClick={puedeImportar ? onImportClick : onSinPermiso}
+          // Sin permiso: el click sigue mostrando el aviso (comportamiento
+          // previo). Ya vinculado: el botón queda deshabilitado de verdad.
+          onClick={puedeVincular ? onImportClick : bloqueadoPorVinculo || yaVinculado ? undefined : onSinPermiso}
+          disabled={yaVinculado || bloqueadoPorVinculo}
+          aria-disabled={!puedeVincular}
           className={`bg-white border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left transition-colors ${
-            puedeImportar
+            puedeVincular
               ? "border-ys-border cursor-pointer hover:border-ys-green-border"
-              : "border-ys-border opacity-60 cursor-not-allowed"
+              : yaVinculado
+                ? "border-ys-green-border cursor-default"
+                : verificandoVinculo && puedeImportar
+                  ? "border-ys-border cursor-wait"
+                  : "border-ys-border opacity-60 cursor-not-allowed"
           }`}
         >
             <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-green-bg flex items-center justify-center">
@@ -65,17 +94,21 @@ export default function KpiRow({
               </svg>
             </div>
             <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div className="text-sm font-extrabold text-ys-text">Vincular WhatsApp</div>
+              <div className="text-sm font-extrabold text-ys-text">
+                {yaVinculado ? "WhatsApp vinculado" : "Vincular WhatsApp"}
+              </div>
               <div className="text-[12.5px] text-ys-dim font-medium truncate">
-                Conectá tu celular para importar y analizar tus conversaciones.
+                {yaVinculado
+                  ? "Tu celular ya está conectado a YamaSend."
+                  : "Conectá tu celular para importar y analizar tus conversaciones."}
               </div>
             </div>
           <span
             className={`flex-none text-[13px] font-bold rounded-[10px] px-4 py-2.5 ${
-              puedeImportar ? "text-white bg-ys-green" : "text-ys-faint bg-ys-el2"
+              puedeVincular ? "text-white bg-ys-green" : "text-ys-faint bg-ys-el2"
             }`}
           >
-            Vincular
+            {yaVinculado ? "Vinculado" : "Vincular"}
           </span>
         </button>
 

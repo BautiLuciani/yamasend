@@ -3,6 +3,10 @@
 import { useState } from "react";
 import type { Contact, ChatPayload } from "@/lib/types";
 import { ScoreBadge } from "./ContactsTable";
+import {
+  CATEGORIA_TEMPLATE_UNICA,
+  CATEGORIA_TEMPLATE_UNICA_LABEL,
+} from "@/lib/templates/config";
 
 function initialsOf(nombre: string): string {
   const parts = nombre.trim().split(/\s+/).filter(Boolean);
@@ -594,11 +598,17 @@ function RespuestaAnaliticaCard({ titulo, filas }: RespuestaAnaliticaCardProps) 
 // a nivel API (MARKETING, UTILITY, AUTHENTICATION — "Servicio" no es una
 // categoría válida en la API de templates, aunque algunas plataformas lo
 // usen como término de UX; mandarla causa PARAM_INVALID en YCloud).
+//
+// 2026-10: por ahora la única categoría es Marketing (lib/templates/config.ts)
+// y el chat ya no muestra esta tarjeta en conversaciones nuevas. Se conserva
+// para que el historial de conversaciones viejas se siga viendo bien, pero
+// solo con Marketing; Utilidad/Autenticación quedan comentadas para
+// reactivarlas fácil.
 // -------------------------------------------------------------------------
 const CATEGORIAS_TEMPLATE = [
-  { key: "marketing", label: "Marketing" },
-  { key: "utility", label: "Utilidad" },
-  { key: "authentication", label: "Autenticación" },
+  { key: CATEGORIA_TEMPLATE_UNICA, label: CATEGORIA_TEMPLATE_UNICA_LABEL },
+  // { key: "utility", label: "Utilidad" },
+  // { key: "authentication", label: "Autenticación" },
 ] as const;
 
 interface ElegirCategoriaTemplateCardProps {
