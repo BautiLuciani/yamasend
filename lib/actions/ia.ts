@@ -27,7 +27,10 @@ import {
   getCampaignsForTenant,
 } from "@/lib/actions/campaigns";
 import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
-import { CATEGORIA_TEMPLATE_UNICA } from "@/lib/templates/config";
+import {
+  CATEGORIA_TEMPLATE_UNICA,
+  validarVariablesTemplate,
+} from "@/lib/templates/config";
 import {
   generarEmbeddingConsulta,
   sincronizarEmbeddingsLeads,
@@ -808,6 +811,12 @@ async function aplicarCorreccionEnFlujo(
 
   // ---- Categoría (solo templates) ------------------------------------
   if (campo === "categoria") {
+    if (flowState.kind !== "crear_template") {
+      return {
+        text: "La categoría se elige cuando creás un template. Seguimos donde estábamos.",
+        flowState,
+      };
+    }
     // Por ahora todos los templates son de Marketing (ver
     // lib/templates/config.ts): no hay otra categoría a la cual cambiar, así
     // que se avisa y se sigue en el mismo paso sin perder el progreso.
@@ -1619,6 +1628,16 @@ export async function usarSugerenciaTemplateAction(
   }
 
   const { nombre, categoria, contenido } = flowState.draft;
+
+  // Variables deshabilitadas (lib/templates/config.ts). El generador de n8n
+  // ya tiene prohibido usarlas, pero si alguna vez se cuela una, se frena acá
+  // en vez de llegar a la tarjeta de confirmación y fallar al enviar.
+  if (validarVariablesTemplate(contenido)) {
+    return {
+      text: "Esa propuesta trae variables como {{1}}, que por ahora no se pueden usar. Contame de nuevo qué querés comunicar y te armo otra versión sin variables.",
+      flowState: { ...flowState, step: "template_esperando_descripcion" },
+    };
+  }
 
   return {
     text: `Perfecto. Revisá cómo quedó "${nombre}" antes de confirmar.`,

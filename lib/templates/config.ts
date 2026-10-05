@@ -32,8 +32,11 @@ export const CATEGORIA_TEMPLATE_UNICA_LABEL = "Marketing";
 
 export const VARIABLES_TEMPLATE_HABILITADAS = false;
 
-/** Detecta variables estilo Meta: {{1}}, {{ 2 }}, etc. */
-const REGEX_VARIABLE_TEMPLATE = /\{\{\s*\d+\s*\}\}/;
+/**
+ * Detecta variables estilo Meta: posicionales ({{1}}, {{ 2 }}) y también con
+ * nombre ({{nombre}}), que Meta igual interpreta como parámetro.
+ */
+const REGEX_VARIABLE_TEMPLATE = /\{\{[^{}]*\}\}/;
 
 export function contieneVariablesTemplate(texto: string): boolean {
   return REGEX_VARIABLE_TEMPLATE.test(texto);

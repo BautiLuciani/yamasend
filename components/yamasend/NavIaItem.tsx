@@ -31,7 +31,7 @@ export default function NavIaItem({
     <button
       onClick={onClick}
       aria-current={isActive ? "page" : undefined}
-      className={`group relative w-full flex items-center gap-3 rounded-xl text-left cursor-pointer transition-all bg-ys-dark text-ys-card shadow-[var(--shadow-card)] ${
+      className={`group relative w-full flex items-center gap-3 rounded-xl text-left cursor-pointer transition-all bg-ys-dark text-ys-card shadow-[var(--shadow-card)] outline-none focus-visible:ring-2 focus-visible:ring-ys-green focus-visible:ring-offset-2 focus-visible:ring-offset-ys-card ${
         isMobile ? "px-3 py-[13px] text-[15px]" : "px-3 py-[11px] text-sm hover:-translate-y-px"
       } font-bold ${
         isActive

@@ -35,6 +35,12 @@ interface KpiRowProps {
    * desde el celular el botón vuelve a habilitarse solo.
    */
   yaVinculado?: boolean;
+  /**
+   * true mientras AppShell todavía no sabe si hay un WhatsApp vinculado
+   * (carga inicial). Se bloquea el botón para que un usuario ya vinculado no
+   * alcance a abrir el QR en ese instante.
+   */
+  verificandoVinculo?: boolean;
   importing: boolean;
 }
 
@@ -48,12 +54,15 @@ export default function KpiRow({
   puedeImportar = true,
   onSinPermiso,
   yaVinculado = false,
+  verificandoVinculo = false,
   importing,
 }: KpiRowProps) {
   const isTotalOn = activeFilters.size === 0;
   // El botón de vincular solo está activo si tiene permiso Y todavía no hay
   // un celular vinculado.
-  const puedeVincular = puedeImportar && !yaVinculado;
+  const puedeVincular = puedeImportar && !yaVinculado && !verificandoVinculo;
+  // Bloqueado "de verdad" (sin aviso de permiso): ya vinculado o verificando.
+  const bloqueadoPorVinculo = puedeImportar && (yaVinculado || verificandoVinculo);
 
   return (
     <div
@@ -66,15 +75,17 @@ export default function KpiRow({
         <button
           // Sin permiso: el click sigue mostrando el aviso (comportamiento
           // previo). Ya vinculado: el botón queda deshabilitado de verdad.
-          onClick={puedeVincular ? onImportClick : yaVinculado ? undefined : onSinPermiso}
-          disabled={yaVinculado}
+          onClick={puedeVincular ? onImportClick : bloqueadoPorVinculo || yaVinculado ? undefined : onSinPermiso}
+          disabled={yaVinculado || bloqueadoPorVinculo}
           aria-disabled={!puedeVincular}
           className={`bg-white border rounded-2xl px-4 md:px-[18px] py-4 flex items-center gap-3.5 text-left transition-colors ${
             puedeVincular
               ? "border-ys-border cursor-pointer hover:border-ys-green-border"
               : yaVinculado
                 ? "border-ys-green-border cursor-default"
-                : "border-ys-border opacity-60 cursor-not-allowed"
+                : verificandoVinculo && puedeImportar
+                  ? "border-ys-border cursor-wait"
+                  : "border-ys-border opacity-60 cursor-not-allowed"
           }`}
         >
             <div className="w-10 h-10 flex-none rounded-[13px] bg-ys-green-bg flex items-center justify-center">

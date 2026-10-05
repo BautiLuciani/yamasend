@@ -917,7 +917,7 @@ export function registrarToolsYamasend(server: McpServer): void {
   // deja opcional para no romper a un cliente que ya la mandaba, y el valor
   // que se usa siempre es CATEGORIA_TEMPLATE_UNICA.
   const categoriaSchema = z
-    .enum([CATEGORIA_TEMPLATE_UNICA])
+    .string()
     .optional()
     .describe(
       "Categoría de Meta. Por ahora la única disponible es 'marketing' (promociones, novedades); se puede omitir.",

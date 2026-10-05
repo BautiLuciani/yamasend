@@ -1747,6 +1747,7 @@ export default function AppShell({
         puedeImportar={user.permisos.importar_contactos}
         onSinPermiso={() => avisarSinPermiso("importar contactos")}
         yaVinculado={wahaConectada === true}
+        verificandoVinculo={wahaConectada === null}
       />
 
       {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
