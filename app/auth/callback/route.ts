@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { procesarPrimerIngreso } from "@/lib/actions/auth";
-import { COOKIE_NEXT_OAUTH, nextOauthSeguro } from "@/lib/utils/redireccionOauth";
+import { linkInvalido, redirigirTrasLogin } from "@/lib/auth/postLogin";
 
 /**
- * Adonde Supabase redirige después de que el usuario clickea el magic link
- * (login o registro, son el mismo link). Acá recién existe la sesión real.
+ * Link viejo (?code=, flujo PKCE). Solo funciona en el MISMO navegador que
+ * pidió el link, porque el canje necesita el "code verifier" que quedó en
+ * una cookie de ese navegador. Los mails nuevos apuntan a /auth/confirm
+ * (token_hash), que funciona desde cualquier navegador; esta ruta queda
+ * para los links que ya se mandaron y para no romper nada.
  */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -14,49 +15,10 @@ export async function GET(request: Request) {
   if (code) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
-
-    if (!error) {
-      const resultado = await procesarPrimerIngreso();
-      if ("error" in resultado) {
-        const url = new URL("/register", origin);
-        url.searchParams.set("error", resultado.error);
-        const respuesta = NextResponse.redirect(url);
-        respuesta.cookies.delete(COOKIE_NEXT_OAUTH);
-        return respuesta;
-      }
-      // Si el login arrancó desde "Conectar" en Claude / ChatGPT, se vuelve a
-      // la pantalla de consentimiento en vez de ir al panel. Solo para
-      // cuentas ya operativas: una cuenta nueva sigue su onboarding normal.
-      const nextOauth =
-        resultado.destino === "/panel"
-          ? nextOauthSeguro(decodeCookie(request.headers.get("cookie"), COOKIE_NEXT_OAUTH))
-          : null;
-
-      const respuesta = NextResponse.redirect(new URL(nextOauth ?? resultado.destino, origin));
-      respuesta.cookies.delete(COOKIE_NEXT_OAUTH);
-      return respuesta;
-    }
+    if (!error) return redirigirTrasLogin(request, origin);
   }
 
-  // Sin código o inválido/vencido: el link ya se usó, o expiró.
-  const url = new URL("/login", origin);
-  url.searchParams.set("error", "El link ya no es válido. Pedí uno nuevo.");
-  const respuesta = NextResponse.redirect(url);
-  respuesta.cookies.delete(COOKIE_NEXT_OAUTH);
-  return respuesta;
-}
-
-function decodeCookie(header: string | null, nombre: string): string | null {
-  if (!header) return null;
-  for (const parte of header.split(";")) {
-    const [k, ...v] = parte.trim().split("=");
-    if (k === nombre) {
-      try {
-        return decodeURIComponent(v.join("="));
-      } catch {
-        return null;
-      }
-    }
-  }
-  return null;
+  // Sin código o inválido/vencido: el link ya se usó, expiró o se abrió en
+  // otro navegador.
+  return linkInvalido(origin);
 }
