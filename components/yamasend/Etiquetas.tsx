@@ -6,6 +6,7 @@ import {
   aplicarSugerenciaAction,
   buscarPorEtiquetasAction,
   crearAudienciaPorEtiquetasAction,
+  crearEtiquetaAction,
   eliminarEtiquetaAction,
   etiquetarPorFiltroAction,
   getEtiquetasAction,
@@ -14,13 +15,19 @@ import {
   type BusquedaEtiquetas,
   type EtiquetasResumen,
 } from "@/lib/actions/etiquetas";
-import { esEtiquetaDeSistema, mostrarEtiqueta, normalizarEtiqueta } from "@/lib/etiquetas/etiquetas";
+import {
+  esEtiquetaDeSistema,
+  mostrarEtiqueta,
+  normalizarEtiqueta,
+  ORIGEN_LABEL,
+  type OrigenSugerencia,
+} from "@/lib/etiquetas/etiquetas";
 import EtiquetaChip from "./EtiquetaChip";
 
 /**
  * Submenú "Etiquetas" de Audiencias.
  *
- * Las etiquetas se acumulan: elegir "cliente" + "eukanuba" + "nuevo" muestra a
+ * Las etiquetas se acumulan: elegir "cliente" + "producto" + "nuevo" muestra a
  * los contactos que tienen LAS TRES, y de ahí se arma una audiencia. "Cliente"
  * la pone sola el sistema a quien recibió una confirmación de compra; el resto
  * se pone a mano o aceptando las sugerencias.
@@ -45,6 +52,7 @@ export default function Etiquetas({ puedeCrear, onSinPermiso, onAudienciaCreada,
   const [filtro, setFiltro] = useState<string[]>([]);
   const [busqueda, setBusqueda] = useState<BusquedaEtiquetas | null>(null);
   const [nueva, setNueva] = useState("");
+  const [propia, setPropia] = useState("");
   const [renombrando, setRenombrando] = useState<string | null>(null);
   const [nombreNuevo, setNombreNuevo] = useState("");
   const [ocupado, setOcupado] = useState<string | null>(null);
@@ -153,6 +161,24 @@ export default function Etiquetas({ puedeCrear, onSinPermiso, onAudienciaCreada,
     onAudienciaCreada(r.lista, r.cantidad);
   }
 
+  /** Crea una etiqueta propia, aunque todavía no tenga contactos. */
+  async function crearEtiqueta() {
+    const n = normalizarEtiqueta(propia);
+    if (!n) {
+      setMsg({ type: "err", text: "Escribí un nombre válido (letras, números y espacios, hasta 30 caracteres)." });
+      return;
+    }
+    const ok = await ejecutar(
+      "crear",
+      async () => {
+        const r = await crearEtiquetaAction(n);
+        return { error: r.error };
+      },
+      `Etiqueta «${mostrarEtiqueta(n)}» creada. Ponésela a tus contactos desde Contactos (seleccionalos y tocá «Etiquetar») o desde el detalle de cada uno.`,
+    );
+    if (ok) setPropia("");
+  }
+
   async function renombrar(de: string) {
     const a = normalizarEtiqueta(nombreNuevo);
     if (!a) {
@@ -184,7 +210,7 @@ export default function Etiquetas({ puedeCrear, onSinPermiso, onAudienciaCreada,
   return (
     <div className="flex flex-col gap-5">
       <div className="text-[13.5px] font-medium text-ys-muted leading-[1.55] max-w-[760px]">
-        Etiquetá a tus contactos y combinalas para armar audiencias: <b className="text-ys-text">cliente + eukanuba + nuevo</b>{" "}
+        Etiquetá a tus contactos y combinalas para armar audiencias: <b className="text-ys-text">cliente + producto + nuevo</b>{" "}
         muestra a quienes tienen las tres. «Cliente» se pone sola a quien recibió un «gracias por tu compra» o una
         confirmación de pago.
       </div>
@@ -204,34 +230,45 @@ export default function Etiquetas({ puedeCrear, onSinPermiso, onAudienciaCreada,
         </div>
       )}
 
-      {/* Sugeridas */}
+      {/* Sugeridas, agrupadas por tipo */}
       {resumen.sugerencias.length > 0 && (
-        <div className="flex flex-col gap-2.5">
-          <div className="text-[14px] font-extrabold text-ys-text">Etiquetas sugeridas</div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-            {resumen.sugerencias.map((s) => (
-              <div key={s.etiqueta} className="bg-white border border-ys-border rounded-xl p-3.5 flex flex-col gap-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <EtiquetaChip nombre={s.etiqueta} />
-                  <span className="text-[12px] font-bold text-ys-muted">{s.cantidad} contactos</span>
-                </div>
-                <div className="text-[12.5px] font-medium text-ys-muted leading-[1.45]">{s.descripcion}</div>
-                <div className="flex gap-2">
-                  <button type="button" disabled={ocupado === `sug-${s.etiqueta}`} onClick={() => aplicarSugerencia(s.etiqueta)} className={BTN_PRIMARIO}>
-                    {ocupado === `sug-${s.etiqueta}` ? "Aplicando…" : "Aplicar"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={ocupado !== null}
-                    onClick={() => ejecutar(`ign-${s.etiqueta}`, () => ignorarSugerenciaAction(s.etiqueta), "Listo, no te la volvemos a sugerir.")}
-                    className={BTN_SECUNDARIO}
-                  >
-                    Ignorar
-                  </button>
+        <div className="flex flex-col gap-4">
+          <div className="text-[14px] font-extrabold text-ys-text">
+            Etiquetas sugeridas <span className="font-mono text-ys-muted font-bold">({resumen.sugerencias.length})</span>
+          </div>
+          {(["comportamiento", "texto", "producto", "tema"] as OrigenSugerencia[]).map((origen) => {
+            const grupo = resumen.sugerencias.filter((s) => s.origen === origen);
+            if (grupo.length === 0) return null;
+            return (
+              <div key={origen} className="flex flex-col gap-2">
+                <div className="text-[11px] font-extrabold tracking-[0.06em] uppercase text-ys-dimmer">{ORIGEN_LABEL[origen]}</div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                  {grupo.map((s) => (
+                    <div key={s.etiqueta} className="bg-white border border-ys-border rounded-xl p-3.5 flex flex-col gap-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <EtiquetaChip nombre={s.etiqueta} />
+                        <span className="text-[12px] font-bold text-ys-muted">{s.cantidad} contactos</span>
+                      </div>
+                      <div className="text-[12.5px] font-medium text-ys-muted leading-[1.45]">{s.descripcion}</div>
+                      <div className="flex gap-2">
+                        <button type="button" disabled={ocupado === `sug-${s.etiqueta}`} onClick={() => aplicarSugerencia(s.etiqueta)} className={BTN_PRIMARIO}>
+                          {ocupado === `sug-${s.etiqueta}` ? "Aplicando…" : "Aplicar"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={ocupado !== null}
+                          onClick={() => ejecutar(`ign-${s.etiqueta}`, () => ignorarSugerenciaAction(s.etiqueta), "Listo, no te la volvemos a sugerir.")}
+                          className={BTN_SECUNDARIO}
+                        >
+                          Ignorar
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 
@@ -247,9 +284,22 @@ export default function Etiquetas({ puedeCrear, onSinPermiso, onAudienciaCreada,
             </button>
           )}
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={propia}
+            onChange={(e) => setPropia(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && crearEtiqueta()}
+            maxLength={30}
+            placeholder="Crear etiqueta propia (ej: vip, mayorista, evento)"
+            className="flex-1 min-w-[220px] max-w-[380px] border border-ys-border rounded-[10px] px-3 py-2 text-[13px] font-medium text-ys-text outline-none focus:border-ys-green"
+          />
+          <button type="button" disabled={!propia.trim() || ocupado === "crear"} onClick={crearEtiqueta} className={BTN_PRIMARIO}>
+            {ocupado === "crear" ? "Creando…" : "Crear etiqueta"}
+          </button>
+        </div>
         {resumen.etiquetas.length === 0 ? (
           <div className="text-[13px] font-semibold text-ys-muted bg-ys-el2 rounded-[10px] px-3.5 py-3 leading-[1.5]">
-            Todavía no hay etiquetas. Podés ponerlas desde el detalle de un contacto o aceptar alguna sugerencia.
+            Todavía no hay etiquetas. Creá una, ponelas desde el detalle de un contacto o aceptá alguna sugerencia.
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -282,6 +332,12 @@ export default function Etiquetas({ puedeCrear, onSinPermiso, onAudienciaCreada,
               <div className="text-[20px] font-extrabold tracking-[-0.02em] text-ys-text leading-none">
                 {busqueda.cantidad} <span className="text-[13px] font-bold text-ys-muted">contacto{busqueda.cantidad === 1 ? "" : "s"} con todas</span>
               </div>
+              {busqueda.cantidad === 0 && (
+                <div className="text-[12.5px] font-medium text-ys-dim leading-[1.5]">
+                  Todavía no hay contactos con {filtro.length === 1 ? "esa etiqueta" : "todas esas etiquetas"}. Seleccioná contactos en
+                  Contactos y tocá «Etiquetar», o ponésela desde el detalle de cada uno.
+                </div>
+              )}
               {busqueda.muestra.length > 0 && (
                 <div className="text-[12.5px] font-medium text-ys-dim leading-[1.5]">
                   {busqueda.muestra.map((m) => m.nombre || "Sin nombre").join(", ")}

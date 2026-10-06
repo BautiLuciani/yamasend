@@ -68,6 +68,28 @@ export async function getPerfilNegocioAction(): Promise<PerfilNegocio | null> {
 }
 
 /**
+ * Completa "Datos de la empresa" con lo que la IA ya detectó en los chats: solo
+ * celdas vacías, y nunca las que ya se completaron o que el usuario borró a
+ * propósito (ver docs/perfil-negocio-autocompletar.sql). Idempotente: se llama
+ * al abrir Perfil, para que un perfil ya analizado no quede sin copiar.
+ */
+export async function completarPerfilDesdeChatsAction(): Promise<{
+  campos: number;
+  productos: number;
+  error: string | null;
+}> {
+  const membership = await getCurrentMembership();
+  if (!membership?.tenantId) return { campos: 0, productos: 0, error: null };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("yamas_send_perfil_autocompletar");
+  if (error) return { campos: 0, productos: 0, error: "No se pudo completar el perfil." };
+
+  const r = data as { ok?: boolean; campos?: string[]; productos_agregados?: number } | null;
+  return { campos: r?.campos?.length ?? 0, productos: r?.productos_agregados ?? 0, error: null };
+}
+
+/**
  * Dispara (o re-dispara) la investigación de las conversaciones. Devuelve
  * cuando el workflow ya reservó la fila en estado "generando", para que el
  * polling de la UI no lea el perfil viejo como si fuera el nuevo.
@@ -80,6 +102,20 @@ export async function regenerarPerfilNegocioAction(): Promise<{
   if (!gate.ok || !gate.tenantId) {
     return { error: gate.error ?? "Tu cuenta no tiene un WhatsApp vinculado." };
   }
+
+  // Sin WhatsApp conectado no hay chats que analizar: el flujo de n8n se cortaría
+  // en su primer paso sin avisar. Mejor decirlo acá.
+  const supabase = await createClient();
+  const { data: sesion } = await supabase
+    .from("yamas_send_waha_sessions")
+    .select("estado")
+    .eq("tenant_id", gate.tenantId)
+    .maybeSingle();
+  if (sesion?.estado !== "conectada") {
+    return { error: "Tu WhatsApp todavía no está conectado, así que no hay chats para analizar." };
+  }
+
+  const antes = await getPerfilNegocioAction();
 
   try {
     const res = await fetch(PERFIL_NEGOCIO_WEBHOOK_URL, {
@@ -99,13 +135,15 @@ export async function regenerarPerfilNegocioAction(): Promise<{
     };
   }
 
-  // El workflow marca la fila "generando" en el primer paso (menos de 1s).
-  for (let i = 0; i < 5; i++) {
+  // El workflow marca la fila "generando" en el primer paso (menos de 1s). Si no
+  // aparece, el análisis no arrancó y hay que decirlo en vez de dejar la pantalla igual.
+  for (let i = 0; i < 6; i++) {
     await new Promise((r) => setTimeout(r, 1000));
     const actual = await getPerfilNegocioAction();
-    if (actual?.estado === "generando") break;
+    if (actual?.estado === "generando") return { error: null };
+    if (actual?.generadoAt && actual.generadoAt !== antes?.generadoAt) return { error: null };
   }
-  return { error: null };
+  return { error: "No se pudo iniciar el análisis. Probá de nuevo en un momento." };
 }
 
 /** Recuerda que el usuario ignoró estas novedades para no volver a sugerirlas. */
@@ -410,10 +448,13 @@ export async function conversarPerfilAction(
     };
   } catch (e) {
     console.error("[perfil] error en conversarPerfilAction:", e);
+    const faltaClave = e instanceof Error && e.message.includes("OPENAI_API_KEY");
     return {
       respuesta: "",
       propuesta: null,
-      error: "El asistente no pudo responder. Probá de nuevo en unos segundos.",
+      error: faltaClave
+        ? "El asistente todavía no está configurado en este entorno (falta la clave de OpenAI)."
+        : "El asistente no pudo responder. Probá de nuevo en unos segundos.",
     };
   }
 }

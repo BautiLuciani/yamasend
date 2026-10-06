@@ -265,6 +265,9 @@ export async function importarArchivoPerfilAction(
     return { propuesta, resumen, error: null };
   } catch (e) {
     console.error("[perfil] error importando archivo:", e);
+    if (e instanceof Error && e.message.includes("OPENAI_API_KEY")) {
+      return vacio("La lectura de archivos todavía no está configurada en este entorno (falta la clave de OpenAI).");
+    }
     return vacio("No se pudo leer el archivo. Probá con otro formato o más tarde.");
   }
 }

@@ -1,7 +1,7 @@
 # Etiquetas
 
 Submenú **Etiquetas** dentro de **Audiencias**. Las etiquetas son **acumulables**: un contacto
-puede ser `cliente` + `eukanuba` + `nuevo`, y elegir las tres en el filtro muestra a quienes
+puede ser `cliente` + `producto` + `nuevo`, y elegir las tres en el filtro muestra a quienes
 tienen **todas**. De ahí se arma una audiencia con un click.
 
 ## «Cliente»
@@ -25,8 +25,9 @@ incluye el del propio negocio (otras sucursales).
 
 | Forma | Dónde |
 |---|---|
+| Crear una etiqueta propia | Audiencias > Etiquetas > **Crear etiqueta propia**. Existe aunque todavía no tenga contactos (catálogo, máx. 100). |
 | A mano, un contacto | Detalle del contacto > **Etiquetas** (se eligen entre las existentes o se escribe una nueva). |
-| A mano, varios | Audiencias > Etiquetas: elegir etiquetas, y «Agregar otra etiqueta a estos N contactos». |
+| A mano, varios | Contactos: seleccionar contactos y tocar **Etiquetar**; o Audiencias > Etiquetas: elegir etiquetas y «Agregar otra etiqueta a estos N contactos». |
 | Sugeridas | Audiencias > Etiquetas > **Etiquetas sugeridas**: Aplicar o Ignorar (lo ignorado no vuelve). |
 | Automática | Solo `cliente`. |
 
@@ -35,25 +36,41 @@ raros (`lib/etiquetas/etiquetas.ts` replica a la función SQL). Máximo 20 por c
 
 ### Qué se sugiere
 
-- **nuevo**: aparecieron por primera vez en los últimos 30 días (al menos 2 contactos).
-- **frecuente**: 3 o más compras detectadas.
-- **Una por marca o producto del catálogo** (`royal canin`, `eukanuba`): las palabras de los nombres
-  de tus productos que aparecen en el interés detectado de al menos 2 contactos. Un par de palabras
-  consecutivas reemplaza a las sueltas (se sugiere `royal canin`, no `royal` y `canin`). Se descartan
-  las que cubren a más del 40% de los contactos (no segmentan: «mascotas» en una tienda de mascotas)
-  y las palabras genéricas (`adulto`, `perro` de tamaño, `alimento`...).
+Las sugerencias salen de lo que se sabe de los contactos, en cuatro grupos. No dependen del rubro.
 
-Nunca se sugiere una etiqueta que ya está en uso ni una que se ignoró.
+**Por comportamiento**
+- `nuevo`: aparecieron por primera vez en los últimos 30 días.
+- `cliente nuevo`: hicieron su primera compra en los últimos 30 días.
+- `frecuente`: 3 o más compras detectadas.
+- `compró una vez`: una sola compra detectada.
+- `interesado`: temperatura caliente y todavía no compraron.
+- `dormido`: no hablan hace más de 60 días.
+- `reclamo`: actitud negativa en la conversación.
+
+**Por lo que preguntan**: `mayorista`, `busca empleo` (no confunde «ropa de trabajo» con empleo) y `proveedor`.
+
+**Por producto**: marcas o productos del catálogo del perfil que aparecen en el interés de al menos 2
+contactos. Un par de palabras consecutivas reemplaza a las sueltas (`royal canin`, no `royal` y `canin`).
+
+**Por tema**: las palabras clave que más se repiten en los chats (por ejemplo `envío` o `descuento`). Se
+juntan singular y plural, se conserva la palabra con tildes, y se descartan las genéricas (`compra`,
+`pedido`...), las del propio rubro del negocio (`mascotas` en una tienda de mascotas) y las que ya salen
+como producto.
+
+En todos los grupos se descarta lo que ya está en uso, lo que el usuario ignoró y lo que no segmenta
+(cubre a más del 40% de los contactos). Cada regla tiene un mínimo de contactos para aparecer.
 
 ## Piezas
 
 | Pieza | Dónde |
 |---|---|
 | Columna `etiquetas` en `yamas_send_leads` y funciones SQL | `docs/etiquetas.sql` |
-| Lógica pura (normalización, filtro acumulable, sugerencias) | `lib/etiquetas/etiquetas.ts` — prueba: `node --experimental-strip-types --import ./scripts/register-alias.mjs scripts/test-etiquetas.mts` |
+| Lógica pura (normalización, filtro acumulable, sugerencias) | `lib/etiquetas/etiquetas.ts` — prueba: `node --experimental-strip-types --import ./scripts/register-alias.mjs scripts/test-etiquetas.mts` y `scripts/test-etiquetas-sugerencias.mts` |
 | Acciones del servidor | `lib/actions/etiquetas.ts` |
 | Pantalla del submenú | `components/yamasend/Etiquetas.tsx` (pestañas en `Audiencias.tsx`) |
 | Chip de etiqueta | `components/yamasend/EtiquetaChip.tsx` |
+| Etiquetar varios contactos desde Contactos | `components/yamasend/EtiquetarSeleccionModal.tsx` |
+| Catálogo de etiquetas propias (SQL) | `docs/etiquetas-catalogo.sql` |
 | Etiquetas en Contactos | `ContactsTable.tsx` (chips) y `ContactDetailModal.tsx` (editor) |
 
 ## Seguridad

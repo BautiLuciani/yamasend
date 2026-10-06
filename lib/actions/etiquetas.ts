@@ -46,6 +46,9 @@ interface FilaLead {
   producto_servicio: string | null;
   necesidad: string | null;
   keywords_detectados: string[] | null;
+  temperatura_efectiva: string | null;
+  sentimiento: string | null;
+  ultimo_mensaje_at: string | null;
 }
 
 const ERRORES_RPC: Record<string, string> = {
@@ -54,6 +57,8 @@ const ERRORES_RPC: Record<string, string> = {
   sin_contactos: "No hay contactos para etiquetar.",
   etiqueta_de_sistema: "«Cliente» la administra el sistema: se asigna sola a quien compra.",
   sin_perfil: "No se pudo completar la acción.",
+  demasiadas_etiquetas: "Llegaste al máximo de 100 etiquetas. Eliminá alguna que no uses.",
+  no_existe: "Esa etiqueta ya no existe.",
 };
 
 function mensajeDe(codigo: string | undefined): string {
@@ -64,7 +69,7 @@ async function cargarContactos(tenantId: string) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("yamas_send_leads")
-    .select("id, nombre, etiquetas, producto_servicio, necesidad, keywords_detectados")
+    .select("id, nombre, etiquetas, producto_servicio, necesidad, keywords_detectados, temperatura_efectiva, sentimiento, ultimo_mensaje_at")
     .eq("tenant_id", tenantId)
     .eq("activo", true)
     .limit(MAX_CONTACTOS);
@@ -89,6 +94,9 @@ async function cargarParaSugerir(tenantId: string) {
   const compras = new Map<string, number>(
     ((compradores.data ?? []) as { lead_id: string; compras: number }[]).map((r) => [r.lead_id, r.compras]),
   );
+  const primeraCompra = new Map<string, string>(
+    ((compradores.data ?? []) as { lead_id: string; primera_compra: string }[]).map((r) => [r.lead_id, r.primera_compra]),
+  );
 
   const contactos: ContactoParaSugerir[] = filas.map((l) => ({
     id: l.id,
@@ -96,12 +104,19 @@ async function cargarParaSugerir(tenantId: string) {
     textoInteres: [l.producto_servicio, l.necesidad, (l.keywords_detectados ?? []).join(" ")].filter(Boolean).join(" "),
     primerContactoAt: primer.get(l.id) ?? null,
     compras: compras.get(l.id) ?? 0,
+    primeraCompraAt: primeraCompra.get(l.id) ?? null,
+    temperatura: l.temperatura_efectiva,
+    sentimiento: l.sentimiento,
+    ultimoMensajeAt: l.ultimo_mensaje_at,
+    keywords: l.keywords_detectados ?? [],
   }));
 
   return {
     filas,
     contactos,
     productos: (negocio?.productos ?? []).map((p) => p.nombre).filter(Boolean),
+    // Palabras del propio negocio: no sirven como tema ("mascotas" en una tienda de mascotas).
+    palabrasNegocio: [negocio?.nombreEmpresa, negocio?.rubro, negocio?.descripcionNegocio].filter((x): x is string => !!x),
     ignoradas: (config.data?.ignoradas ?? []) as string[],
     error,
   };
@@ -132,12 +147,24 @@ export async function getEtiquetasAction(): Promise<EtiquetasResumen> {
     if (r?.ok) clientesNuevos = (r.creados ?? 0) + (r.etiquetados ?? 0);
   }
 
-  const { filas, contactos, productos, ignoradas, error } = await cargarParaSugerir(membership.tenantId);
+  const { filas, contactos, productos, palabrasNegocio, ignoradas, error } = await cargarParaSugerir(membership.tenantId);
   if (error) return vacio(error);
 
-  const sugerencias = sugerirEtiquetas({ contactos, productos, ignoradas, ahora: Date.now() });
+  // Las etiquetas creadas a mano que todavía no tienen contactos también se listan (con 0).
+  const { data: catalogo } = await supabase
+    .from("yamas_send_etiquetas_catalogo")
+    .select("nombre")
+    .eq("tenant_id", membership.tenantId);
+  const enUso = contarEtiquetas(contactos);
+  const nombresEnUso = new Set(enUso.map((e) => e.nombre));
+  const sinContactos: ConteoEtiqueta[] = ((catalogo ?? []) as { nombre: string }[])
+    .filter((c) => !nombresEnUso.has(c.nombre))
+    .map((c) => ({ nombre: c.nombre, cantidad: 0, sistema: false }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const sugerencias = sugerirEtiquetas({ contactos, productos, palabrasNegocio, ignoradas, ahora: Date.now() });
   return {
-    etiquetas: contarEtiquetas(contactos),
+    etiquetas: [...enUso, ...sinContactos],
     sugerencias: sugerencias.map(({ contactoIds: _ids, ...resto }) => {
       void _ids;
       return resto;
@@ -176,6 +203,19 @@ async function llamarRpc(nombre: string, args: Record<string, unknown>): Promise
   const r = data as { ok?: boolean; error?: string; afectados?: number } | null;
   if (!r?.ok) return { afectados: 0, error: mensajeDe(r?.error) };
   return { afectados: r.afectados ?? 0, error: null };
+}
+
+/** Crea una etiqueta personalizada, aunque todavía no tenga contactos. */
+export async function crearEtiquetaAction(nombre: string): Promise<{ nombre: string | null; error: string | null }> {
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok) return { nombre: null, error: gate.error };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("yamas_send_etiquetas_crear", { p_nombre: nombre });
+  if (error) return { nombre: null, error: "No se pudo completar la acción." };
+  const r = data as { ok?: boolean; error?: string; nombre?: string } | null;
+  if (!r?.ok) return { nombre: null, error: mensajeDe(r?.error) };
+  return { nombre: r.nombre ?? null, error: null };
 }
 
 /** Pone etiquetas a contactos puntuales (por ejemplo, desde el detalle de un contacto). */
@@ -235,9 +275,9 @@ export async function aplicarSugerenciaAction(etiqueta: string): Promise<Resulta
   const nombre = normalizarEtiqueta(etiqueta);
   if (!nombre) return { afectados: 0, error: mensajeDe("etiquetas_invalidas") };
 
-  const { contactos, productos, ignoradas, error } = await cargarParaSugerir(gate.tenantId);
+  const { contactos, productos, palabrasNegocio, ignoradas, error } = await cargarParaSugerir(gate.tenantId);
   if (error) return { afectados: 0, error };
-  const sug = sugerirEtiquetas({ contactos, productos, ignoradas, ahora: Date.now() }).find((s) => s.etiqueta === nombre);
+  const sug = sugerirEtiquetas({ contactos, productos, palabrasNegocio, ignoradas, ahora: Date.now() }).find((s) => s.etiqueta === nombre);
   if (!sug) return { afectados: 0, error: "Esa sugerencia ya no está disponible." };
 
   let total = 0;
@@ -267,7 +307,7 @@ export interface CrearAudienciaEtiquetasResult {
 
 /**
  * Arma una audiencia con todos los contactos que tienen TODAS las etiquetas
- * elegidas (cliente + eukanuba + nuevo). Si ya hay una con el mismo nombre se
+ * elegidas (cliente + producto + nuevo). Si ya hay una con el mismo nombre se
  * actualiza, en vez de crear una nueva en cada click.
  */
 export async function crearAudienciaPorEtiquetasAction(

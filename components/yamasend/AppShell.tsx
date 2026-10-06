@@ -40,8 +40,9 @@ import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import Perfil from "./Perfil";
 import CampanasSugeridas from "./CampanasSugeridas";
+import EtiquetarSeleccionModal from "./EtiquetarSeleccionModal";
 import { etiquetarContactosAction, quitarEtiquetasAction } from "@/lib/actions/etiquetas";
-import { contarEtiquetas, normalizarEtiquetas } from "@/lib/etiquetas/etiquetas";
+import { contarEtiquetas, mostrarEtiqueta, normalizarEtiquetas } from "@/lib/etiquetas/etiquetas";
 import type { CrearAudienciaSugeridaResult } from "@/lib/actions/campanas_sugeridas";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
@@ -548,6 +549,7 @@ export default function AppShell({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [etiquetarSelOpen, setEtiquetarSelOpen] = useState(false);
   // Audiencias recién armadas por las campañas sugeridas. La prop `lists` viene
   // del Server Component y tarda un refresh en incluirlas; mientras tanto el
   // asistente de campañas las necesita ya, así que se suman acá (sin duplicar).
@@ -1163,6 +1165,16 @@ export default function AppShell({
     setWizardInitial({ nombre: r.nombreCampana, listaId: lista.id, templateId: null, paso: 2 });
     setWizardOpen(true);
     router.refresh();
+  }
+
+  // Pone una etiqueta a todos los contactos seleccionados en Contactos.
+  async function handleEtiquetarSeleccion(etiqueta: string): Promise<string | null> {
+    const r = await etiquetarContactosAction([...sel], [etiqueta]);
+    if (r.error) return r.error;
+    notificar(`Etiqueta «${mostrarEtiqueta(etiqueta)}» agregada a ${r.afectados} contacto${r.afectados === 1 ? "" : "s"}.`);
+    setEtiquetarSelOpen(false);
+    router.refresh();
+    return null;
   }
 
   // Abre el editor de templates con el mensaje sugerido ya escrito.
@@ -1853,6 +1865,14 @@ export default function AppShell({
           </button>
           <div className="ml-auto flex items-center gap-2.5">
             <button
+              onClick={() =>
+                user.permisos.crear_audiencias ? setEtiquetarSelOpen(true) : avisarSinPermiso("etiquetar contactos")
+              }
+              className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
+            >
+              Etiquetar
+            </button>
+            <button
               onClick={() => setAddToGroupOpen(true)}
               className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
             >
@@ -1920,6 +1940,14 @@ export default function AppShell({
             Deseleccionar
           </button>
           <div className="w-full flex items-center gap-2 mt-1">
+            <button
+              onClick={() =>
+                user.permisos.crear_audiencias ? setEtiquetarSelOpen(true) : avisarSinPermiso("etiquetar contactos")
+              }
+              className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
+            >
+              Etiquetar
+            </button>
             <button
               onClick={() => setAddToGroupOpen(true)}
               className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
@@ -2181,6 +2209,15 @@ export default function AppShell({
           setWizardInitial(null);
           setWizardOpen(true);
         }}
+      />
+
+      <EtiquetarSeleccionModal
+        key={etiquetarSelOpen ? "abierto" : "cerrado"}
+        open={etiquetarSelOpen}
+        cantidad={sel.size}
+        etiquetasExistentes={contarEtiquetas(contacts.map((c) => ({ etiquetas: c.etiquetas ?? [] }))).map((e) => e.nombre)}
+        onConfirmar={handleEtiquetarSeleccion}
+        onClose={() => setEtiquetarSelOpen(false)}
       />
 
       <ContactDetailModal

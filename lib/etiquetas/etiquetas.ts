@@ -2,7 +2,7 @@ import { normalizarTexto } from "@/lib/perfil/novedades";
 
 /**
  * Etiquetas de contactos. Se acumulan: un contacto puede ser "cliente" +
- * "eukanuba" + "nuevo", y una audiencia por etiquetas es "todos los contactos
+ * "producto" + "nuevo", y una audiencia por etiquetas es "todos los contactos
  * que tengan TODAS las etiquetas elegidas".
  *
  * Lógica pura (sin red ni base) para poder probarla. La normalización replica
@@ -25,6 +25,10 @@ const MIN_CONTACTOS_SUGERENCIA = 2;
 /** Una etiqueta que cubre a más de esta fracción de los contactos no segmenta nada ("mascotas" en una tienda de mascotas). */
 const MAX_COBERTURA = 0.4;
 const MAX_SUGERENCIAS_PRODUCTO = 8;
+const MAX_SUGERENCIAS_TEMA = 6;
+const MAX_SUGERENCIAS = 18;
+/** Días sin hablar a partir de los cuales un contacto está "dormido". */
+const DIAS_DORMIDO = 60;
 /** Un bigrama reemplaza a sus palabras sueltas si cubre al menos esta fracción de sus contactos. */
 const FRACCION_BIGRAMA = 0.8;
 
@@ -120,12 +124,30 @@ export interface ContactoParaSugerir extends ConEtiquetas {
   primerContactoAt?: string | null;
   /** Compras detectadas en los chats. */
   compras?: number;
+  /** Fecha de su primera compra detectada (ISO). */
+  primeraCompraAt?: string | null;
+  /** Temperatura del análisis: caliente, tibio o frio. */
+  temperatura?: string | null;
+  sentimiento?: string | null;
+  /** Último mensaje (ISO). */
+  ultimoMensajeAt?: string | null;
+  /** Palabras clave detectadas en el análisis. */
+  keywords?: string[];
 }
+
+export type OrigenSugerencia = "comportamiento" | "texto" | "producto" | "tema";
+
+export const ORIGEN_LABEL: Record<OrigenSugerencia, string> = {
+  comportamiento: "Por comportamiento",
+  texto: "Por lo que preguntan",
+  producto: "Por producto",
+  tema: "Por tema",
+};
 
 export interface SugerenciaEtiqueta {
   etiqueta: string;
   descripcion: string;
-  origen: "nuevo" | "frecuente" | "producto";
+  origen: OrigenSugerencia;
   /** Contactos a los que se les pondría. Se calculan en el servidor y no viajan al navegador. */
   contactoIds: string[];
   cantidad: number;
@@ -138,6 +160,32 @@ export interface EntradaSugerencias {
   /** Sugerencias que el usuario ya ignoró. */
   ignoradas: string[];
   ahora: number;
+  /**
+   * Palabras del rubro, la descripción y el nombre del negocio. No sirven como tema:
+   * "mascotas" en una tienda de mascotas está en casi todos los chats.
+   */
+  palabrasNegocio?: string[];
+}
+
+/** Palabras comerciales demasiado genéricas para ser un tema. */
+const PALABRAS_TEMA_GENERICAS = new Set([
+  "compra", "comprar", "pedido", "producto", "consulta", "interes", "informacion", "cliente", "venta",
+  "vender", "quiero", "necesito", "servicio", "atencion", "hola", "gracias", "saludo", "mensaje", "chat",
+  "contacto", "persona", "negocio", "tienda", "empresa", "cosa", "tema", "pregunta", "duda", "ayuda",
+]);
+
+/** Singular simple: "gatos" -> "gato", "promociones" -> "promocion". Une las dos formas en una sola. */
+function singular(palabra: string): string {
+  if (palabra.length < 5) return palabra;
+  if (palabra.endsWith("ones")) return palabra.slice(0, -2);
+  if (palabra.endsWith("s") && !palabra.endsWith("ss")) return palabra.slice(0, -1);
+  return palabra;
+}
+
+function dias(iso: string | null | undefined, ahora: number): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  return Number.isNaN(t) ? null : (ahora - t) / DIA_MS;
 }
 
 function palabrasUtiles(nombre: string): string[] {
@@ -162,52 +210,141 @@ function frasesDeProducto(nombre: string): { unigramas: string[]; bigramas: stri
 }
 
 function contieneFrase(textoNormalizado: string, frase: string): boolean {
-  // Con espacios alrededor para no confundir "gato" con "gatos" ni con "magato".
+  // Con espacios alrededor para no confundir "gato" con "magato"; acepta el plural simple.
   return ` ${textoNormalizado} `.includes(` ${frase} `) || ` ${textoNormalizado} `.includes(` ${frase}s `);
 }
 
+interface ReglaComportamiento {
+  etiqueta: string;
+  descripcion: string;
+  minimo: number;
+  cumple: (c: ContactoParaSugerir, ahora: number) => boolean;
+}
+
+/** Reglas que dependen de cómo se comportó el contacto (no del negocio). */
+const REGLAS_COMPORTAMIENTO: ReglaComportamiento[] = [
+  {
+    etiqueta: "nuevo",
+    descripcion: `Escribieron por primera vez en los últimos ${DIAS_NUEVO} días.`,
+    minimo: 2,
+    cumple: (c, ahora) => (dias(c.primerContactoAt, ahora) ?? Infinity) <= DIAS_NUEVO,
+  },
+  {
+    etiqueta: "cliente nuevo",
+    descripcion: `Hicieron su primera compra en los últimos ${DIAS_NUEVO} días.`,
+    minimo: 2,
+    cumple: (c, ahora) => (dias(c.primeraCompraAt, ahora) ?? Infinity) <= DIAS_NUEVO,
+  },
+  {
+    etiqueta: "frecuente",
+    descripcion: `Tienen ${COMPRAS_FRECUENTE} o más compras detectadas.`,
+    minimo: 2,
+    cumple: (c) => (c.compras ?? 0) >= COMPRAS_FRECUENTE,
+  },
+  {
+    etiqueta: "compró una vez",
+    descripcion: "Tienen una sola compra detectada: buenos candidatos para volver a contactar.",
+    minimo: 3,
+    cumple: (c) => (c.compras ?? 0) === 1,
+  },
+  {
+    etiqueta: "interesado",
+    descripcion: "Muestran mucho interés en la conversación y todavía no compraron.",
+    minimo: 3,
+    cumple: (c) => c.temperatura === "caliente" && (c.compras ?? 0) === 0 && !c.etiquetas.includes(ETIQUETA_CLIENTE),
+  },
+  {
+    etiqueta: "dormido",
+    descripcion: `No hablan con vos hace más de ${DIAS_DORMIDO} días.`,
+    minimo: 3,
+    cumple: (c, ahora) => (dias(c.ultimoMensajeAt, ahora) ?? 0) > DIAS_DORMIDO,
+  },
+  {
+    etiqueta: "reclamo",
+    descripcion: "Mostraron una actitud negativa en la conversación: conviene atenderlos primero.",
+    minimo: 2,
+    cumple: (c) => c.sentimiento === "negativo",
+  },
+];
+
+interface ReglaTexto {
+  etiqueta: string;
+  descripcion: string;
+  minimo: number;
+  patron: RegExp;
+}
+
+/** Reglas por lo que el contacto pregunta o dice (sobre el texto ya normalizado: sin acentos). */
+const REGLAS_TEXTO: ReglaTexto[] = [
+  {
+    etiqueta: "mayorista",
+    descripcion: "Preguntan por compras al por mayor o reventa.",
+    minimo: 2,
+    patron: /\b(mayorist\w*|por mayor|reventa|revendedor\w*)\b/,
+  },
+  {
+    etiqueta: "busca empleo",
+    descripcion: "Consultan por trabajo o mandan su currículum: conviene dejarlos afuera de las campañas de venta.",
+    minimo: 2,
+    patron: /\b(oportunidad\w* laboral\w*|busqueda laboral|busco trabajo|empleo|curriculum|cv)\b/,
+  },
+  {
+    etiqueta: "proveedor",
+    descripcion: "Te ofrecen productos o servicios: no son clientes.",
+    minimo: 2,
+    patron: /\b(proveedor\w*|distribuidor\w*|propuesta (comercial|de trabajo))\b/,
+  },
+];
+
 /**
- * Sugiere etiquetas a partir de lo que se sabe de los contactos:
- *  - "nuevo": aparecieron por primera vez en los últimos 30 días.
- *  - "frecuente": 3 o más compras detectadas.
- *  - una por marca o producto del catálogo que aparece en el interés de al menos
- *    2 contactos ("royal canin", "eukanuba"...).
- * Nunca sugiere una etiqueta que ya está en uso ni una que el usuario ignoró.
+ * Sugiere etiquetas a partir de lo que se sabe de los contactos, en cuatro grupos:
+ *  - Por comportamiento: nuevo, cliente nuevo, frecuente, compró una vez, interesado,
+ *    dormido y reclamo.
+ *  - Por lo que preguntan: mayorista, busca empleo y proveedor.
+ *  - Por producto: una por marca o producto del catálogo que aparece en el interés
+ *    de al menos 2 contactos ("royal canin", "eukanuba").
+ *  - Por tema: las palabras clave que más se repiten en los chats ("envío", "descuento"),
+ *    sin las genéricas ni las del propio rubro.
+ * Nunca sugiere una etiqueta que ya está en uso, que el usuario ignoró, ni que no
+ * segmenta (cubre a más del 40% de los contactos).
  */
 export function sugerirEtiquetas(entrada: EntradaSugerencias): SugerenciaEtiqueta[] {
   const { contactos, ahora } = entrada;
   const enUso = new Set(contactos.flatMap((c) => c.etiquetas));
   const ignoradas = new Set(entrada.ignoradas);
-  const permitida = (e: string) => !enUso.has(e) && !ignoradas.has(e);
+  const usadas = new Set<string>();
+  const permitida = (e: string) => !enUso.has(e) && !ignoradas.has(e) && !usadas.has(e);
   const out: SugerenciaEtiqueta[] = [];
+  const agregar = (s: SugerenciaEtiqueta) => {
+    usadas.add(s.etiqueta);
+    out.push(s);
+  };
 
-  const nuevos = contactos.filter(
-    (c) => c.primerContactoAt && ahora - new Date(c.primerContactoAt).getTime() <= DIAS_NUEVO * DIA_MS,
-  );
-  if (permitida("nuevo") && nuevos.length >= 2) {
-    out.push({
-      etiqueta: "nuevo",
-      descripcion: `Escribieron por primera vez en los últimos ${DIAS_NUEVO} días.`,
-      origen: "nuevo",
-      contactoIds: nuevos.map((c) => c.id),
-      cantidad: nuevos.length,
-    });
+  // 1. Comportamiento
+  for (const r of REGLAS_COMPORTAMIENTO) {
+    if (!permitida(r.etiqueta)) continue;
+    const ids = contactos.filter((c) => r.cumple(c, ahora)).map((c) => c.id);
+    if (ids.length >= r.minimo) {
+      agregar({ etiqueta: r.etiqueta, descripcion: r.descripcion, origen: "comportamiento", contactoIds: ids, cantidad: ids.length });
+    }
   }
 
-  const frecuentes = contactos.filter((c) => (c.compras ?? 0) >= COMPRAS_FRECUENTE);
-  if (permitida("frecuente") && frecuentes.length >= 2) {
-    out.push({
-      etiqueta: "frecuente",
-      descripcion: `Tienen ${COMPRAS_FRECUENTE} o más compras detectadas.`,
-      origen: "frecuente",
-      contactoIds: frecuentes.map((c) => c.id),
-      cantidad: frecuentes.length,
-    });
+  const textos = contactos.map((c) => ({
+    c,
+    t: normalizarTexto([c.textoInteres, ...(c.keywords ?? [])].join(" ")),
+  }));
+
+  // 2. Por lo que preguntan
+  for (const r of REGLAS_TEXTO) {
+    if (!permitida(r.etiqueta)) continue;
+    const ids = textos.filter(({ t }) => t && r.patron.test(t)).map(({ c }) => c.id);
+    if (ids.length >= r.minimo) {
+      agregar({ etiqueta: r.etiqueta, descripcion: r.descripcion, origen: "texto", contactoIds: ids, cantidad: ids.length });
+    }
   }
 
-  // Marcas y productos del catálogo que aparecen en el interés de los contactos.
-  const textos = contactos.map((c) => ({ c, t: normalizarTexto(c.textoInteres) }));
-  const conTexto = textos.filter(({ t }) => t).length;
+  // 3. Marcas y productos del catálogo que aparecen en el interés de los contactos.
+  const interes = contactos.map((c) => ({ c, t: normalizarTexto(c.textoInteres) }));
   const candidatas = new Set<string>();
   const esBigrama = new Set<string>();
   for (const nombre of entrada.productos) {
@@ -220,10 +357,11 @@ export function sugerirEtiquetas(entrada: EntradaSugerencias): SugerenciaEtiquet
   }
 
   const conteos = new Map<string, Set<string>>();
+  const conInteres = interes.filter(({ t }) => t).length;
   for (const frase of candidatas) {
     if (!permitida(frase)) continue;
-    const ids = new Set(textos.filter(({ t }) => t && contieneFrase(t, frase)).map(({ c }) => c.id));
-    if (ids.size >= MIN_CONTACTOS_SUGERENCIA && ids.size <= MAX_COBERTURA * conTexto) conteos.set(frase, ids);
+    const ids = new Set(interes.filter(({ t }) => t && contieneFrase(t, frase)).map(({ c }) => c.id));
+    if (ids.size >= MIN_CONTACTOS_SUGERENCIA && ids.size <= MAX_COBERTURA * conInteres) conteos.set(frase, ids);
   }
 
   // Un par de palabras ("royal canin") reemplaza a sus palabras sueltas cuando casi
@@ -242,7 +380,7 @@ export function sugerirEtiquetas(entrada: EntradaSugerencias): SugerenciaEtiquet
     .slice(0, MAX_SUGERENCIAS_PRODUCTO);
 
   for (const { etiqueta, ids } of deProducto) {
-    out.push({
+    agregar({
       etiqueta,
       descripcion: `Aparece en el interés de ${ids.length} contactos y está en tu catálogo.`,
       origen: "producto",
@@ -251,5 +389,49 @@ export function sugerirEtiquetas(entrada: EntradaSugerencias): SugerenciaEtiquet
     });
   }
 
-  return out;
+  // 4. Temas: palabras clave que se repiten en los chats.
+  const delNegocio = new Set((entrada.palabrasNegocio ?? []).flatMap((p) => normalizarTexto(p).split(" ")).map(singular));
+  const enCatalogo = new Set([...candidatas].flatMap((f) => f.split(" ")).map(singular));
+  const temas = new Map<string, { ids: Set<string>; formas: Map<string, number> }>();
+  let conKeywords = 0;
+  for (const c of contactos) {
+    const claves = new Set<string>();
+    for (const bruta of c.keywords ?? []) {
+      const k = normalizarTexto(bruta);
+      if (k.length < 4 || k.length > MAX_LARGO_ETIQUETA) continue;
+      // Para MOSTRAR se conserva la palabra original (con tildes); para AGRUPAR, la normalizada.
+      const forma = bruta.trim().toLowerCase().replace(/\s+/g, " ");
+      const clave = singular(k);
+      const partes = clave.split(" ");
+      if (partes.some((w) => PALABRAS_TEMA_GENERICAS.has(w) || PALABRAS_NO_ETIQUETA.has(w) || delNegocio.has(w))) continue;
+      if (partes.some((w) => enCatalogo.has(w))) continue;
+      claves.add(clave);
+      const t = temas.get(clave) ?? { ids: new Set<string>(), formas: new Map<string, number>() };
+      t.formas.set(forma, (t.formas.get(forma) ?? 0) + 1);
+      temas.set(clave, t);
+    }
+    if ((c.keywords ?? []).length > 0) conKeywords++;
+    for (const clave of claves) temas.get(clave)!.ids.add(c.id);
+  }
+
+  const deTema = [...temas.values()]
+    .map((t) => ({
+      etiqueta: [...t.formas.entries()].sort((a, b) => b[1] - a[1])[0][0],
+      ids: [...t.ids],
+    }))
+    .filter((t) => permitida(t.etiqueta) && t.ids.length >= 3 && t.ids.length <= MAX_COBERTURA * conKeywords)
+    .sort((a, b) => b.ids.length - a.ids.length || a.etiqueta.localeCompare(b.etiqueta))
+    .slice(0, MAX_SUGERENCIAS_TEMA);
+
+  for (const { etiqueta, ids } of deTema) {
+    agregar({
+      etiqueta,
+      descripcion: `Es un tema que se repite en ${ids.length} conversaciones.`,
+      origen: "tema",
+      contactoIds: ids,
+      cantidad: ids.length,
+    });
+  }
+
+  return out.slice(0, MAX_SUGERENCIAS);
 }
