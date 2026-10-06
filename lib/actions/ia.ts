@@ -458,6 +458,8 @@ async function intentaAudienciaDesdeUltimaLista(
   // solo para "con estos" a secas.
   if (/\b(los|las) que\b|\bque (pregunt|compr|habl|escrib|pidi|quier|consult|dij|mostr)|\b(semana|mes|hoy|ayer|dias|ultimos?|primeros?)\b|\bsolo\b|\bmenos\b|\bsin\b/.test(t)) return null;
   if (detectarFiltroTemperatura(texto)) return null;
+  // "una audiencia por cada uno de estos productos" es por producto, no "con estos".
+  if (/\bcada\b|\bproductos?\b/.test(t)) return null;
 
   const tenantId = await resolverTenantId();
   if (!tenantId) return null;
@@ -1013,6 +1015,13 @@ function detectarPedidoCreacionSimple(
       t,
     );
   if (tieneCriterio) return null;
+
+  // Pedidos de "uno por cada X" ("una audiencia por cada producto", "un
+  // template para cada una") no son una creación en blanco: los resuelve el
+  // agente con crear_audiencias_por_producto / crear_templates_por_producto.
+  // Antes caían acá y abrían el asistente vacío ("¿Cómo querés que se llame?").
+  const esPorCada = /\bcada\b|\bproductos?\b|\bpor (marca|categoria|rubro)s?\b/.test(t);
+  if (esPorCada) return null;
 
   if (/\b(audiencia|lista|grupo)\b/.test(t)) return "audiencia";
   if (/\b(template|plantilla)\b/.test(t)) return "template";
@@ -3334,7 +3343,7 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "abrir_flujo",
       description:
-        "Abre uno de los asistentes guiados de la plataforma. Para CREAR algo nuevo: 'crear_audiencia' (podés pasar un criterio en lenguaje natural), 'crear_template', 'crear_campana', 'importar_contactos'. Para MODIFICAR algo que ya existe: 'editar_audiencia' (renombrar), 'editar_campana' (cambiar nombre, template, audiencia o fecha de envío), 'editar_contacto' (cambiar temperatura). Usá los 'editar_*' cuando el usuario quiera cambiar algo existente, aunque no aclare cuál — el asistente le muestra la lista para que elija. Solo se pueden cambiar template, audiencia y fecha de campañas en borrador o programadas; si ya se envió, el asistente se lo explica al usuario.",
+        "Abre uno de los asistentes guiados de la plataforma. Para CREAR algo nuevo: 'crear_audiencia' (podés pasar un criterio en lenguaje natural), 'crear_template', 'crear_campana', 'importar_contactos'. Para MODIFICAR algo que ya existe: 'editar_audiencia' (renombrar), 'editar_campana' (cambiar nombre, template, audiencia o fecha de envío), 'editar_contacto' (cambiar temperatura). Usá los 'editar_*' cuando el usuario quiera cambiar algo existente, aunque no aclare cuál — el asistente le muestra la lista para que elija. NO lo uses para 'una audiencia / un template por cada producto': para eso están crear_audiencias_por_producto y crear_templates_por_producto. Solo se pueden cambiar template, audiencia y fecha de campañas en borrador o programadas; si ya se envió, el asistente se lo explica al usuario.",
       parameters: {
         type: "object",
         properties: {
@@ -5531,6 +5540,20 @@ async function ejecutarHerramientaAgente(
     }
     if (mencionaTemplate) {
       return { datos: { ok: true }, accion: iniciarFlujoCrearTemplate() };
+    }
+    // El asistente simple arma UNA audiencia en blanco. Si el criterio es
+    // "una por cada producto", se le devuelve al modelo la herramienta
+    // correcta en vez de abrir un asistente que no hace lo pedido.
+    if (
+      mencionaAudiencia &&
+      criterio &&
+      /\bcada\b|\bpor producto/i.test(criterio.normalize("NFD").replace(/[̀-ͯ]/g, ""))
+    ) {
+      return {
+        datos: {
+          error: "Para una audiencia por cada producto no se usa abrir_flujo: llamá a crear_audiencias_por_producto.",
+        },
+      };
     }
     if (mencionaAudiencia) {
       return { datos: { ok: true }, accion: await iniciarFlujoCrearAudiencia(criterio) };
