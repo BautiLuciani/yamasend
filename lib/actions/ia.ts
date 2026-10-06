@@ -5442,7 +5442,10 @@ async function ejecutarHerramientaAgente(
     } else {
       bases = grupos.map((g) => ({ producto: g.nombre, slug: g.slug, descripcion: g.descripcion, ejemplos: g.ejemplos, audienciaNombre: null }));
     }
-    bases = bases.slice(0, 10);
+    // Mismo tope que crear_audiencias_por_producto (12): antes era 10 y, con
+    // 12 audiencias por producto, dos se quedaban sin template sin avisar.
+    const sinLugar = bases.slice(12).map((b) => b.producto);
+    bases = bases.slice(0, 12);
     if (bases.length === 0) {
       return { datos: { error: `No encontré productos para armar templates.${grupos.length ? ` Productos disponibles: ${grupos.map((g) => g.nombre).join(", ")}.` : " El Motor todavía no detectó productos en las conversaciones."}` } };
     }
@@ -5497,7 +5500,11 @@ async function ejecutarHerramientaAgente(
           puedeEnviarMeta
             ? "mandalos todos a aprobación de Meta con un click. Meta suele tardar de minutos a unas horas; te aviso por acá cuando respondan."
             : "guardalos como borradores: tu cuenta todavía no tiene WhatsApp Business conectado, así que por ahora no se pueden mandar a Meta."
-        }`,
+        }${(() => {
+          // Productos que quedaron sin template (tope o el texto no salió): se avisa.
+          const faltan = [...bases.filter((b) => !items.some((i) => i.producto === b.producto)).map((b) => b.producto), ...sinLugar];
+          return faltan.length ? ` No armé template para: ${faltan.join(", ")}; si querés, pedímelos aparte.` : "";
+        })()}`,
         payload: { kind: "confirmar_templates_producto", items, puedeEnviarMeta },
         flowState: { ...IA_FLOW_IDLE, draft: memoriaOut },
       },

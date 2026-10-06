@@ -245,7 +245,8 @@ export async function generarTextosTemplatesPorProducto(opciones: {
   const completion = await openai.chat.completions.create({
     model: "gpt-4o",
     temperature: 0.4,
-    max_tokens: 3500,
+    // Hasta 12 mensajes de ~500 caracteres: margen para que el JSON no se corte.
+    max_tokens: 5000,
     response_format: {
       type: "json_schema",
       json_schema: {
