@@ -280,6 +280,45 @@ export async function setTemperaturaManualAction(
 }
 
 /**
+ * Le pone nombre a un contacto (pensado sobre todo para los "Sin nombre").
+ * Lo resuelve la RPC yamas_send_renombrar_contacto (tenant y permiso
+ * importar_contactos del lado de la base), que guarda el nombre en
+ * nombre_manual de leads y contactos: un trigger hace que ese nombre gane
+ * siempre, aunque después entre un nombre de WhatsApp o un nuevo análisis.
+ * Ver docs/migraciones/2026-10-nombre-manual-contactos.sql.
+ */
+export async function renombrarContactoAction(
+  leadId: string,
+  nombre: string,
+): Promise<{ nombre: string | null; error: string | null }> {
+  const gate = await assertPermiso("importar_contactos");
+  if (!gate.ok) return { nombre: null, error: gate.error ?? "No tenés permiso para editar contactos." };
+
+  const limpio = String(nombre ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!limpio) return { nombre: null, error: "El nombre no puede quedar vacío." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("yamas_send_renombrar_contacto", {
+    p_lead_id: leadId,
+    p_nombre: limpio,
+  });
+  if (error) {
+    console.error("[renombrarContactoAction]", error);
+    return { nombre: null, error: "No se pudo guardar el nombre. Probá de nuevo." };
+  }
+  const r = data as { ok?: boolean; error?: string; nombre?: string } | null;
+  if (!r?.ok) {
+    const motivos: Record<string, string> = {
+      sin_permiso: "No tenés permiso para editar contactos.",
+      nombre_vacio: "El nombre no puede quedar vacío.",
+      no_encontrado: "No encontramos ese contacto.",
+    };
+    return { nombre: null, error: motivos[r?.error ?? ""] ?? "No se pudo guardar el nombre." };
+  }
+  return { nombre: r.nombre ?? limpio, error: null };
+}
+
+/**
  * Chequea si el WhatsApp del tenant logueado está vinculado (yamas_send_waha_sessions.estado
  * === "conectada") antes de permitir analizar/sincronizar contactos. Se usa tanto en el
  * modal de análisis (SyncConfigModal, vía AppShell) como en el flujo conversacional de la

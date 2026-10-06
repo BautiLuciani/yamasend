@@ -81,6 +81,7 @@ import {
 import {
   syncAndAnalyzeAction,
   setTemperaturaManualAction,
+  renombrarContactoAction,
   generarTemplateConIAAction,
   isWahaConectadaAction,
 } from "@/lib/actions/sync";
@@ -2401,6 +2402,25 @@ export default function AppShell({
                     return next;
                   });
                 }
+              }
+            : undefined
+        }
+        onRenombrar={
+          user.permisos.importar_contactos
+            ? async (contactId, nombre) => {
+                const result = await renombrarContactoAction(contactId, nombre);
+                if (result.error || !result.nombre) {
+                  notificar(result.error ?? "No se pudo guardar el nombre.", "error");
+                  return false;
+                }
+                const guardado = result.nombre;
+                // Optimista en el modal abierto; el refresh trae la tabla actualizada.
+                setDetailContact((prev) =>
+                  prev && prev.id === contactId ? { ...prev, nombre: guardado } : prev,
+                );
+                notificar(`Nombre guardado: "${guardado}"`);
+                router.refresh();
+                return true;
               }
             : undefined
         }
