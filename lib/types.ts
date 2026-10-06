@@ -224,6 +224,41 @@ export type ChatPayload =
       audienciaId: string;
       nombre: string;
       totalContactos: number;
+      /**
+       * true cuando la creó la IA directo (sin tarjeta de confirmación):
+       * la tarjeta ofrece "Deshacer" por si no era lo que el usuario quería.
+       */
+      deshacible?: boolean;
+    }
+  | {
+      // Varias audiencias creadas de una vez por la IA (una por producto).
+      kind: "audiencias_producto_creadas";
+      items: {
+        audienciaId: string;
+        nombre: string;
+        producto: string;
+        totalContactos: number;
+        /** Ya existía una audiencia igual: no se duplicó (y "Deshacer" no la toca). */
+        yaExistia: boolean;
+      }[];
+    }
+  | {
+      // Textos de template generados por la IA, uno por producto, para
+      // revisar (y editar) antes de mandarlos todos a Meta con un click.
+      kind: "confirmar_templates_producto";
+      items: {
+        producto: string;
+        nombre: string;
+        contenido: string;
+        audienciaNombre: string | null;
+      }[];
+      /** false si la cuenta no tiene WhatsApp Business: solo se pueden guardar como borradores. */
+      puedeEnviarMeta: boolean;
+    }
+  | {
+      kind: "templates_producto_resultado";
+      resultado: "enviado" | "borrador";
+      items: { producto: string; nombre: string; ok: boolean; error: string | null }[];
     }
   | {
       kind: "elegir_categoria_template";
@@ -498,7 +533,49 @@ export interface IAFlowState {
     // para campañas ya persistidas es la columna yamas_send_campanas.origen
     // (más el check canónico motor.drafts), no este campo.
     origenRecomendacion?: "motor";
+    // --- Audiencias automáticas y productos (oct 2026) ---------------------
+    // Última lista de contactos que le mostró el chat (cualquier herramienta:
+    // búsqueda, Motor, temperatura, pendientes, productos), tal cual se
+    // mostró. Es lo que resuelve "armá una audiencia con estos" sin depender
+    // de que el modelo recuerde teléfonos o ids (solo ve el texto). Persiste
+    // entre turnos del agente hasta que otra lista la reemplaza.
+    ultimaListaContactos?: ListaContactosIA;
+    // Productos que piden los clientes, agrupados por la IA. Se guardan para
+    // que la agrupación no cambie de un mensaje a otro en la misma charla.
+    productosDetectados?: { firma: string; grupos: GrupoProductoIA[] };
+    // Audiencias por producto creadas en esta charla (para armar después un
+    // template por cada una).
+    audienciasProducto?: { producto: string; slug: string; audienciaId: string; nombre: string; total: number }[];
+    // Templates por producto generados y todavía no enviados (los muestra la
+    // tarjeta confirmar_templates_producto).
+    templatesProducto?: { producto: string; nombre: string; contenido: string; audienciaNombre: string | null }[];
   };
+}
+
+/** Lista de contactos que el chat le mostró al usuario (ver ultimaListaContactos). */
+export interface ListaContactosIA {
+  /** De dónde salió, en palabras (ej. "Intención de compra (últimos 15)"). */
+  titulo: string;
+  /** Nombre que la IA le pondría a una audiencia con esta lista. */
+  nombreSugerido: string;
+  /**
+   * "fuerte": cada contacto está respaldado por datos concretos (mensaje real,
+   * análisis del Motor, temperatura). "floja": coincidencias aproximadas por
+   * perfil — se muestra la tarjeta para que el usuario elija.
+   */
+  calidad: "fuerte" | "floja";
+  contactos: { telefono: string; nombre: string }[];
+}
+
+/** Un producto o categoría que piden los clientes (ver productos_clientes). */
+export interface GrupoProductoIA {
+  nombre: string;
+  /** Versión corta en minúsculas y con guiones bajos, para nombres de template. */
+  slug: string;
+  descripcion: string;
+  contactos: { telefono: string; nombre: string }[];
+  /** Cómo lo pidieron los clientes (textos tal cual). */
+  ejemplos: string[];
 }
 
 export const IA_FLOW_IDLE: IAFlowState = {

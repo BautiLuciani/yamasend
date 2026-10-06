@@ -54,6 +54,10 @@ import ContactDetailModal from "./ContactDetailModal";
 import ExcluirMotorModal from "./ExcluirMotorModal";
 import ContactosExcluidosLista, { VistaContactosTabs } from "./ContactosExcluidosLista";
 import {
+  deshacerAudienciasIAAction,
+  enviarTemplatesProductoAction,
+} from "@/lib/actions/ia_productos";
+import {
   getExcluidosMotorAction,
   setExclusionMotorAction,
 } from "@/lib/actions/novedades";
@@ -1378,6 +1382,11 @@ export default function AppShell({
       const res = await sendIAMessageAction(text, buildHistory(), iaFlowState);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      // La IA puede dejar audiencias creadas directo desde el chat: se
+      // refresca para que ya aparezcan en Audiencias y en "Ver audiencia".
+      if (res.payload?.kind === "audiencia_creada" || res.payload?.kind === "audiencias_producto_creadas") {
+        router.refresh();
+      }
       // El flujo vuelve a idle sólo cuando el cambio se aplicó: si el paso
       // sigue activo es que faltaba un dato, y no hay nada que refrescar.
       if (estabaEditando && !res.error && res.flowState.kind === null) {
@@ -1489,6 +1498,41 @@ export default function AppShell({
 
   function handleIAVerTemplates() {
     setActiveSection("templates");
+  }
+
+  // "Deshacer" de audiencias que la IA creó directo (una, o las de producto).
+  async function handleIADeshacerAudiencias(ids: string[]): Promise<boolean> {
+    try {
+      const r = await deshacerAudienciasIAAction(ids);
+      if (r.error) {
+        notificar(`No se pudo deshacer: ${r.error}`, "error");
+        return false;
+      }
+      notificar(r.eliminadas === 1 ? "Listo, borré la audiencia." : `Listo, borré las ${r.eliminadas} audiencias.`);
+      router.refresh();
+      return true;
+    } catch {
+      notificar("No se pudo deshacer. Revisá tu conexión y probá de nuevo.", "error");
+      return false;
+    }
+  }
+
+  // Templates por producto: enviar todos a Meta (o guardarlos como borradores).
+  async function handleIAEnviarTemplatesProducto(
+    ediciones: { nombre: string; contenido: string }[],
+    modo: "meta" | "borrador",
+  ) {
+    setIaSending(true);
+    try {
+      const res = await enviarTemplatesProductoAction(iaFlowState, ediciones, modo, iaConversacionIdRef.current);
+      setIaFlowState(res.flowState);
+      addMsg(res.text, res.error ? "error" : "bot", res.payload);
+      router.refresh();
+    } catch {
+      addMsg("Tuve un problema para enviar los templates. Probá de nuevo en unos segundos.", "error");
+    } finally {
+      setIaSending(false);
+    }
   }
 
   async function handleIAElegirAudienciaCampana(audienciaId: string) {
@@ -1843,6 +1887,9 @@ export default function AppShell({
           onComprarCreditos={abrirCompraCreditos}
           onVerCampana={handleIAVerCampana}
           onRevisarMotor={handleIARevisarMotor}
+          onVerAudiencias={() => setActiveSection("grupos")}
+          onDeshacerAudiencias={handleIADeshacerAudiencias}
+          onEnviarTemplatesProducto={handleIAEnviarTemplatesProducto}
           onConfirmarImportarContactos={handleIAConfirmarImportarContactos}
           onCrearAudienciaDesdeBusqueda={handleIACrearAudienciaDesdeBusqueda}
           onCrearAudienciaDesdeImportacion={handleIACrearAudienciaDesdeImportacion}

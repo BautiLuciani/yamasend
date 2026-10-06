@@ -27,6 +27,12 @@ export interface SaveResult {
 export async function saveListAction(
   nombre: string,
   contactosIds: string[],
+  /**
+   * Opcional (lo usa el chat de IA): descripción visible y una etiqueta de
+   * origen en filtro_ai_query (ej. "producto:royal_canin") para poder
+   * reconocer después de qué se armó la audiencia.
+   */
+  extra?: { descripcion?: string | null; filtroAiQuery?: string | null },
 ): Promise<SaveResult> {
   // Gate de permisos: el chequeo real vive acá, no en la UI. Un botón
   // escondido no impide invocar el server action directamente.
@@ -57,6 +63,8 @@ export async function saveListAction(
       tenant_id: cliente.tenant_id,
       nombre,
       contactos_ids: contactosIds,
+      ...(extra?.descripcion ? { descripcion: extra.descripcion.slice(0, 500) } : {}),
+      ...(extra?.filtroAiQuery ? { filtro_ai_query: extra.filtroAiQuery.slice(0, 200) } : {}),
     })
     .select("id")
     .single();

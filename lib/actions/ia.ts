@@ -28,6 +28,16 @@ import {
 } from "@/lib/actions/campaigns";
 import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
 import {
+  crearAudienciaIA,
+  resolverContactosParaAudiencia,
+  textoContactosFuera,
+} from "@/lib/ia/audiencias";
+import {
+  agruparProductosClientes,
+  generarTextosTemplatesPorProducto,
+  nombreTemplateProducto,
+} from "@/lib/ia/productos";
+import {
   CATEGORIA_TEMPLATE_UNICA,
   validarVariablesTemplate,
 } from "@/lib/templates/config";
@@ -37,6 +47,7 @@ import {
   sincronizarEmbeddingsMensajes,
 } from "@/lib/embeddings";
 import type {
+  ListaContactosIA,
   ChatPayload,
   Contact,
   IAFlowState,
@@ -411,48 +422,86 @@ const REGEX_REFERENCIA_RESULTADOS =
 // esta rama no tiene que meterse — eso va por abrir_flujo / editar_recurso.
 const REGEX_NO_ES_CREACION = /\b(borr|elimin|renombr|cambi|edit|modific|actualiz)/i;
 
-function intentaAudienciaDesdeUltimaBusqueda(
+/** "que se llame X", "llamala X", o un nombre entre comillas. */
+function extraerNombrePedido(texto: string): string | null {
+  const comillas = texto.match(/["“«']([^"”»']{2,80})["”»']/);
+  if (comillas) return comillas[1].trim();
+  const llamada = texto.match(/(?:que se llame|llam[aá]la|ponele(?: de nombre)?|con el nombre(?: de)?)\s+(.{2,80})$/i);
+  return llamada ? llamada[1].replace(/[.!?]+$/, "").trim() : null;
+}
+
+/**
+ * Atajo determinístico para "armá una audiencia con esos / con los que me
+ * mostraste": resuelve contra la última lista que mostró el chat (memoria del
+ * servidor), sin depender del modelo. Desde oct 2026 la deja CREADA directo
+ * (mismo criterio que la herramienta del agente: tarjeta solo si pidió
+ * revisar o si la lista es de coincidencias flojas).
+ */
+async function intentaAudienciaDesdeUltimaLista(
   texto: string,
   flowState: IAFlowState,
-): IAResponse | null {
+): Promise<IAResponse | null> {
+  const lista = flowState.draft.ultimaListaContactos;
   const busqueda = flowState.draft.ultimaBusqueda;
-  if (!busqueda || busqueda.contactos.length === 0) return null;
+  if (!lista?.contactos.length && !busqueda?.contactos.length) return null;
 
   const t = texto
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
+    .replace(/[̀-ͯ]/g, "");
 
   if (REGEX_NO_ES_CREACION.test(t)) return null;
   if (!REGEX_ARMAR_AUDIENCIA.test(t)) return null;
   if (!REGEX_REFERENCIA_RESULTADOS.test(t)) return null;
 
-  // Si además nombran una temperatura, se filtra sobre los resultados.
+  const tenantId = await resolverTenantId();
+  if (!tenantId) return null;
+
+  const revisar = /\b(eleg|elij|seleccion|revis|ajust|dejame ver|quiero ver)/.test(t);
+  const args: Record<string, unknown> = { revisar_antes: revisar };
+  const nombre = extraerNombrePedido(texto);
+  if (nombre) args.nombre = nombre;
+
+  // Lista de la memoria (o, en charlas viejas, la última búsqueda).
+  const listaBase: ListaContactosIA | undefined =
+    lista?.contactos.length
+      ? lista
+      : busqueda
+        ? {
+            titulo: `Búsqueda: "${busqueda.consulta.slice(0, 60)}"`,
+            nombreSugerido: nombreAudienciaSugerido(busqueda.consulta.slice(0, 60)),
+            calidad: "floja",
+            contactos: busqueda.contactos.map((c) => ({ telefono: c.telefono.replace(/\D/g, ""), nombre: c.nombre })),
+          }
+        : undefined;
+  if (!listaBase) return null;
+
+  // "Con los calientes de esos": filtro por temperatura sobre la búsqueda.
   const filtroTemp = detectarFiltroTemperatura(texto);
-  const seleccionados = filtroTemp
-    ? busqueda.contactos.filter((c) => c.temperatura === filtroTemp)
-    : busqueda.contactos;
+  if (filtroTemp && busqueda?.contactos.length) {
+    const tels = busqueda.contactos.filter((c) => c.temperatura === filtroTemp).map((c) => c.telefono.replace(/\D/g, ""));
+    if (tels.length === 0) return null;
+    args.telefonos = tels;
+  } else {
+    args.usar_ultima_lista = true;
+  }
 
-  if (seleccionados.length === 0) return null;
-
-  const cuantos =
-    seleccionados.length === 1
-      ? `${seleccionados[0].nombre}`
-      : `los ${seleccionados.length} contactos de la búsqueda`;
+  let r: ResultadoHerramienta;
+  try {
+    r = await ejecutarHerramientaAgente("crear_audiencia_con_estos_contactos", args, tenantId, {
+      ultimaListaContactos: listaBase,
+    });
+  } catch (e) {
+    console.error("[IA] atajo audiencia desde última lista:", e);
+    return null;
+  }
+  if (!r.accion) return null; // error: que lo resuelva el agente con contexto
 
   return {
-    text: `Dale, armemos una audiencia con ${cuantos}. ¿Cómo querés que se llame?`,
+    ...r.accion,
     flowState: {
-      kind: "crear_audiencia",
-      step: "audiencia_esperando_nombre",
-      draft: {
-        contactosIds: seleccionados.map((c) => c.contactoId),
-        contactosIdsResueltos: true,
-        consultaUsada: busqueda.consulta,
-        // Se conserva para que el usuario pueda encadenar otro pedido sobre
-        // la misma búsqueda después de terminar este flujo.
-        ultimaBusqueda: busqueda,
-      },
+      ...r.accion.flowState,
+      draft: { ...memoriaPersistente(flowState.draft), ...r.accion.flowState.draft },
     },
   };
 }
@@ -1038,6 +1087,7 @@ export async function sendIAMessageAction(
           history,
           contextoNegocioFlujo,
           tenantIdFlujo,
+          flowState.draft,
         );
         return {
           ...respuesta,
@@ -1092,7 +1142,7 @@ export async function sendIAMessageAction(
     const respuestaImportacion = intentaAudienciaDesdeUltimaImportacion(texto, flowState);
     if (respuestaImportacion) return respuestaImportacion;
 
-    const respuestaBusqueda = intentaAudienciaDesdeUltimaBusqueda(texto, flowState);
+    const respuestaBusqueda = await intentaAudienciaDesdeUltimaLista(texto, flowState);
     if (respuestaBusqueda) return respuestaBusqueda;
   }
 
@@ -1134,7 +1184,7 @@ export async function sendIAMessageAction(
   const contextoNegocio = await resolverContextoNegocio();
   const tenantId = await resolverTenantId();
   try {
-    return await responderConAgente(texto, history, contextoNegocio, tenantId);
+    return await responderConAgente(texto, history, contextoNegocio, tenantId, flowState.draft);
   } catch (e) {
     console.error("[IA] Error en responderConAgente:", e);
     return {
@@ -1403,7 +1453,8 @@ export async function confirmarCreacionAudienciaAction(
       nombre,
       totalContactos: contactosIds.length,
     },
-    flowState: IA_FLOW_IDLE,
+    // Se conserva la memoria de la charla (última lista, productos).
+    flowState: { ...IA_FLOW_IDLE, draft: memoriaPersistente(flowState.draft) },
   };
 }
 
@@ -1880,10 +1931,17 @@ async function payloadElegirAudienciaCampana(): Promise<ChatPayload> {
   };
 }
 
-async function payloadElegirTemplateCampana(): Promise<ChatPayload> {
+async function payloadElegirTemplateCampana(
+  /** Si la audiencia es de un producto, sus templates van primero. */
+  slugProductoSugerido: string | null = null,
+): Promise<ChatPayload> {
   const tenantId = await resolverTenantId();
   const templates = tenantId ? await getTemplatesForTenant(tenantId) : [];
-  const aprobados = templates.filter((t) => t.status === "verificado");
+  let aprobados = templates.filter((t) => t.status === "verificado");
+  if (slugProductoSugerido) {
+    const esDelProducto = (n: string) => n.toLowerCase().startsWith(`${slugProductoSugerido}_`);
+    aprobados = [...aprobados.filter((t) => esDelProducto(t.nombre)), ...aprobados.filter((t) => !esDelProducto(t.nombre))];
+  }
   return {
     kind: "elegir_template_campana",
     templates: aprobados.map((t) => ({
@@ -1964,9 +2022,31 @@ export async function seleccionarAudienciaCampanaAction(
     };
   }
 
+  // Audiencia armada por producto (filtro_ai_query "producto:<slug>"): se
+  // sugiere primero el template que la IA armó para ese producto.
+  let slugProducto: string | null = null;
+  if (tenantId) {
+    const supabaseSug = await createClient();
+    const { data: meta } = await supabaseSug
+      .from("yamas_send_listas")
+      .select("filtro_ai_query")
+      .eq("id", audienciaId)
+      .eq("tenant_id", tenantId)
+      .maybeSingle();
+    const q = typeof meta?.filtro_ai_query === "string" ? meta.filtro_ai_query : "";
+    if (q.startsWith("producto:")) slugProducto = q.slice("producto:".length) || null;
+  }
+  const payloadTemplates = await payloadElegirTemplateCampana(slugProducto);
+  const sugerido =
+    slugProducto && payloadTemplates.kind === "elegir_template_campana"
+      ? payloadTemplates.templates.find((t) => t.nombre.toLowerCase().startsWith(`${slugProducto}_`))
+      : undefined;
+
   return {
-    text: `"${audiencia.nombre}" (${audiencia.contactosIds.length} contactos). Ahora elegí qué template querés enviar — solo se muestran los ya aprobados por Meta.`,
-    payload: await payloadElegirTemplateCampana(),
+    text: `"${audiencia.nombre}" (${audiencia.contactosIds.length} contactos). Ahora elegí qué template querés enviar — solo se muestran los ya aprobados por Meta.${
+      sugerido ? ` Te sugiero "${sugerido.nombre}", el que armamos para ese producto (está primero en la lista).` : ""
+    }`,
+    payload: payloadTemplates,
     flowState: {
       kind: "crear_campana",
       step: "campana_esperando_template",
@@ -3116,12 +3196,14 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
   // --- Herramientas de ACCIÓN ------------------------------------------
   // A diferencia de las de arriba (que devuelven datos y dejan que el
-  // agente siga razonando), estas ENTREGAN el control a la máquina de
-  // estados determinística: cortan el loop del agente y devuelven un
-  // flowState con su UI de confirmación paso a paso. El agente nunca crea
-  // ni envía nada por su cuenta — solo abre el flujo correspondiente, y el
-  // usuario confirma en pantalla. Esto es deliberado: una alucinación del
-  // modelo no puede terminar en una campaña enviada a contactos reales.
+  // agente siga razonando), estas cortan el loop del agente y devuelven
+  // una respuesta armada por el servidor (texto + tarjeta + flowState).
+  // Desde oct 2026 las AUDIENCIAS se pueden crear directo (crear una
+  // audiencia no le manda nada a nadie y se puede deshacer); sus contactos
+  // siempre se resuelven contra la base, nunca desde lo que diga el modelo.
+  // Templates a Meta y campañas siguen pasando por una tarjeta que el
+  // usuario confirma: una alucinación del modelo no puede terminar en algo
+  // enviado.
   {
     type: "function",
     function: {
@@ -3140,35 +3222,107 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     function: {
       name: "crear_audiencia_con_estos_contactos",
       description:
-        "Abre el flujo de creación de audiencia con contactos concretos. Hay dos formas de indicar los contactos, y conviene usar la que corresponda:\n- filtro_temperatura: la MÁS confiable. Resuelve los contactos en el momento contra la base (ej: el usuario pide una audiencia con 'los calientes' o 'los fríos'). Usala siempre que el grupo se pueda describir por temperatura.\n- contacto_ids: solo si los ids salen de un resultado de listar_contactos o buscar_contactos de ESTE MISMO turno. Los ids NO sobreviven entre mensajes: si el usuario se refiere a contactos de un mensaje anterior, volvé a consultarlos con la herramienta correspondiente antes de usar esta.",
+        "Crea una audiencia con contactos concretos. Por defecto la deja CREADA directamente (no hace falta que el usuario confirme), salvo que el usuario pida elegir o revisar los contactos, o que la lista sea de coincidencias aproximadas: en esos casos el sistema le muestra la tarjeta para seleccionar. Formas de indicar los contactos (usá UNA):\n- usar_ultima_lista: true → los contactos de la ÚLTIMA LISTA que le mostraste al usuario (ver 'ÚLTIMA LISTA DE CONTACTOS MOSTRADA' en tus instrucciones). Es la forma correcta para 'armá una audiencia con estos / con esos / con los que me pasaste'. Si en este mismo turno consultaste una lista nueva (ej. buscar_contactos), esa pasa a ser la última.\n- filtro_temperatura: todos los contactos con esa temperatura ('los calientes', 'los fríos').\n- prioritarios_top: N → los N más prioritarios del Motor a los que se puede escribir ahora.\n- telefonos: teléfonos exactos que devolvió una herramienta, solo si el usuario quiere un SUBCONJUNTO de la última lista (ej. 'solo los 3 primeros').",
       parameters: {
         type: "object",
         properties: {
           nombre: {
             type: "string",
-            description: "Nombre sugerido para la audiencia. Si el usuario no dijo uno, proponé uno descriptivo y corto.",
+            description: "Nombre de la audiencia. Si el usuario dio uno, usalo tal cual. Si no, inventá uno corto y descriptivo de QUIÉNES son (ej. 'Intención de compra · 6/10', 'Preguntaron por Royal Canin'), sin preguntarle.",
+          },
+          usar_ultima_lista: {
+            type: "boolean",
+            description: "true para usar los contactos de la última lista que le mostraste al usuario.",
+          },
+          revisar_antes: {
+            type: "boolean",
+            description: "true SOLO si el usuario pidió elegir, revisar o ajustar a mano los contactos antes de crearla ('quiero elegir yo', 'mostrame para seleccionar', 'dejame revisar la lista'). Si no lo pidió, omitilo.",
           },
           filtro_temperatura: {
             type: "string",
             enum: ["caliente", "tibio", "frio"],
             description: "Incluye todos los contactos activos con esta temperatura, resueltos server-side.",
           },
-          contacto_ids: {
-            type: "array",
-            items: { type: "string" },
-            description: "IDs de contactos de una consulta hecha en este mismo turno (listar_contactos/buscar_contactos). Omitir si usás filtro_temperatura o telefonos.",
-          },
           prioritarios_top: {
             type: "integer",
-            description: "Para 'los N más prioritarios' / 'los N con más prioridad': se resuelven en el momento los N primeros de la prioridad del Motor a los que se puede escribir ahora. Usalo SIEMPRE para ese pedido, en vez de pasar teléfonos.",
+            description: "Para 'los N más prioritarios' / 'los N con más prioridad': se resuelven en el momento los N primeros de la prioridad del Motor a los que se puede escribir ahora.",
           },
           telefonos: {
             type: "array",
             items: { type: "string" },
-            description: "Teléfonos de los contactos, tal cual los devolvió una herramienta del Motor (motor_prioridad_contactos, motor_oportunidades, motor_demanda, conversaciones_pendientes) en este turno o en la conversación. Es la forma correcta de armar una audiencia con contactos del Motor: los teléfonos no cambian entre mensajes.",
+            description: "Teléfonos exactos, tal cual los devolvió una herramienta. Solo para un subconjunto de la última lista.",
+          },
+          contacto_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Compatibilidad: ids de contactos de una consulta de este mismo turno. Preferí usar_ultima_lista.",
           },
         },
         required: ["nombre"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "productos_clientes",
+      description:
+        "Agrupa en PRODUCTOS o CATEGORÍAS lo que los clientes piden en sus conversaciones de WhatsApp (ej. 'Alimento Royal Canin', 'Antipulgas', 'Camas y cuchas'), con cuántos y cuáles contactos pidieron cada uno. Usala para 'qué productos piden mis clientes', 'detectá los productos', 'qué audiencias por producto podría armar', o antes de armar audiencias o templates por producto. Para un ranking de marcas o términos sueltos más mencionados seguí usando motor_demanda.",
+      parameters: {
+        type: "object",
+        properties: {
+          producto: {
+            type: "string",
+            description: "Opcional: el nombre de UN producto de la agrupación para ver solo sus contactos (y dejarlos como la última lista mostrada).",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "crear_audiencias_por_producto",
+      description:
+        "Crea directamente UNA AUDIENCIA POR PRODUCTO con los clientes que pidieron cada producto (según productos_clientes). Usala para 'armame audiencias por producto', 'separá a los clientes por producto', 'creá una audiencia para cada producto'. No pide confirmación: quedan creadas y el usuario puede deshacerlo. Si ya existe una audiencia igual, no la duplica.",
+      parameters: {
+        type: "object",
+        properties: {
+          productos: {
+            type: "array",
+            items: { type: "string" },
+            description: "Opcional: nombres de los productos (tal cual los devolvió productos_clientes) para los que crear audiencia. Omitilo para crear una por cada producto detectado.",
+          },
+          minimo_contactos: {
+            type: "integer",
+            description: "Opcional: no crear audiencias de productos con menos contactos que esto. Por defecto 2.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "crear_templates_por_producto",
+      description:
+        "Genera UN TEMPLATE de marketing por producto (un mensaje de WhatsApp pensado para los clientes que pidieron ese producto) y se los muestra al usuario en una tarjeta para revisarlos y mandarlos todos a aprobación de Meta con un click. Usala para 'armá un template para cada producto / para cada audiencia', 'mandá a aprobar un mensaje por producto'. Por defecto usa los productos de las audiencias por producto que creaste en esta charla; si no hay, los productos detectados. Nunca los envía por su cuenta.",
+      parameters: {
+        type: "object",
+        properties: {
+          productos: {
+            type: "array",
+            items: { type: "string" },
+            description: "Opcional: nombres de los productos para los que generar template. Omitilo para usar los de las audiencias por producto (o todos los detectados).",
+          },
+          indicaciones: {
+            type: "string",
+            description: "Opcional: lo que el usuario pidió para el contenido (ej. 'con 10% de descuento', 'más informal', 'mencioná envío gratis'). Solo lo que dijo el usuario; no agregues promos por tu cuenta.",
+          },
+        },
+        required: [],
       },
     },
   },
@@ -3213,6 +3367,59 @@ interface ResultadoHerramienta {
   // resultados de herramientas no viajan en el historial: sin esto, una
   // referencia como "con ese contacto" no tiene contra qué resolverse.
   memoria?: IAFlowState["draft"];
+  // Lista de contactos que esta herramienta le muestra al usuario, tal cual
+  // (orden y cantidad). Queda como ultimaListaContactos para resolver "armá
+  // una audiencia con estos" sin depender de lo que recuerde el modelo.
+  listaContactos?: ListaContactosIA;
+}
+
+/** Memoria de la charla que el agente necesita para las acciones. */
+interface MemoriaAgente {
+  ultimaListaContactos?: ListaContactosIA;
+  productosDetectados?: IAFlowState["draft"]["productosDetectados"];
+  audienciasProducto?: IAFlowState["draft"]["audienciasProducto"];
+  contexto?: ContextoNegocio | null;
+}
+
+/** Claves de memoria que sobreviven entre turnos del agente. */
+const CLAVES_MEMORIA_PERSISTENTE = ["ultimaListaContactos", "productosDetectados", "audienciasProducto"] as const;
+
+function memoriaPersistente(draft: IAFlowState["draft"] | undefined): IAFlowState["draft"] {
+  const out: IAFlowState["draft"] = {};
+  if (!draft) return out;
+  for (const k of CLAVES_MEMORIA_PERSISTENTE) {
+    if (draft[k] !== undefined) (out as Record<string, unknown>)[k] = draft[k];
+  }
+  return out;
+}
+
+/** "Intención de compra" + fecha corta → nombre de audiencia sugerido. */
+function nombreAudienciaSugerido(base: string): string {
+  const fecha = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    day: "numeric",
+    month: "numeric",
+  }).format(new Date());
+  return `${base.replace(/\s+/g, " ").trim().slice(0, 80)} · ${fecha}`;
+}
+
+/** Lista para memoria, sin teléfonos repetidos y en el orden mostrado. */
+function armarLista(
+  titulo: string,
+  baseNombre: string,
+  calidad: ListaContactosIA["calidad"],
+  filas: { telefono: string | null | undefined; nombre: string | null | undefined }[],
+): ListaContactosIA | undefined {
+  const vistos = new Set<string>();
+  const contactos: ListaContactosIA["contactos"] = [];
+  for (const f of filas) {
+    const tel = (f.telefono ?? "").replace(/\D/g, "");
+    if (!tel || vistos.has(tel)) continue;
+    vistos.add(tel);
+    contactos.push({ telefono: tel, nombre: (f.nombre ?? "").trim() || tel });
+  }
+  if (contactos.length === 0) return undefined;
+  return { titulo, nombreSugerido: nombreAudienciaSugerido(baseNombre), calidad, contactos };
 }
 
 /**
@@ -3313,6 +3520,24 @@ const ETIQUETA_SENAL: Record<string, string> = {
   objecion_precio: "objetaron el precio",
   objecion_tiempo: "objetaron los tiempos",
   objecion_confianza: "mostraron desconfianza",
+};
+
+/** Nombre corto de cada señal, para títulos de listas y nombres de audiencia. */
+const ETIQUETA_LISTA_SENAL: Record<string, string> = {
+  especificacion_demanda: "Detallaron qué buscan",
+  consulta_precio: "Preguntaron precios",
+  consulta_disponibilidad: "Consultaron stock",
+  intencion_compra: "Intención de compra",
+  interes_producto: "Interesados en productos",
+  consulta_condiciones: "Consultaron medios de pago",
+  consulta_logistica: "Consultaron envíos",
+  datos_reserva: "Pasaron datos de compra",
+  descarte: "No les interesó",
+  objecion_precio: "Objetaron el precio",
+  objecion_tiempo: "Objetaron los tiempos",
+  objecion_confianza: "Mostraron desconfianza",
+  restriccion_presupuesto: "Con presupuesto limitado",
+  comparando_competencia: "Comparan con la competencia",
 };
 
 const TITULO_DEMANDA: Record<string, string> = {
@@ -3567,6 +3792,7 @@ async function ejecutarHerramientaAgente(
   nombre: string,
   args: Record<string, unknown>,
   tenantId: string,
+  memoria: MemoriaAgente = {},
 ): Promise<ResultadoHerramienta> {
   const supabase = await createClient();
 
@@ -3608,7 +3834,15 @@ async function ejecutarHerramientaAgente(
       nombre: string; telefono: string; temperatura: string; score_interes: number;
       producto_servicio: string | null; dias_inactivo: number | null;
     }[];
+    const etiquetaTemp =
+      args.temperatura === "frio" ? "fríos" : args.temperatura === "caliente" ? "calientes" : args.temperatura === "tibio" ? "tibios" : null;
     return {
+      listaContactos: armarLista(
+        etiquetaTemp ? `Contactos ${etiquetaTemp}` : "Tus contactos",
+        etiquetaTemp ? `Contactos ${etiquetaTemp}` : "Contactos",
+        "fuerte",
+        filas,
+      ),
       datos: filas,
       tabla: filas.length
         ? {
@@ -3769,7 +4003,17 @@ async function ejecutarHerramientaAgente(
     }
     const telefonosUnicos = Array.from(new Set(filas.map((f) => f.telefono)));
     const mapaContactos = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosUnicos);
+    // Lo que se le muestra al usuario son las primeras `limite` citas: esa es
+    // la lista a la que se refiere con "estos".
+    const filasMostradas = contarTodo ? filas.slice(0, Math.max(limite, 1)) : filas;
+    const etiquetaSenal = tipo ? ETIQUETA_LISTA_SENAL[tipo] : null;
     return {
+      listaContactos: armarLista(
+        etiquetaSenal ? `${etiquetaSenal} (Motor)` : "Oportunidades del Motor",
+        etiquetaSenal ?? "Oportunidades del Motor",
+        "fuerte",
+        filasMostradas.map((f) => ({ telefono: f.telefono, nombre: f.contacto_nombre })),
+      ),
       datos: contarTodo
         ? {
             // Va primero y en forma de frase: con solo el número, el modelo
@@ -3860,6 +4104,12 @@ async function ejecutarHerramientaAgente(
       (resumenCuenta as { prioridad?: Record<string, number> } | null)?.prioridad ?? null;
     if (args.solo_en_espera === true) {
       return {
+        listaContactos: armarLista(
+          "Prioritarios a los que conviene esperar",
+          "Prioritarios en espera",
+          "fuerte",
+          prioritariosEnEspera.map((e) => ({ telefono: e.telefono, nombre: e.contacto })),
+        ),
         datos: {
           como_empezar_la_respuesta: `${prioritariosEnEspera.length} contactos prioritarios no conviene contactarlos ahora:`,
           total: prioritariosEnEspera.length,
@@ -3893,6 +4143,12 @@ async function ejecutarHerramientaAgente(
     const telefonosElegibles = Array.from(new Set(elegibles.map((f) => f.telefono)));
     const mapaContactos = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosElegibles);
     return {
+      listaContactos: armarLista(
+        "Contactos prioritarios del Motor",
+        "Prioritarios del Motor",
+        "fuerte",
+        elegibles.map((f) => ({ telefono: f.telefono, nombre: f.contacto_nombre })),
+      ),
       // El modelo ve todo (elegibles y no-elegibles con su motivo) para
       // poder explicar honestamente por qué alguien no entra en la
       // priorización, en vez de mostrar una lista vacía sin contexto.
@@ -4170,8 +4426,21 @@ async function ejecutarHerramientaAgente(
     const filas = encontrados.slice(0, tope);
     const recortadosPorPresupuesto =
       cupoPresupuesto != null ? Math.max(0, encontrados.length - tope) : 0;
+    // Fuerte solo si la gran mayoría está respaldada por un mensaje real: si
+    // las coincidencias salen del perfil, el usuario tiene que elegir.
+    const respaldados = filas.filter((f) =>
+      f.fuentes?.some((x) => x === "mensaje_semantico" || x === "conversacion"),
+    ).length;
+    const calidadBusqueda: ListaContactosIA["calidad"] =
+      filas.length > 0 && respaldados / filas.length >= 0.8 ? "fuerte" : "floja";
 
     return {
+      listaContactos: armarLista(
+        `Búsqueda: "${consulta.slice(0, 60)}"`,
+        consulta.charAt(0).toUpperCase() + consulta.slice(1, 60),
+        calidadBusqueda,
+        filas.map((f) => ({ telefono: f.telefono, nombre: f.nombre })),
+      ),
       datos: {
         contactos: filas.map((f) => ({
           contacto_id: f.contacto_id,
@@ -4511,6 +4780,14 @@ async function ejecutarHerramientaAgente(
     }
 
     return {
+      listaContactos: texto
+        ? armarLista(
+            `Pidieron "${texto}"`,
+            `Pidieron ${texto}`,
+            "fuerte",
+            filas.map((f) => ({ telefono: f.telefono, nombre: f.contacto_nombre })),
+          )
+        : undefined,
       datos: { ...base, ejemplos: filas.slice(0, 60).map(ejemplo) },
       tabla: filas.length
         ? {
@@ -4597,6 +4874,12 @@ async function ejecutarHerramientaAgente(
       intencion: string;
     }[]).map((f) => ({ ...f, ultimo_mensaje: enmascararDatosSensibles(f.ultimo_mensaje).slice(0, 200) }));
     return {
+      listaContactos: armarLista(
+        "Conversaciones abiertas",
+        "Conversaciones abiertas",
+        "fuerte",
+        filas.map((f) => ({ telefono: f.telefono, nombre: f.contacto_nombre })),
+      ),
       datos: {
         desde: fechaCorta(desde),
         sin_responder: filas.filter((f) => f.estado === "sin_responder").map((f) => ({
@@ -4666,133 +4949,474 @@ async function ejecutarHerramientaAgente(
   }
 
   if (nombre === "crear_audiencia_con_estos_contactos") {
-    const nombreAudiencia =
-      typeof args.nombre === "string" && args.nombre.trim()
-        ? args.nombre.trim().slice(0, 120)
-        : "Nueva audiencia";
-    const idsPedidos = Array.isArray(args.contacto_ids)
-      ? args.contacto_ids.filter((v): v is string => typeof v === "string")
-      : [];
+    // ---------------------------------------------------------------------
+    // Audiencia desde el chat (oct 2026): por defecto queda CREADA directo.
+    // Se muestra la tarjeta de selección solo cuando hay que decidir algo:
+    // el usuario pidió elegir/revisar, la lista es de coincidencias flojas
+    // (por perfil, sin mensaje real), o el grupo es enorme.
+    // ---------------------------------------------------------------------
+    const lista = memoria.ultimaListaContactos;
+    const nombrePedido =
+      typeof args.nombre === "string" && args.nombre.trim() ? args.nombre.trim().slice(0, 100) : null;
+    const revisarAntes = args.revisar_antes === true;
     const filtroTemp =
       typeof args.filtro_temperatura === "string" &&
       ["caliente", "tibio", "frio"].includes(args.filtro_temperatura)
-        ? args.filtro_temperatura
+        ? (args.filtro_temperatura as "caliente" | "tibio" | "frio")
         : null;
-
-    // Camino robusto: si el agente indicó un filtro, resolvemos los
-    // contactos acá contra la base. No depende de que el modelo acarree
-    // ids entre turnos (cosa que no puede hacer: el historial que recibe
-    // es solo texto, sin los resultados de herramientas de turnos
-    // anteriores).
-    let idsValidos: string[];
-    let telefonosPedidos = Array.isArray(args.telefonos)
+    const top = typeof args.prioritarios_top === "number" ? Math.min(Math.max(Math.round(args.prioritarios_top), 1), 100) : 0;
+    const telefonosArg = Array.isArray(args.telefonos)
       ? args.telefonos.filter((v): v is string => typeof v === "string").map((t) => t.replace(/\D/g, "")).filter(Boolean)
       : [];
+    const idsArg = Array.isArray(args.contacto_ids)
+      ? args.contacto_ids.filter((v): v is string => typeof v === "string")
+      : [];
 
-    // "Los N más prioritarios": se resuelve acá contra la prioridad del Motor.
-    // Con teléfonos que el modelo arrastraba de la conversación llegó a armar
-    // la audiencia con los contactos de OTRA respuesta (pendientes, etc.).
-    const top = typeof args.prioritarios_top === "number" ? Math.min(Math.max(Math.round(args.prioritarios_top), 1), 100) : 0;
+    let telefonos: string[] = [];
+    let calidad: ListaContactosIA["calidad"] = "fuerte";
+    let origen = "";
+    let nombreBase = nombrePedido;
+
     if (top > 0) {
+      // "Los N más prioritarios": se resuelve acá contra la prioridad del Motor.
       const { data: prio, error: errPrio } = await supabase.rpc("chat_prioridad_contactos", { p_tenant_id: tenantId, p_limite: 100 });
       if (errPrio) return { datos: { error: errPrio.message } };
-      telefonosPedidos = ((prio ?? []) as {
+      telefonos = ((prio ?? []) as {
         telefono: string; elegible: boolean; contactable: boolean | null;
         when_estado: string | null; earliest_contact_at: string | null;
       }[])
         .filter((f) => f.elegible && estaContactableAhora(f))
         .slice(0, top)
         .map((f) => f.telefono.replace(/\D/g, ""));
-    }
-
-    if (telefonosPedidos.length && !filtroTemp && idsPedidos.length === 0) {
-      // Contactos que vienen del Motor: se resuelven por teléfono contra la
-      // base (los teléfonos sí sobreviven entre mensajes; los ids no).
-      const mapa = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosPedidos.slice(0, 500));
-      idsValidos = Array.from(new Set(Array.from(mapa.values()).map((v) => v.id)));
-      if (idsValidos.length === 0) {
-        return {
-          datos: {
-            error: "Ninguno de esos teléfonos corresponde a un contacto activo de la cuenta. Volvé a consultarlos con la herramienta del Motor y reintentá con los teléfonos que devuelva.",
-          },
-        };
-      }
+      origen = `los ${top} más prioritarios del Motor a los que se puede escribir ahora`;
+      nombreBase ??= nombreAudienciaSugerido(`Top ${top} prioritarios`);
     } else if (filtroTemp) {
       const { data, error } = await supabase
         .from("yamas_send_leads")
-        .select("id")
+        .select("telefono")
         .eq("tenant_id", tenantId)
         .eq("activo", true)
         .or(`temperatura_efectiva.eq.${filtroTemp},and(temperatura_efectiva.is.null,temperatura.eq.${filtroTemp})`)
-        .limit(500);
-
-      if (error) {
-        return { datos: { error: "No se pudieron resolver los contactos por temperatura." } };
+        .limit(1000);
+      if (error) return { datos: { error: "No se pudieron resolver los contactos por temperatura." } };
+      telefonos = (data ?? []).map((r) => String(r.telefono ?? "")).filter(Boolean);
+      if (telefonos.length === 0) {
+        return { datos: { error: `No hay contactos con temperatura "${filtroTemp}" en la cuenta.` } };
       }
-      idsValidos = (data ?? []).map((r) => r.id as string);
-
-      if (idsValidos.length === 0) {
-        return {
-          datos: { error: `No hay contactos con temperatura "${filtroTemp}" en la cuenta.` },
-        };
+      const etiqueta = filtroTemp === "caliente" ? "calientes" : filtroTemp === "tibio" ? "tibios" : "fríos";
+      origen = `los contactos ${etiqueta}`;
+      nombreBase ??= nombreAudienciaSugerido(`Contactos ${etiqueta}`);
+    } else if (telefonosArg.length > 0) {
+      telefonos = telefonosArg;
+      // Si son parte de la última lista, heredan su calidad.
+      if (lista && telefonosArg.every((t) => lista.contactos.some((c) => c.telefono === t))) {
+        calidad = lista.calidad;
+        nombreBase ??= lista.nombreSugerido;
       }
-    } else {
-      if (idsPedidos.length === 0) {
+      origen = "los contactos indicados";
+      nombreBase ??= nombreAudienciaSugerido("Contactos del chat");
+    } else if (args.usar_ultima_lista === true || (idsArg.length === 0 && lista)) {
+      if (!lista || lista.contactos.length === 0) {
         return {
           datos: {
             error:
-              "No indicaste contactos. Si el usuario se refiere a contactos de un mensaje anterior, volvé a consultarlos ahora con listar_contactos (o usá filtro_temperatura) y después llamá a esta herramienta.",
+              "No hay una lista de contactos reciente en esta charla. Consultá primero los contactos con la herramienta que corresponda (buscar_contactos, motor_oportunidades, listar_contactos...) y después creá la audiencia con usar_ultima_lista.",
           },
         };
       }
-
-      // Anti-alucinación: verificamos contra la base que TODOS los ids
-      // existan y pertenezcan a este tenant, en vez de confiar en lo que
-      // devolvió el modelo.
-      const { data: existentes, error } = await supabase
+      telefonos = lista.contactos.map((c) => c.telefono);
+      calidad = lista.calidad;
+      origen = lista.titulo;
+      nombreBase ??= lista.nombreSugerido;
+    } else if (idsArg.length > 0) {
+      // Compatibilidad: ids de este turno, validados contra la base.
+      const { data, error } = await supabase
         .from("yamas_send_leads")
-        .select("id")
+        .select("telefono")
         .eq("tenant_id", tenantId)
         .eq("activo", true)
-        .in("id", idsPedidos.slice(0, 500));
+        .in("id", idsArg.slice(0, 500));
+      if (error) return { datos: { error: "No se pudieron validar los contactos." } };
+      telefonos = (data ?? []).map((r) => String(r.telefono ?? "")).filter(Boolean);
+      origen = "los contactos indicados";
+      nombreBase ??= nombreAudienciaSugerido("Contactos del chat");
+    } else {
+      return {
+        datos: {
+          error:
+            "No indicaste contactos. Usá usar_ultima_lista (la última lista que mostraste), filtro_temperatura o prioritarios_top. Si todavía no consultaste los contactos, hacelo primero.",
+        },
+      };
+    }
 
-      if (error) {
-        return { datos: { error: "No se pudieron validar los contactos." } };
-      }
+    let resueltos: Awaited<ReturnType<typeof resolverContactosParaAudiencia>>;
+    try {
+      resueltos = await resolverContactosParaAudiencia(supabase, tenantId, telefonos);
+    } catch {
+      return { datos: { error: "No se pudieron resolver los contactos. Probá de nuevo." } };
+    }
+    if (resueltos.ids.length === 0) {
+      return {
+        datos: {
+          error:
+            resueltos.excluidos > 0 && resueltos.sinContacto === 0
+              ? "Todos esos contactos están excluidos del motor (el usuario los marcó como que no son clientes). Decíselo."
+              : "Ninguno de esos contactos está disponible todavía como contacto de audiencia. Decíselo con franqueza.",
+        },
+      };
+    }
 
-      idsValidos = (existentes ?? []).map((r) => r.id as string);
+    const fuera = textoContactosFuera(resueltos.excluidos, resueltos.sinContacto);
+    const nombreAudiencia = (nombreBase ?? "Audiencia de la IA").slice(0, 100);
+    const n = resueltos.ids.length;
+    const plural = n === 1 ? "" : "s";
 
-      if (idsValidos.length === 0) {
-        return {
-          datos: {
-            error:
-              "Esos ids no corresponden a contactos de la cuenta (los ids no sobreviven entre mensajes). Volvé a consultar los contactos ahora con listar_contactos — o usá filtro_temperatura si el grupo se puede describir por temperatura — y reintentá con los ids nuevos.",
+    // ---- Tarjeta: el usuario elige ----------------------------------------
+    if (revisarAntes || calidad === "floja" || n > 300) {
+      const motivo = revisarAntes
+        ? `Te dejo preseleccionados los ${n} contacto${plural} para que elijas cuáles quedan`
+        : calidad === "floja"
+          ? `Encontré ${n} contacto${plural} que podrían encajar por lo que venían hablando, pero no todos lo dijeron explícitamente: revisá la lista y quedate con los que correspondan`
+          : `Son ${n} contactos: revisá la lista antes de crearla`;
+      return {
+        datos: { ok: true, contactos_incluidos: n, se_mostro_tarjeta: true },
+        accion: {
+          text: `${motivo}${fuera ? fuera.replace(/^ \(/, " (").replace(/\.$/, "") : ""}. La audiencia se va a llamar "${nombreAudiencia}" (podés pedirme otro nombre).`,
+          payload: { kind: "seleccionar_contactos", preselectedIds: resueltos.ids },
+          flowState: {
+            kind: "crear_audiencia",
+            step: "audiencia_esperando_contactos",
+            draft: { nombre: nombreAudiencia, contactosIds: resueltos.ids, contactosIdsResueltos: true },
           },
-        };
-      }
+        },
+      };
+    }
+
+    // ---- Directo: queda creada ---------------------------------------------
+    const gate = await assertPermiso("crear_audiencias");
+    if (!gate.ok) return { datos: { error: gate.error ?? "No tiene permiso para crear audiencias. Decíselo." } };
+
+    const r = await crearAudienciaIA(supabase, tenantId, {
+      nombre: nombreAudiencia,
+      resueltos,
+      descripcion: `Creada por la IA desde el chat: ${origen}.`.slice(0, 300),
+    });
+    if (!r.ok || !r.id) {
+      return { datos: { error: `No se pudo crear la audiencia: ${r.error ?? "error desconocido"}. Decíselo y ofrecé reintentar.` } };
     }
 
     return {
-      datos: { ok: true, contactos_incluidos: idsValidos.length },
+      datos: { ok: true, audiencia: r.nombre, contactos: r.total },
       accion: {
-        text: `Dale, armemos la audiencia "${nombreAudiencia}" con ${idsValidos.length} contacto${idsValidos.length === 1 ? "" : "s"}.${
-          top > 0
-            ? ` Son los ${idsValidos.length} más prioritarios del Motor a los que se puede escribir ahora (los que conviene esperar quedaron afuera).`
-            : ""
-        } Revisá la selección y confirmá. Después elegís el template aprobado y armás la campaña: no se envía nada sin tu confirmación.`,
+        text: r.yaExistia
+          ? `Esa audiencia ya la había creado hace un momento: "${r.nombre}", con ${r.total} contacto${r.total === 1 ? "" : "s"}. No la dupliqué.`
+          : `Listo, creé la audiencia "${r.nombre}" con ${r.total} contacto${r.total === 1 ? "" : "s"} (${origen})${fuera ? fuera.replace(/\.$/, "") : ""}. Cuando quieras, armamos la campaña con un template aprobado.`,
         payload: {
-          kind: "seleccionar_contactos",
-          preselectedIds: idsValidos,
+          kind: "audiencia_creada",
+          audienciaId: r.id,
+          nombre: r.nombre,
+          totalContactos: r.total,
+          deshacible: !r.yaExistia,
         },
-        flowState: {
-          kind: "crear_audiencia",
-          step: "audiencia_esperando_contactos",
-          draft: {
-            nombre: nombreAudiencia,
-            contactosIds: idsValidos,
-            contactosIdsResueltos: true,
-          },
+        flowState: IA_FLOW_IDLE,
+      },
+    };
+  }
+
+  if (nombre === "productos_clientes") {
+    let agrupacion: Awaited<ReturnType<typeof agruparProductosClientes>>;
+    try {
+      agrupacion = await agruparProductosClientes({
+        openai: getOpenAI(),
+        supabase,
+        tenantId,
+        catalogo: (memoria.contexto?.productos ?? []).map((p) => p.nombre).filter(Boolean),
+        cache: memoria.productosDetectados ?? null,
+      });
+    } catch (e) {
+      console.error("[IA] productos_clientes:", e);
+      return { datos: { error: "No pude analizar los productos ahora. Probá de nuevo en un momento." } };
+    }
+    const { grupos } = agrupacion;
+    const memoriaProductos = { productosDetectados: { firma: agrupacion.firma, grupos } };
+
+    if (grupos.length === 0) {
+      return {
+        datos: {
+          productos: [],
+          explicacion:
+            "El Motor todavía no encontró pedidos de productos concretos en las conversaciones de esta cuenta, así que no hay productos para agrupar.",
         },
+        memoria: memoriaProductos,
+      };
+    }
+
+    const pedido = typeof args.producto === "string" ? args.producto.trim().toLowerCase() : "";
+    if (pedido) {
+      const g =
+        grupos.find((x) => x.nombre.toLowerCase() === pedido || x.slug === pedido) ??
+        grupos.find((x) => x.nombre.toLowerCase().includes(pedido) || pedido.includes(x.nombre.toLowerCase()));
+      if (!g) {
+        return {
+          datos: { error: `No hay un producto "${args.producto}" en la agrupación. Productos disponibles: ${grupos.map((x) => x.nombre).join(", ")}.` },
+          memoria: memoriaProductos,
+        };
+      }
+      return {
+        datos: {
+          producto: g.nombre,
+          descripcion: g.descripcion,
+          como_lo_pidieron: g.ejemplos,
+          total_contactos: g.contactos.length,
+          contactos: g.contactos.slice(0, 60),
+        },
+        tabla: {
+          titulo: `Clientes que pidieron: ${g.nombre}`,
+          columnas: ["Contacto", "Teléfono"],
+          filas: g.contactos.slice(0, MAX_FILAS_TABLA).map((c) => [c.nombre, c.telefono]),
+          totalDisponible: g.contactos.length,
+        },
+        listaContactos: armarLista(`Pidieron ${g.nombre}`, `Interesados en ${g.nombre}`, "fuerte", g.contactos),
+        memoria: memoriaProductos,
+      };
+    }
+
+    return {
+      datos: {
+        total_contactos_que_pidieron_algun_producto: agrupacion.contactosConPedidos,
+        productos: grupos.map((g) => ({
+          producto: g.nombre,
+          contactos: g.contactos.length,
+          incluye: g.descripcion,
+          como_lo_pidieron: g.ejemplos.slice(0, 4),
+        })),
+        nota:
+          "Agrupación hecha por IA sobre lo que los clientes pidieron en sus conversaciones. Un contacto puede estar en más de un producto. Los que no pidieron un producto concreto no están en ninguno.",
+      },
+      tabla: {
+        titulo: "Productos que piden tus clientes",
+        columnas: ["Producto", "Contactos", "Cómo lo piden"],
+        filas: grupos.slice(0, MAX_FILAS_TABLA).map((g) => [g.nombre, String(g.contactos.length), g.ejemplos.slice(0, 3).join(" · ")]),
+        totalDisponible: grupos.length,
+      },
+      memoria: memoriaProductos,
+    };
+  }
+
+  if (nombre === "crear_audiencias_por_producto") {
+    const gate = await assertPermiso("crear_audiencias");
+    if (!gate.ok) return { datos: { error: gate.error ?? "No tiene permiso para crear audiencias. Decíselo." } };
+
+    let agrupacion: Awaited<ReturnType<typeof agruparProductosClientes>>;
+    try {
+      agrupacion = await agruparProductosClientes({
+        openai: getOpenAI(),
+        supabase,
+        tenantId,
+        catalogo: (memoria.contexto?.productos ?? []).map((p) => p.nombre).filter(Boolean),
+        cache: memoria.productosDetectados ?? null,
+      });
+    } catch (e) {
+      console.error("[IA] crear_audiencias_por_producto:", e);
+      return { datos: { error: "No pude analizar los productos ahora. Probá de nuevo en un momento." } };
+    }
+    if (agrupacion.grupos.length === 0) {
+      return { datos: { error: "No hay productos detectados en las conversaciones todavía, así que no se puede armar una audiencia por producto. Decíselo." } };
+    }
+
+    const pedidos = Array.isArray(args.productos)
+      ? args.productos.filter((v): v is string => typeof v === "string").map((v) => v.trim().toLowerCase()).filter(Boolean)
+      : [];
+    const elegidos = pedidos.length
+      ? agrupacion.grupos.filter((g) =>
+          pedidos.some((p) => g.nombre.toLowerCase() === p || g.slug === p || g.nombre.toLowerCase().includes(p) || p.includes(g.nombre.toLowerCase())),
+        )
+      : agrupacion.grupos;
+    if (elegidos.length === 0) {
+      return {
+        datos: { error: `No encontré esos productos en la agrupación. Productos disponibles: ${agrupacion.grupos.map((g) => g.nombre).join(", ")}.` },
+        memoria: { productosDetectados: { firma: agrupacion.firma, grupos: agrupacion.grupos } },
+      };
+    }
+
+    const minimo = typeof args.minimo_contactos === "number" ? Math.max(1, Math.round(args.minimo_contactos)) : 2;
+    const items: { audienciaId: string; nombre: string; producto: string; slug: string; totalContactos: number; yaExistia: boolean }[] = [];
+    const salteados: string[] = [];
+    let excluidosTotal = 0;
+    for (const g of elegidos.slice(0, 12)) {
+      let resueltos: Awaited<ReturnType<typeof resolverContactosParaAudiencia>>;
+      try {
+        resueltos = await resolverContactosParaAudiencia(supabase, tenantId, g.contactos.map((c) => c.telefono));
+      } catch {
+        salteados.push(`${g.nombre} (error al resolver contactos)`);
+        continue;
+      }
+      excluidosTotal += resueltos.excluidos;
+      if (resueltos.ids.length < minimo) {
+        salteados.push(`${g.nombre} (${resueltos.ids.length} contacto${resueltos.ids.length === 1 ? "" : "s"})`);
+        continue;
+      }
+      const r = await crearAudienciaIA(supabase, tenantId, {
+        nombre: `Interesados en ${g.nombre}`,
+        resueltos,
+        descripcion: `Creada por la IA: clientes que pidieron ${g.nombre} (${g.ejemplos.slice(0, 3).join(", ")}).`,
+        filtroAiQuery: `producto:${g.slug}`,
+        reutilizarPorNombre: true,
+      });
+      if (r.ok && r.id) {
+        items.push({ audienciaId: r.id, nombre: r.nombre, producto: g.nombre, slug: g.slug, totalContactos: r.total, yaExistia: r.yaExistia });
+      } else {
+        salteados.push(`${g.nombre} (no se pudo crear)`);
+      }
+    }
+
+    const memoriaOut = {
+      productosDetectados: { firma: agrupacion.firma, grupos: agrupacion.grupos },
+      audienciasProducto: items.map((i) => ({ producto: i.producto, slug: i.slug, audienciaId: i.audienciaId, nombre: i.nombre, total: i.totalContactos })),
+    };
+
+    if (items.length === 0) {
+      return {
+        datos: { error: `No se creó ninguna audiencia: ningún producto llegó al mínimo de ${minimo} contactos. Productos: ${salteados.join(", ")}.` },
+        memoria: memoriaOut,
+      };
+    }
+
+    const nuevas = items.filter((i) => !i.yaExistia).length;
+    const existentes = items.length - nuevas;
+    const texto = [
+      nuevas > 0
+        ? `Listo, creé ${nuevas} audiencia${nuevas === 1 ? "" : "s"}, una por producto, con los clientes que pidieron cada uno.`
+        : "Esas audiencias ya existían, no las dupliqué.",
+      existentes > 0 && nuevas > 0 ? ` ${existentes} ya existía${existentes === 1 ? "" : "n"} y no la${existentes === 1 ? "" : "s"} dupliqué.` : "",
+      salteados.length ? ` No armé audiencia para: ${salteados.join(", ")} (menos de ${minimo} contactos).` : "",
+      excluidosTotal > 0 ? ` Dejé afuera a los contactos excluidos del motor.` : "",
+      " Si querés, te armo un template para cada una y los mandamos a aprobar a Meta.",
+    ].join("");
+
+    return {
+      datos: { ok: true, audiencias: items.length },
+      memoria: memoriaOut,
+      accion: {
+        text: texto,
+        payload: {
+          kind: "audiencias_producto_creadas",
+          items: items.map((i) => ({
+            audienciaId: i.audienciaId,
+            nombre: i.nombre,
+            producto: i.producto,
+            totalContactos: i.totalContactos,
+            yaExistia: i.yaExistia,
+          })),
+        },
+        flowState: { ...IA_FLOW_IDLE, draft: memoriaOut },
+      },
+    };
+  }
+
+  if (nombre === "crear_templates_por_producto") {
+    const gate = await assertPermiso("crear_templates");
+    if (!gate.ok) return { datos: { error: gate.error ?? "No tiene permiso para crear templates. Decíselo." } };
+
+    const pedidos = Array.isArray(args.productos)
+      ? args.productos.filter((v): v is string => typeof v === "string").map((v) => v.trim().toLowerCase()).filter(Boolean)
+      : [];
+
+    // Grupos de producto (para descripción y ejemplos de cómo lo piden).
+    let grupos = memoria.productosDetectados?.grupos ?? [];
+    let firma = memoria.productosDetectados?.firma ?? "";
+    if (grupos.length === 0 || pedidos.length > 0 || !memoria.audienciasProducto?.length) {
+      try {
+        const a = await agruparProductosClientes({
+          openai: getOpenAI(),
+          supabase,
+          tenantId,
+          catalogo: (memoria.contexto?.productos ?? []).map((p) => p.nombre).filter(Boolean),
+          cache: memoria.productosDetectados ?? null,
+        });
+        grupos = a.grupos;
+        firma = a.firma;
+      } catch (e) {
+        console.error("[IA] crear_templates_por_producto:", e);
+        return { datos: { error: "No pude analizar los productos ahora. Probá de nuevo en un momento." } };
+      }
+    }
+
+    type Base = { producto: string; slug: string; descripcion: string; ejemplos: string[]; audienciaNombre: string | null };
+    let bases: Base[];
+    if (pedidos.length) {
+      bases = grupos
+        .filter((g) => pedidos.some((p) => g.nombre.toLowerCase() === p || g.slug === p || g.nombre.toLowerCase().includes(p) || p.includes(g.nombre.toLowerCase())))
+        .map((g) => ({
+          producto: g.nombre, slug: g.slug, descripcion: g.descripcion, ejemplos: g.ejemplos,
+          audienciaNombre: memoria.audienciasProducto?.find((a) => a.slug === g.slug)?.nombre ?? null,
+        }));
+    } else if (memoria.audienciasProducto?.length) {
+      bases = memoria.audienciasProducto.map((a) => {
+        const g = grupos.find((x) => x.slug === a.slug);
+        return { producto: a.producto, slug: a.slug, descripcion: g?.descripcion ?? "", ejemplos: g?.ejemplos ?? [], audienciaNombre: a.nombre };
+      });
+    } else {
+      bases = grupos.map((g) => ({ producto: g.nombre, slug: g.slug, descripcion: g.descripcion, ejemplos: g.ejemplos, audienciaNombre: null }));
+    }
+    bases = bases.slice(0, 10);
+    if (bases.length === 0) {
+      return { datos: { error: `No encontré productos para armar templates.${grupos.length ? ` Productos disponibles: ${grupos.map((g) => g.nombre).join(", ")}.` : " El Motor todavía no detectó productos en las conversaciones."}` } };
+    }
+
+    const indicaciones = typeof args.indicaciones === "string" && args.indicaciones.trim() ? args.indicaciones.trim().slice(0, 300) : null;
+    const ctx = memoria.contexto;
+    let textos: { producto: string; contenido: string }[];
+    try {
+      textos = await generarTextosTemplatesPorProducto({
+        openai: getOpenAI(),
+        contexto: {
+          nombreEmpresa: ctx?.nombreEmpresa ?? null,
+          rubro: ctx?.rubro ?? "",
+          descripcionNegocio: ctx?.descripcionNegocio ?? "",
+          tonoComunicacion: ctx?.tonoComunicacion ?? "",
+          diferenciales: ctx?.diferenciales ?? "",
+          catalogo: ctx?.productos.length ? formatearProductos(ctx.productos) : "",
+        },
+        productos: bases.map((b) => ({ producto: b.producto, descripcion: b.descripcion, ejemplos: b.ejemplos })),
+        indicaciones,
+      });
+    } catch (e) {
+      console.error("[IA] generarTextosTemplatesPorProducto:", e);
+      return { datos: { error: "No pude redactar los templates ahora. Probá de nuevo en un momento." } };
+    }
+    if (textos.length === 0) return { datos: { error: "No pude redactar los templates. Probá de nuevo." } };
+
+    // Nombres para Meta, sin chocar con los templates que ya existen.
+    const { data: existentesRows } = await supabase.from("yamas_send_templates").select("nombre").eq("tenant_id", tenantId);
+    const existentes = new Set((existentesRows ?? []).map((r) => String(r.nombre ?? "").toLowerCase()));
+    const items = textos.map((t) => {
+      const b = bases.find((x) => x.producto === t.producto)!;
+      const nombreTpl = nombreTemplateProducto(b.slug, existentes);
+      existentes.add(nombreTpl);
+      return { producto: t.producto, nombre: nombreTpl, contenido: t.contenido, audienciaNombre: b.audienciaNombre };
+    });
+
+    // Sin WhatsApp Business la cuenta no puede mandarlos a Meta todavía.
+    const { data: cfg } = await supabase.from("yamas_inmo_clientes").select("ycloud_api, wabaid").eq("tenant_id", tenantId).maybeSingle();
+    const puedeEnviarMeta = Boolean(cfg?.ycloud_api && cfg?.wabaid);
+
+    const memoriaOut = {
+      productosDetectados: { firma, grupos },
+      ...(memoria.audienciasProducto ? { audienciasProducto: memoria.audienciasProducto } : {}),
+      templatesProducto: items,
+    };
+    return {
+      datos: { ok: true, templates: items.length },
+      memoria: memoriaOut,
+      accion: {
+        text: `Te armé ${items.length} template${items.length === 1 ? "" : "s"}, uno por producto. Revisalos (podés editar el texto) y ${
+          puedeEnviarMeta
+            ? "mandalos todos a aprobación de Meta con un click. Meta suele tardar de minutos a unas horas; te aviso por acá cuando respondan."
+            : "guardalos como borradores: tu cuenta todavía no tiene WhatsApp Business conectado, así que por ahora no se pueden mandar a Meta."
+        }`,
+        payload: { kind: "confirmar_templates_producto", items, puedeEnviarMeta },
+        flowState: { ...IA_FLOW_IDLE, draft: memoriaOut },
       },
     };
   }
@@ -4863,8 +5487,22 @@ async function responderConAgente(
   history: IAHistoryTurn[],
   contexto: ContextoNegocio | null,
   tenantId: string | null,
+  /** draft del flowState actual: de acá sale la memoria persistente de la charla. */
+  memoriaPrevia: IAFlowState["draft"] = {},
 ): Promise<IAResponse> {
   const openai = getOpenAI();
+  // Memoria que ven las herramientas de acción (se actualiza en el loop: si
+  // en este turno se consulta una lista nueva, esa pasa a ser "la última").
+  const memoriaAgente: MemoriaAgente = {
+    ultimaListaContactos: memoriaPrevia.ultimaListaContactos,
+    productosDetectados: memoriaPrevia.productosDetectados,
+    audienciasProducto: memoriaPrevia.audienciasProducto,
+    contexto,
+  };
+  const lista = memoriaPrevia.ultimaListaContactos;
+  const bloqueUltimaLista = lista?.contactos.length
+    ? `\n\nÚLTIMA LISTA DE CONTACTOS MOSTRADA (es a la que se refiere el usuario con "estos", "esos", "los que me pasaste")\n- "${lista.titulo}": ${lista.contactos.length} contacto${lista.contactos.length === 1 ? "" : "s"} (${lista.contactos.slice(0, 15).map((c) => c.nombre).join(", ")}${lista.contactos.length > 15 ? ", …" : ""}).`
+    : "";
   // "Hoy" en hora de Argentina, no en UTC: el servidor corre en UTC y después
   // de las 21 h el modelo creía que ya era el día siguiente (y filtraba
   // "oportunidades de hoy" por una fecha sin datos).
@@ -4904,7 +5542,7 @@ CÓMO HABLAR
 - Como una persona real: natural, cercano, español rioplatense (voseo: "vos", "tenés", "querés"). Nada de tono robótico ni de manual.
 - Breve por defecto: 1-3 oraciones. Si mostrás datos, no repitas en el texto toda la tabla — resumí lo importante y dejá que la tabla hable.
 - Usá el nombre del usuario solo cuando quede natural, no en cada mensaje.
-${lineasContexto.length ? "\nDATOS REALES DE ESTA CUENTA\n" + lineasContexto.join("\n") : ""}
+${lineasContexto.length ? "\nDATOS REALES DE ESTA CUENTA\n" + lineasContexto.join("\n") : ""}${bloqueUltimaLista}
 
 CÓMO RESPONDER PREGUNTAS SOBRE SUS DATOS
 - Tenés herramientas para consultar los datos REALES de la cuenta. Usalas siempre que la pregunta sea sobre audiencias, contactos, templates, campañas, métricas o conversaciones.
@@ -4977,15 +5615,25 @@ EL MOTOR DE DECISIÓN — PROPUESTA DE PLAN (motor_plan_preview)
 - Si después de ver oportunidades, prioridad o el plan del Motor el usuario dice que quiere avanzar, revisar o aprobar eso (ej. "dale, revisemos el plan", "quiero avanzar con esto", "armemos esto", "mostrame el plan para aprobarlo"), usá abrir_revision_motor. Esta herramienta no toma ningún parámetro y NUNCA crea, aprueba, reserva créditos ni ejecuta nada — solo le muestra al usuario un botón para ir a la pantalla donde él mismo revisa y aprueba paso a paso. Después de usarla, NUNCA digas que ya se creó, aprobó o envió una campaña, un draft o un plan: lo único que pasó es que le abriste esa pantalla. Si la herramienta te devuelve un error de permiso, no insistas ni la reintentes: explicale con naturalidad que todavía no tiene ese permiso habilitado.
 
 ACCIONES QUE PODÉS EJECUTAR
-- Si el usuario pide armar una audiencia, usá crear_audiencia_con_estos_contactos.
-- MUY IMPORTANTE: los resultados de las herramientas NO se guardan entre mensajes. Solo ves el texto de la conversación previa, no los datos que consultaste antes. Entonces, si el usuario dice "creá una audiencia con esos" refiriéndose a contactos de un mensaje anterior, PRIMERO volvé a consultarlos ahora (con listar_contactos o buscar_contactos) y recién después creá la audiencia. Si el grupo se puede describir por temperatura, es más simple y confiable usar el parámetro filtro_temperatura.
-- Nunca llames a crear_audiencia_con_estos_contactos con ids que "te acordás" de un mensaje anterior: no sobreviven y la llamada va a fallar. Si el usuario se refiere a un contacto que apareció en una búsqueda previa, volvé a correr buscar_contactos con la MISMA consulta en este turno, tomá el contacto_id del resultado nuevo, y recién ahí armá la audiencia.
-- Si una herramienta te devuelve un error, leelo y corregí en el mismo turno (por ejemplo, volviendo a consultar los datos). No le traslades el error al usuario si podés resolverlo vos.
-- NUNCA digas que abriste un asistente, que creaste algo o que hiciste una acción si la herramienta correspondiente no te devolvió un resultado exitoso. Si falló, decí que no pudiste y ofrecé reintentar — nunca narres una acción que no ocurrió.
-- Si pide crear una audiencia/template/campaña o importar contactos sin referirse a contactos concretos, usá abrir_flujo.
+- AUDIENCIAS: si el usuario pide armar o crear una audiencia con contactos concretos, usá crear_audiencia_con_estos_contactos. La audiencia queda CREADA directamente: no le preguntes el nombre ni le pidas confirmación (si no dio un nombre, ponele vos uno corto y descriptivo de quiénes son). El sistema solo le muestra una tarjeta para elegir contactos cuando corresponde (si pidió elegir/revisar, o si son coincidencias aproximadas).
+  - "Con estos", "con esos", "con los que me pasaste", "con la lista de arriba" → usar_ultima_lista: true (es la ÚLTIMA LISTA DE CONTACTOS MOSTRADA). Si se refiere a una lista de varios mensajes atrás que no es la última, volvé a consultarla en este turno con la misma herramienta y los mismos parámetros, y después usá usar_ultima_lista.
+  - Si el grupo viene descrito por un criterio en el mismo pedido ("armame una audiencia con los que preguntaron por pipetas", "con los últimos 15 que quisieron comprar"), en ESTE turno: primero consultá los contactos con la herramienta que corresponda (buscar_contactos, motor_oportunidades, motor_demanda, conversaciones_pendientes, productos_clientes...) y enseguida llamá a crear_audiencia_con_estos_contactos con usar_ultima_lista: true. Sin preguntar en el medio.
+  - "Los calientes / tibios / fríos" → filtro_temperatura. "Los N más prioritarios" → prioritarios_top. Solo una parte de la última lista ("los 3 primeros", "sacá a Juan") → telefonos con exactamente esos.
+  - Si el usuario pidió elegir, revisar o ajustar él mismo los contactos → revisar_antes: true.
+  - Cuando la herramienta crea la audiencia, la respuesta al usuario la arma el sistema: no repitas la lista ni digas que falta confirmar.
+- Si pide crear una audiencia/template/campaña o importar contactos SIN referirse a contactos ni a un criterio, usá abrir_flujo (abre un asistente guiado paso a paso).
 - Si pide MODIFICAR algo que ya existe (renombrar una audiencia o campaña, cambiarle la temperatura a un contacto), usá abrir_flujo con editar_audiencia / editar_campana / editar_contacto. No hace falta que sepas cuál: el asistente le muestra la lista para que elija. Nunca le digas que no podés hacer estos cambios.
-- Estas acciones abren un asistente guiado donde el usuario confirma antes de que se cree nada. No prometas que ya lo hiciste: decí que se lo abrís para confirmar.
-- Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes de abrir un flujo.
+- Si una herramienta te devuelve un error, leelo y corregí en el mismo turno (por ejemplo, volviendo a consultar los datos). No le traslades el error al usuario si podés resolverlo vos.
+- NUNCA digas que creaste algo o que hiciste una acción si la herramienta correspondiente no te devolvió un resultado exitoso. Si falló, decí que no pudiste y ofrecé reintentar.
+- Si el pedido es ambiguo (no sabés qué contactos incluir, o qué acción quiere), preguntá antes.
+
+PRODUCTOS QUE PIDEN LOS CLIENTES (audiencias y templates por producto)
+- "Qué productos piden mis clientes", "detectá los productos", "qué audiencias por producto podría armar" → productos_clientes (agrupa lo que piden en productos o categorías). Para un ranking de marcas o términos sueltos más mencionados, motor_demanda.
+- "Armame audiencias por producto", "una audiencia para cada producto", "separá a los clientes por producto" → crear_audiencias_por_producto, directo (no hace falta llamar antes a productos_clientes). Si nombró solo algunos productos, pasalos en productos.
+- Una audiencia con los que piden UN producto → productos_clientes con producto=<ese producto> y enseguida crear_audiencia_con_estos_contactos con usar_ultima_lista (si es una marca puntual que no está en la agrupación, motor_demanda con texto).
+- "Armá un template para cada producto / para cada audiencia", "mandá a aprobar un mensaje por producto" → crear_templates_por_producto. Si el usuario pidió algo para el contenido (descuento, tono, envío gratis), pasalo en indicaciones; no agregues promos por tu cuenta. La herramienta le muestra los textos en una tarjeta para revisarlos y mandarlos todos a Meta con un click: NUNCA digas que ya se mandaron a Meta.
+- Después de los templates, el paso siguiente es la campaña: cuando Meta los apruebe, se manda cada audiencia de producto con su template (abrir_flujo crear_campana).
+- Contá los productos y contactos con los números que devuelven las herramientas. No inventes productos que no aparezcan.
 
 CÓMO NOMBRAR A LOS CONTACTOS
 - Siempre identificá a cada contacto con su nombre si lo tiene y, si no, con su teléfono, tal cual viene de la herramienta. Nunca uses "Cliente 1", "Cliente 2" ni nombres genéricos: el usuario tiene que poder saber de quién hablás sin mirar la tabla.
@@ -4994,7 +5642,7 @@ CONTACTOS DE UNA RESPUESTA ANTERIOR
 - Si el usuario se refiere a una lista que le diste antes ("uno de los que me pasaste", "el primero", "ese contacto"), buscá esa lista en los mensajes anteriores de esta conversación y elegí un contacto de ESA lista (decí cuál elegiste). Después consultá sus datos con motor_oportunidades filtrando por su teléfono. Nunca elijas un contacto que no estaba en esa lista.
 
 ENVIAR MENSAJES O PROMOS
-- Desde el chat nunca se envía nada directamente. Si piden mandar un mensaje o una promo a ciertos contactos: explicá en una o dos líneas cómo es (se arma una audiencia con esos contactos, se elige un template aprobado por Meta y se crea la campaña, que el usuario confirma) y ofrecé armar la audiencia. Si dice que sí (o ya lo pidió directamente), usá crear_audiencia_con_estos_contactos: si son "los N más prioritarios", con prioritarios_top=N (se resuelven solos); si son los contactos de una lista concreta que diste antes, con telefonos (exactamente los de ESA lista, no los de la última respuesta); nunca con ids inventados.
+- Desde el chat nunca se envía nada directamente. Si piden mandar un mensaje o una promo a ciertos contactos: explicá en una o dos líneas cómo es (se arma una audiencia con esos contactos, se elige un template aprobado por Meta y se crea la campaña, que el usuario confirma) y ofrecé armar la audiencia. Si dice que sí (o ya lo pidió directamente), usá crear_audiencia_con_estos_contactos: si son "los N más prioritarios", con prioritarios_top=N (se resuelven solos); si son los contactos de la última lista que mostraste, con usar_ultima_lista; nunca con ids inventados.
 - No digas que algo "falló" si la herramienta no devolvió un error; y si devolvió uno, leelo y corregilo en el mismo turno antes de responder.
 
 OBJECIONES, PENDIENTES Y HORARIOS
@@ -5087,7 +5735,7 @@ REGLAS ESTRICTAS
       return {
         text: texto,
         payload: ultimaTabla && !ocultarTabla ? { kind: "tabla_datos", ...ultimaTabla } : undefined,
-        flowState: { ...IA_FLOW_IDLE, draft: memoriaHerramientas },
+        flowState: { ...IA_FLOW_IDLE, draft: { ...memoriaPersistente(memoriaPrevia), ...memoriaHerramientas } },
       };
     }
 
@@ -5104,16 +5752,37 @@ REGLAS ESTRICTAS
 
       let resultado: ResultadoHerramienta;
       try {
-        resultado = await ejecutarHerramientaAgente(tc.function.name, args, tenantId as string);
+        resultado = await ejecutarHerramientaAgente(tc.function.name, args, tenantId as string, memoriaAgente);
       } catch (e) {
         console.error(`[IA] Error ejecutando herramienta ${tc.function.name}:`, e);
         resultado = { datos: { error: "No se pudo consultar ese dato." } };
       }
 
+      // La lista que mostró esta herramienta pasa a ser "la última" (también
+      // para una acción que se llame más adelante en este mismo turno).
+      if (resultado.listaContactos) {
+        memoriaAgente.ultimaListaContactos = resultado.listaContactos;
+        memoriaHerramientas = { ...memoriaHerramientas, ultimaListaContactos: resultado.listaContactos };
+      }
+      if (resultado.memoria?.productosDetectados) memoriaAgente.productosDetectados = resultado.memoria.productosDetectados;
+      if (resultado.memoria?.audienciasProducto) memoriaAgente.audienciasProducto = resultado.memoria.audienciasProducto;
+
       // Herramienta de acción: cortamos el loop y entregamos el control a
       // la máquina de estados, que sigue desde acá con su UI de
-      // confirmación paso a paso.
-      if (resultado.accion) return resultado.accion;
+      // confirmación paso a paso. La memoria persistente de la charla viaja
+      // en el draft (no pisa lo que la acción haya puesto).
+      if (resultado.accion) {
+        return {
+          ...resultado.accion,
+          flowState: {
+            ...resultado.accion.flowState,
+            draft: {
+              ...memoriaPersistente({ ...memoriaPrevia, ...memoriaHerramientas }),
+              ...resultado.accion.flowState.draft,
+            },
+          },
+        };
+      }
       fuentesCitas.push(...textosDeResultado(resultado.datos));
 
       // Si una tabla nueva solo repite filas que ya estaban en la anterior
@@ -5145,7 +5814,7 @@ REGLAS ESTRICTAS
 
   return {
     text: "Se me complicó procesar eso. ¿Me lo repetís de otra forma?",
-    flowState: IA_FLOW_IDLE,
+    flowState: { ...IA_FLOW_IDLE, draft: memoriaPersistente(memoriaPrevia) },
   };
 }
 

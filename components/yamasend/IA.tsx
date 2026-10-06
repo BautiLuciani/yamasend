@@ -39,6 +39,12 @@ interface IAProps {
   onElegirTemperatura: (temperatura: "caliente" | "tibio" | "frio") => void;
   onElegirCampoCampana: (campo: "nombre" | "template" | "audiencia" | "fecha") => void;
   onRevisarMotor: () => void;
+  onVerAudiencias: () => void;
+  onDeshacerAudiencias: (ids: string[]) => Promise<boolean>;
+  onEnviarTemplatesProducto: (
+    ediciones: { nombre: string; contenido: string }[],
+    modo: "meta" | "borrador",
+  ) => Promise<void>;
   onNuevaConversacion: () => void;
   onSeleccionarConversacion: (conversacionId: string) => void;
   onBorrarConversacion: (conversacionId: string) => Promise<{ error: string | null }>;
@@ -100,6 +106,9 @@ export default function IA({
   onElegirTemperatura,
   onElegirCampoCampana,
   onRevisarMotor,
+  onVerAudiencias,
+  onDeshacerAudiencias,
+  onEnviarTemplatesProducto,
   onNuevaConversacion,
   onSeleccionarConversacion,
   onBorrarConversacion,
@@ -433,6 +442,9 @@ export default function IA({
             onElegirTemperatura,
             onElegirCampoCampana,
                       onRevisarMotor,
+                      onVerAudiencias,
+                      onDeshacerAudiencias,
+                      onEnviarTemplatesProducto,
                     },
                     m.id === lastBotMessageId,
                   )}
