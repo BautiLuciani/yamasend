@@ -39,6 +39,8 @@ const IA_CONVERSACION_ABIERTA_KEY = "ys-ia-conversacion-abierta";
 import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import Perfil from "./Perfil";
+import CampanasSugeridas from "./CampanasSugeridas";
+import type { CrearAudienciaSugeridaResult } from "@/lib/actions/campanas_sugeridas";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
 import ConfiguracionModal from "./ConfiguracionModal";
@@ -544,6 +546,11 @@ export default function AppShell({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  // Audiencias recién armadas por las campañas sugeridas. La prop `lists` viene
+  // del Server Component y tarda un refresh en incluirlas; mientras tanto el
+  // asistente de campañas las necesita ya, así que se suman acá (sin duplicar).
+  const [listasExtra, setListasExtra] = useState<ContactList[]>([]);
+  const listasVisibles = [...lists, ...listasExtra.filter((e) => !lists.some((l) => l.id === e.id))];
   const [detailCampaignId, setDetailCampaignId] = useState<string | null>(null);
   const [wizardInitial, setWizardInitial] = useState<{
     nombre: string;
@@ -1145,6 +1152,28 @@ export default function AppShell({
     setTemplateModalOpen(true);
   }
 
+  // Campaña sugerida: la audiencia ya está armada; se abre el asistente en el
+  // paso del template para que la persona revise y confirme. No envía nada.
+  function handleCampanaSugerida(r: CrearAudienciaSugeridaResult) {
+    if (!r.lista) return;
+    const lista = r.lista;
+    setListasExtra((prev) => [...prev.filter((l) => l.id !== lista.id), lista]);
+    setWizardInitial({ nombre: r.nombreCampana, listaId: lista.id, templateId: null, paso: 2 });
+    setWizardOpen(true);
+    router.refresh();
+  }
+
+  // Abre el editor de templates con el mensaje sugerido ya escrito.
+  function handleMensajeSugerido(texto: string, nombreTemplate: string) {
+    setIsCreatingNew(true);
+    setTplId(null);
+    setNewTplContent(texto);
+    setNewTplName(nombreTemplate);
+    setNewTplCategoria("marketing");
+    setStatus("editing-tpl");
+    setTemplateModalOpen(true);
+  }
+
   function handleCancelNewTpl() {
     setIsCreatingNew(false);
     setTplId(null);
@@ -1680,6 +1709,16 @@ export default function AppShell({
             onOpenCampaign={(campaignId) => setDetailCampaignId(campaignId)}
             puedeCrear={user.permisos.crear_campanas}
             onSinPermiso={() => avisarSinPermiso("crear campañas")}
+            sugeridas={
+              user.tenantId ? (
+                <CampanasSugeridas
+                  puedeCrear={user.permisos.crear_campanas && user.permisos.crear_audiencias}
+                  onSinPermiso={() => avisarSinPermiso("crear campañas")}
+                  onCrear={handleCampanaSugerida}
+                  onUsarMensaje={handleMensajeSugerido}
+                />
+              ) : null
+            }
           />
         </div>
       )}
@@ -1954,7 +1993,7 @@ export default function AppShell({
       <CampaignWizardModal
         key={wizardInitial ? `dup-${wizardInitial.nombre}` : "new"}
         open={wizardOpen}
-        lists={lists}
+        lists={listasVisibles}
         templates={templatesAprobados}
         creditosDisponibles={user.credito ?? 0}
         creditosAplican={user.creditosAplican ?? false}

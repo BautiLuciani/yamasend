@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Campaign, CampaignStatus } from "@/lib/types";
 
 interface CampanasProps {
@@ -17,6 +17,8 @@ interface CampanasProps {
   /** Se dispara al tocar el botón sin permiso. Muestra el aviso. */
   onSinPermiso?: () => void;
   onOpenCampaign: (campaignId: string) => void;
+  /** Campañas sugeridas por IA: se muestran arriba de la lista. */
+  sugeridas?: ReactNode;
 }
 
 const ESTADO_CONFIG: Record<
@@ -82,7 +84,7 @@ function useClickOutside(onOutside: () => void) {
   return ref;
 }
 
-export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, puedeCrear = true, onSinPermiso }: CampanasProps) {
+export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, puedeCrear = true, onSinPermiso, sugeridas }: CampanasProps) {
   const [query, setQuery] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<CampaignStatus | "todas">("todas");
   const [periodoFiltro, setPeriodoFiltro] = useState<Periodo>("todo");
@@ -155,6 +157,8 @@ export default function Campanas({ campaigns, onNewCampaign, onOpenCampaign, pue
           Nueva campaña
         </button>
       </div>
+
+      {sugeridas}
 
       <div className="flex items-center gap-3.5 flex-wrap text-[13px] text-ys-muted font-semibold">
         <span>
