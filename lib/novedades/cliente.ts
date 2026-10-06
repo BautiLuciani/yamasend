@@ -38,6 +38,16 @@ export async function fetchActividadWhatsapp(): Promise<ActividadWhatsapp | null
   }
 }
 
+function mapa<T extends string>(v: unknown, validos: readonly T[]): Record<string, T> {
+  const out: Record<string, T> = {};
+  if (v && typeof v === "object") {
+    for (const [id, estado] of Object.entries(v as Record<string, unknown>)) {
+      if (validos.includes(estado as T)) out[id] = estado as T;
+    }
+  }
+  return out;
+}
+
 export async function fetchNovedades(): Promise<Novedades | null> {
   try {
     const { data, error } = await createClient().rpc("yamas_send_novedades");
@@ -46,13 +56,10 @@ export async function fetchNovedades(): Promise<Novedades | null> {
     const s = (k: string) => (typeof d[k] === "string" ? (d[k] as string) : null);
     return {
       ahora: s("ahora") ?? new Date().toISOString(),
-      templatesAprobadoAt: s("templates_aprobado_at"),
-      templatesRechazadoAt: s("templates_rechazado_at"),
-      campanasEnviadaAt: s("campanas_enviada_at"),
-      campanasErrorAt: s("campanas_error_at"),
+      templatesEstados: mapa(d.templates_estados, ["aprobado", "rechazado", "pendiente"] as const),
+      campanasEstados: mapa(d.campanas_estados, ["enviado", "error", "pendiente"] as const),
       contactosNuevoAt: s("contactos_nuevo_at"),
       dashboardRespuestaAt: s("dashboard_respuesta_at"),
-      dashboardSistemaAt: s("dashboard_sistema_at"),
       whatsappDesvinculado: d.whatsapp_desvinculado === true,
     };
   } catch {

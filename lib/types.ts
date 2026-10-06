@@ -799,19 +799,24 @@ export interface ContactoExcluido {
 
 /* ───────────── Avisos del sidebar ───────────── */
 
+/** Estado categorizado de un template para los avisos: */
+export type EstadoTemplateAviso = "aprobado" | "rechazado" | "pendiente";
+/** Estado categorizado de una campaña programada o del motor: */
+export type EstadoCampanaAviso = "enviado" | "error" | "pendiente";
+
 /**
- * Último momento (ISO) en que pasó algo nuevo en cada sección. null = nunca.
- * Ver yamas_send_novedades() en docs/migraciones/2026-10-actividad-y-novedades.sql.
+ * Datos para los avisos del sidebar. Ver yamas_send_novedades() en
+ * docs/migraciones/2026-10-actividad-y-novedades.sql.
+ * - templates/campañas: estado actual por id (el navegador lo compara con la
+ *   "foto" de la última visita para detectar cambios).
+ * - contactos/dashboard: último momento (ISO) del evento. null = nunca.
  */
 export interface Novedades {
   ahora: string;
-  templatesAprobadoAt: string | null;
-  templatesRechazadoAt: string | null;
-  campanasEnviadaAt: string | null;
-  campanasErrorAt: string | null;
+  templatesEstados: Record<string, EstadoTemplateAviso>;
+  campanasEstados: Record<string, EstadoCampanaAviso>;
   contactosNuevoAt: string | null;
   dashboardRespuestaAt: string | null;
-  dashboardSistemaAt: string | null;
   /** Hubo conexión de WhatsApp y ya no está conectada (no cuenta vínculos sin terminar). */
   whatsappDesvinculado: boolean;
 }

@@ -2,44 +2,62 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchNovedades } from "@/lib/novedades/cliente";
-import type { AppSection, Novedades } from "@/lib/types";
+import type {
+  AppSection,
+  EstadoCampanaAviso,
+  EstadoTemplateAviso,
+  Novedades,
+} from "@/lib/types";
 
 /**
  * Avisos (puntitos) del sidebar: "pasó algo en esta sección desde la última
  * vez que entraste". Pedido de Bauti y Pato (2026-10).
  *
- * Qué secciones tienen aviso y por qué (solo eventos que NO dispara el propio
- * usuario con un click — esos ya los ve en el momento):
+ * Qué secciones tienen aviso y por qué (solo cosas que NO dispara el propio
+ * usuario con un click — esas ya las ve en el momento):
  *  - Templates:  Meta aprobó un template (novedad) o lo rechazó (atención).
  *                Meta puede tardar horas; es justo lo que el usuario espera.
- *  - Campañas:   una campaña terminó de enviarse, típicamente una programada
- *                (novedad), o falló (atención).
- *  - Contactos:  te escribió alguien nuevo (novedad), o el WhatsApp quedó
- *                desvinculado (atención: sin eso no se importa ni se analiza).
- *  - Dashboard:  respondieron un mensaje de campaña o hubo un evento del
- *                sistema (WhatsApp conectado/desconectado, análisis).
+ *  - Campañas:   terminó una campaña programada o del motor (novedad), o
+ *                terminó con error (atención).
+ *  - Contactos:  te escribió alguien por primera vez (novedad), o el WhatsApp
+ *                se desvinculó (atención: sin eso no entra nada nuevo).
+ *  - Dashboard:  respondieron un mensaje de campaña (cambian sus métricas).
  *  - Audiencias: sin aviso. Solo cambian por acciones del propio usuario.
  *  - IA:         sin aviso. Ya está destacada, y los avisos que le tocan
  *                (ej. template aprobado) ya llegan dentro del chat.
  *
  * Mecánica: se consulta yamas_send_novedades() cada 30 s (solo con la
- * pestaña visible) y se compara contra la última visita a cada sección,
- * guardada en localStorage por tenant. La sección abierta nunca muestra
- * aviso y se marca como vista. En la primera carga se toma "ahora" como
- * última visita, para no encender todo con eventos viejos.
+ * pestaña visible) desde el navegador. Para templates y campañas se guarda
+ * una "foto" del estado de cada uno en la última visita y se avisa si algo
+ * pasó a un estado final desde entonces (no depende de qué workflow cambie
+ * el estado ni de updated_at). Para contactos y dashboard se compara la hora
+ * del último evento contra la última visita. Todo queda en localStorage por
+ * tenant; la primera vez se toma la situación actual como "ya vista", para
+ * no encender todo con cosas viejas. La sección abierta nunca muestra aviso.
  */
 
 export type TipoAviso = "novedad" | "atencion";
 export type AvisosSidebar = Partial<Record<AppSection, TipoAviso>>;
 
-type SeccionConAviso = "dashboard" | "contactos" | "templates" | "campanas";
-type Vistas = Record<SeccionConAviso, string>;
+interface Vistas {
+  /** Última visita (hora del server, ISO). */
+  dashboard: string;
+  contactos: string;
+  /** Foto del estado de cada template / campaña en la última visita. */
+  templates: Record<string, EstadoTemplateAviso>;
+  campanas: Record<string, EstadoCampanaAviso>;
+  /** Alguna vez se vio el WhatsApp conectado (para el aviso de desvinculado). */
+  whatsappVisto: boolean;
+}
 
-const SECCIONES: SeccionConAviso[] = ["dashboard", "contactos", "templates", "campanas"];
 const POLL_MS = 30_000;
 
 function claveStorage(tenantId: string) {
-  return `yamasend-avisos-vistos-${tenantId}`;
+  return `yamasend-avisos-v2-${tenantId}`;
+}
+
+function esIsoValido(v: unknown): v is string {
+  return typeof v === "string" && Number.isFinite(Date.parse(v));
 }
 
 function leerVistas(tenantId: string): Vistas | null {
@@ -47,24 +65,48 @@ function leerVistas(tenantId: string): Vistas | null {
     const raw = window.localStorage.getItem(claveStorage(tenantId));
     if (!raw) return null;
     const v = JSON.parse(raw) as Partial<Vistas>;
-    return SECCIONES.every((s) => typeof v[s] === "string") ? (v as Vistas) : null;
+    if (!esIsoValido(v.dashboard) || !esIsoValido(v.contactos)) return null;
+    if (!v.templates || typeof v.templates !== "object") return null;
+    if (!v.campanas || typeof v.campanas !== "object") return null;
+    return {
+      dashboard: v.dashboard,
+      contactos: v.contactos,
+      templates: v.templates,
+      campanas: v.campanas,
+      whatsappVisto: v.whatsappVisto === true,
+    };
   } catch {
     return null;
   }
 }
 
+function maxIso(a: string, b: string): string {
+  const ma = Date.parse(a);
+  const mb = Date.parse(b);
+  if (!Number.isFinite(ma)) return b;
+  if (!Number.isFinite(mb)) return a;
+  return ma >= mb ? a : b;
+}
+
 /**
- * Guarda combinando con lo que ya hay (máximo por sección): con varias
- * pestañas abiertas, una pestaña vieja no pisa lo que otra ya marcó como
- * visto. Devuelve lo que quedó guardado.
+ * Combina dos versiones (ej. de dos pestañas): la hora más nueva por
+ * sección, las fotos unidas (gana la que se está escribiendo) y el flag de
+ * WhatsApp si cualquiera lo vio.
  */
+function combinar(nueva: Vistas, otra: Vistas | null): Vistas {
+  if (!otra) return nueva;
+  return {
+    dashboard: maxIso(nueva.dashboard, otra.dashboard),
+    contactos: maxIso(nueva.contactos, otra.contactos),
+    templates: { ...otra.templates, ...nueva.templates },
+    campanas: { ...otra.campanas, ...nueva.campanas },
+    whatsappVisto: nueva.whatsappVisto || otra.whatsappVisto,
+  };
+}
+
+/** Guarda combinando con lo que ya hay. Devuelve lo que quedó. */
 function guardarVistas(tenantId: string, vistas: Vistas): Vistas {
-  const actuales = leerVistas(tenantId);
-  const combinadas = actuales
-    ? (Object.fromEntries(
-        SECCIONES.map((s) => [s, maxIso(vistas[s], actuales[s])]),
-      ) as Vistas)
-    : vistas;
+  const combinadas = combinar(vistas, leerVistas(tenantId));
   try {
     window.localStorage.setItem(claveStorage(tenantId), JSON.stringify(combinadas));
   } catch {
@@ -81,13 +123,20 @@ function despues(evento: string | null, visto: string): boolean {
   return Number.isFinite(e) && Number.isFinite(v) && e > v;
 }
 
-function maxIso(a: string, b: string): string {
-  const ma = Date.parse(a);
-  const mb = Date.parse(b);
-  // Un valor corrupto en storage no debe ganarle a uno válido.
-  if (!Number.isFinite(ma)) return b;
-  if (!Number.isFinite(mb)) return a;
-  return ma >= mb ? a : b;
+/** Aplica "visto" a una sección con los datos actuales. */
+function marcar(prev: Vistas, seccion: AppSection, n: Novedades): Vistas {
+  switch (seccion) {
+    case "dashboard":
+      return { ...prev, dashboard: maxIso(prev.dashboard, n.ahora) };
+    case "contactos":
+      return { ...prev, contactos: maxIso(prev.contactos, n.ahora) };
+    case "templates":
+      return { ...prev, templates: { ...prev.templates, ...n.templatesEstados } };
+    case "campanas":
+      return { ...prev, campanas: { ...prev.campanas, ...n.campanasEstados } };
+    default:
+      return prev;
+  }
 }
 
 export function useAvisosSidebar({
@@ -101,65 +150,55 @@ export function useAvisosSidebar({
   whatsappConectado: boolean | null;
 }): {
   avisos: AvisosSidebar;
-  /** Llamar al cambiar de sección (evento de navegación) con la que se deja y la que se abre. */
+  /** Llamar al navegar, con la sección que se deja y la que se abre. */
   marcarSecciones: (secciones: AppSection[]) => void;
 } {
   const [novedades, setNovedades] = useState<Novedades | null>(null);
   const [vistas, setVistas] = useState<Vistas | null>(null);
+
+  // Refs para leer el valor vigente desde callbacks async (poll, navegación).
   const activeRef = useRef(activeSection);
+  const whatsappRef = useRef(whatsappConectado);
+  const novedadesRef = useRef<Novedades | null>(null);
   useEffect(() => {
     activeRef.current = activeSection;
   }, [activeSection]);
-  // Reloj del server: hora de la última respuesta + tiempo transcurrido en el
-  // navegador desde entonces. Así un reloj local desfasado no altera nada.
-  const relojRef = useRef<{ serverMs: number; clienteMs: number } | null>(null);
-  const ahoraServer = useCallback((): string | null => {
-    const r = relojRef.current;
-    if (!r) return null;
-    return new Date(r.serverMs + (Date.now() - r.clienteMs)).toISOString();
-  }, []);
-
-  // Marca la sección abierta como vista al momento `ahora` (hora del server).
-  const marcarVista = useCallback(
-    (seccion: AppSection, ahora: string) => {
-      if (!SECCIONES.includes(seccion as SeccionConAviso)) return;
-      setVistas((prev) => {
-        if (!prev) return prev;
-        const s = seccion as SeccionConAviso;
-        const nuevo = maxIso(prev[s], ahora);
-        if (nuevo === prev[s]) return prev;
-        return guardarVistas(tenantId, { ...prev, [s]: nuevo });
-      });
-    },
-    [tenantId],
-  );
+  useEffect(() => {
+    whatsappRef.current = whatsappConectado;
+  }, [whatsappConectado]);
 
   const consultar = useCallback(async () => {
     const n = await fetchNovedades();
     if (!n) return;
-    const serverMs = Date.parse(n.ahora);
-    if (Number.isFinite(serverMs)) relojRef.current = { serverMs, clienteMs: Date.now() };
+    novedadesRef.current = n;
     setNovedades(n);
     setVistas((prev) => {
-      if (prev) return prev;
-      // Primera vez: arrancar desde lo guardado o, si no hay, desde "ahora".
-      const guardadas = leerVistas(tenantId);
-      const iniciales: Vistas = guardadas ?? {
-        dashboard: n.ahora,
-        contactos: n.ahora,
-        templates: n.ahora,
-        campanas: n.ahora,
-      };
-      return guardadas ?? guardarVistas(tenantId, iniciales);
+      // Primera vez: lo guardado o, si no hay, la situación actual como vista.
+      let base =
+        prev ??
+        leerVistas(tenantId) ?? {
+          dashboard: n.ahora,
+          contactos: n.ahora,
+          templates: n.templatesEstados,
+          campanas: n.campanasEstados,
+          whatsappVisto: false,
+        };
+      // La sección abierta se va marcando como vista en cada consulta.
+      base = marcar(base, activeRef.current, n);
+      if (whatsappRef.current === true && !base.whatsappVisto) {
+        base = { ...base, whatsappVisto: true };
+      }
+      return guardarVistas(tenantId, base);
     });
-    marcarVista(activeRef.current, n.ahora);
-  }, [tenantId, marcarVista]);
+  }, [tenantId]);
 
   // Polling solo con la pestaña visible; al volver, consulta en el acto.
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
     const arrancar = () => {
-      if (!timer && document.visibilityState === "visible") timer = setInterval(consultar, POLL_MS);
+      if (!timer && document.visibilityState === "visible") {
+        timer = setInterval(consultar, POLL_MS);
+      }
     };
     const frenar = () => {
       if (timer) clearInterval(timer);
@@ -184,56 +223,69 @@ export function useAvisosSidebar({
     };
   }, [consultar]);
 
-  // Otras pestañas del mismo usuario: si marcan algo como visto, se refleja acá.
+  // Otras pestañas del mismo usuario: lo que marquen como visto se refleja acá.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== claveStorage(tenantId)) return;
       const otras = leerVistas(tenantId);
       if (!otras) return;
-      setVistas((prev) =>
-        prev
-          ? (Object.fromEntries(SECCIONES.map((s) => [s, maxIso(prev[s], otras[s])])) as Vistas)
-          : otras,
-      );
+      setVistas((prev) => (prev ? combinar(prev, otras) : otras));
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [tenantId]);
 
-  // Al navegar se marcan como vistas la sección que se deja (lo que pasó
-  // mientras estaba abierta ya se vio) y la que se abre.
+  // Al navegar, la sección que se deja (lo que pasó mientras estaba abierta
+  // ya se vio) y la que se abre quedan como vistas, con los últimos datos.
   const marcarSecciones = useCallback(
     (secciones: AppSection[]) => {
-      const ahora = ahoraServer();
-      if (!ahora) return;
-      for (const s of secciones) marcarVista(s, ahora);
+      const n = novedadesRef.current;
+      if (!n) return;
+      setVistas((prev) => {
+        if (!prev) return prev;
+        let next = prev;
+        for (const s of secciones) next = marcar(next, s, n);
+        return next === prev ? prev : guardarVistas(tenantId, next);
+      });
     },
-    [ahoraServer, marcarVista],
+    [tenantId],
   );
 
   if (!novedades || !vistas) return { avisos: {}, marcarSecciones };
 
   const avisos: AvisosSidebar = {};
 
-  if (despues(novedades.templatesRechazadoAt, vistas.templates)) avisos.templates = "atencion";
-  else if (despues(novedades.templatesAprobadoAt, vistas.templates)) avisos.templates = "novedad";
+  // Templates: alguno pasó a aprobado/rechazado desde la última visita.
+  let tplNovedad = false;
+  let tplRechazo = false;
+  for (const [id, estado] of Object.entries(novedades.templatesEstados)) {
+    if (estado === "pendiente" || vistas.templates[id] === estado) continue;
+    if (estado === "rechazado") tplRechazo = true;
+    else tplNovedad = true;
+  }
+  if (tplRechazo) avisos.templates = "atencion";
+  else if (tplNovedad) avisos.templates = "novedad";
 
-  if (despues(novedades.campanasErrorAt, vistas.campanas)) avisos.campanas = "atencion";
-  else if (despues(novedades.campanasEnviadaAt, vistas.campanas)) avisos.campanas = "novedad";
+  // Campañas programadas / del motor: alguna terminó desde la última visita.
+  let campNovedad = false;
+  let campError = false;
+  for (const [id, estado] of Object.entries(novedades.campanasEstados)) {
+    if (estado === "pendiente" || vistas.campanas[id] === estado) continue;
+    if (estado === "error") campError = true;
+    else campNovedad = true;
+  }
+  if (campError) avisos.campanas = "atencion";
+  else if (campNovedad) avisos.campanas = "novedad";
 
   // WhatsApp desvinculado: es un estado, no un evento. Se muestra mientras
-  // dure (estuvo conectado y ya no) y se apaga solo al reconectar: el estado
-  // en tiempo real de AppShell gana apenas vuelve a "conectada".
-  const whatsappCaido = novedades.whatsappDesvinculado && whatsappConectado !== true;
+  // dure (estuvo conectado y ya no) y se apaga solo al reconectar; el estado
+  // en tiempo real de AppShell es el que manda.
+  const whatsappCaido =
+    whatsappConectado === false && (novedades.whatsappDesvinculado || vistas.whatsappVisto);
   if (whatsappCaido) avisos.contactos = "atencion";
   else if (despues(novedades.contactosNuevoAt, vistas.contactos)) avisos.contactos = "novedad";
 
-  if (
-    despues(novedades.dashboardRespuestaAt, vistas.dashboard) ||
-    despues(novedades.dashboardSistemaAt, vistas.dashboard)
-  ) {
-    avisos.dashboard = "novedad";
-  }
+  if (despues(novedades.dashboardRespuestaAt, vistas.dashboard)) avisos.dashboard = "novedad";
 
   // La sección abierta nunca muestra aviso.
   delete avisos[activeSection];
