@@ -187,6 +187,10 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
   const [pensando, setPensando] = useState(false);
   const [aplicando, setAplicando] = useState<string | null>(null);
   const [importando, setImportando] = useState(false);
+  const [agregando, setAgregando] = useState(false);
+  const [nuevoCampo, setNuevoCampo] = useState<CampoTexto | "producto">("descripcionNegocio");
+  const [nuevoTexto, setNuevoTexto] = useState("");
+  const [nuevoProd, setNuevoProd] = useState({ nombre: "", precio: "", descripcion: "" });
   const fileRef = useRef<HTMLInputElement>(null);
   const finChat = useRef<HTMLDivElement>(null);
 
@@ -262,6 +266,28 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
   useEffect(() => {
     finChat.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chat, pensando]);
+
+  /** Suma un dato escrito a mano al cuadro elegido (queda editable y sin guardar). */
+  function agregarInfo() {
+    if (nuevoCampo === "producto") {
+      const nombre = nuevoProd.nombre.trim();
+      if (!nombre) return;
+      const prod = { nombre, precio: nuevoProd.precio.trim(), descripcion: nuevoProd.descripcion.trim() };
+      setDatos((d) => (d ? { ...d, productos: [...d.productos, prod] } : d));
+      setNuevoProd({ nombre: "", precio: "", descripcion: "" });
+    } else {
+      const texto = nuevoTexto.trim();
+      if (!texto) return;
+      setDatos((d) => {
+        if (!d) return d;
+        const actual = d[nuevoCampo].trim();
+        return { ...d, [nuevoCampo]: actual ? `${actual}. ${texto}` : texto };
+      });
+      setNuevoTexto("");
+    }
+    setAgregando(false);
+    setMsg({ type: "ok", text: "Lo sumamos. Revisalo y tocá «Guardar cambios»." });
+  }
 
   function setCampo(key: CampoTexto, v: string) {
     setDatos((d) => (d ? { ...d, [key]: v } : d));
@@ -426,6 +452,56 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
       <div className="px-4 md:px-[38px] pb-6 grid grid-cols-1 lg:grid-cols-2 gap-5 flex-1 min-h-0">
         {/* ── Izquierda: datos cargados desde los chats, editables ── */}
         <div className="min-w-0 flex flex-col gap-4 lg:overflow-y-auto lg:pr-2 lg:pb-4">
+          {editable && (
+            <div className="flex flex-col gap-3">
+              <div>
+                <button type="button" onClick={() => setAgregando((v) => !v)} className={BTN_SECUNDARIO}>
+                  {agregando ? "Cerrar" : "+ Agregar información"}
+                </button>
+              </div>
+              {agregando && (
+                <div className="border border-ys-border-soft rounded-xl p-4 flex flex-col gap-3">
+                  <select
+                    value={nuevoCampo}
+                    onChange={(e) => setNuevoCampo(e.target.value as CampoTexto | "producto")}
+                    className={INPUT_CLS}
+                  >
+                    {CAMPOS.map((c) => (
+                      <option key={c.key} value={c.key}>{c.label}</option>
+                    ))}
+                    <option value="producto">Producto o servicio</option>
+                  </select>
+                  {nuevoCampo === "producto" ? (
+                    <div className="flex flex-col gap-2">
+                      <input value={nuevoProd.nombre} onChange={(e) => setNuevoProd((p) => ({ ...p, nombre: e.target.value }))} placeholder="Nombre del producto o servicio" className={INPUT_CLS} />
+                      <input value={nuevoProd.precio} onChange={(e) => setNuevoProd((p) => ({ ...p, precio: e.target.value }))} placeholder="Precio (opcional)" className={INPUT_CLS} />
+                      <input value={nuevoProd.descripcion} onChange={(e) => setNuevoProd((p) => ({ ...p, descripcion: e.target.value }))} placeholder="Descripción (opcional)" className={INPUT_CLS} />
+                    </div>
+                  ) : (
+                    <textarea
+                      value={nuevoTexto}
+                      onChange={(e) => setNuevoTexto(e.target.value)}
+                      rows={3}
+                      maxLength={2000}
+                      placeholder="Escribí el dato. Se suma a lo que ya tengas en ese cuadro."
+                      className={INPUT_CLS}
+                    />
+                  )}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={agregarInfo}
+                      disabled={nuevoCampo === "producto" ? !nuevoProd.nombre.trim() : !nuevoTexto.trim()}
+                      className={BTN_PRIMARIO}
+                    >
+                      Agregar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="border border-ys-border-soft rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
             <div className="text-[13px] font-semibold text-ys-muted leading-[1.5]">
               {generando ? (
@@ -471,44 +547,26 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
           )}
 
           {novedades.length > 0 && (
-            <div className="border border-ys-green-border bg-[#f7fbf9] rounded-xl p-4 flex flex-col gap-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <div className="text-[15px] font-extrabold text-ys-text">Novedades en tus chats ({novedades.length})</div>
-                  <div className="text-[12.5px] font-medium text-ys-muted">
-                    Encontramos cambios respecto de lo que tenés cargado. No se aplica nada solo.
+            <div className="flex flex-col gap-2">
+              {novedades.map((n) => (
+                <div key={n.claves.join("|")} className="bg-white border border-ys-green-border rounded-xl px-3.5 py-3 flex flex-col sm:flex-row sm:items-center gap-2.5 sm:justify-between">
+                  <div className="min-w-0 flex flex-col gap-0.5">
+                    <div className="text-[13px] font-bold text-ys-text">{n.titulo}</div>
+                    <div className="text-[12.5px] font-medium text-ys-muted leading-[1.45]">{n.detalle}</div>
+                    {(n.tipo === "campo" || n.tipo === "precio") && (
+                      <div className="text-[12px] font-semibold text-ys-dim">Ahora tenés: {n.actual}</div>
+                    )}
+                  </div>
+                  <div className="flex gap-2 flex-none">
+                    <button type="button" disabled={procesandoNov} onClick={() => aceptarNovedades([n])} className="text-[12px] font-bold text-white bg-ys-green rounded-lg px-3 py-1.5 cursor-pointer hover:bg-ys-green-hover disabled:opacity-60">
+                      Aceptar
+                    </button>
+                    <button type="button" disabled={procesandoNov} onClick={() => ignorarNovedades([n])} className="text-[12px] font-bold text-[#3f4844] border border-ys-border rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#f7f9f8] disabled:opacity-60">
+                      Ignorar
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <button type="button" disabled={procesandoNov} onClick={() => aceptarNovedades(novedades)} className={BTN_PRIMARIO}>
-                    Aceptar todas
-                  </button>
-                  <button type="button" disabled={procesandoNov} onClick={() => ignorarNovedades(novedades)} className={BTN_SECUNDARIO}>
-                    Ignorar todas
-                  </button>
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
-                {novedades.map((n) => (
-                  <div key={n.claves.join("|")} className="bg-white border border-ys-border-soft rounded-[10px] px-3 py-2.5 flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
-                    <div className="min-w-0 flex flex-col gap-0.5">
-                      <div className="text-[13px] font-bold text-ys-text">{n.titulo}</div>
-                      <div className="text-[12.5px] font-medium text-ys-muted leading-[1.45]">{n.detalle}</div>
-                      {(n.tipo === "campo" || n.tipo === "precio") && (
-                        <div className="text-[12px] font-semibold text-ys-dim">Ahora tenés: {n.actual}</div>
-                      )}
-                    </div>
-                    <div className="flex gap-2 flex-none">
-                      <button type="button" disabled={procesandoNov} onClick={() => aceptarNovedades([n])} className="text-[12px] font-bold text-white bg-ys-green rounded-lg px-3 py-1.5 cursor-pointer hover:bg-ys-green-hover disabled:opacity-60">
-                        Aceptar
-                      </button>
-                      <button type="button" disabled={procesandoNov} onClick={() => ignorarNovedades([n])} className="text-[12px] font-bold text-[#3f4844] border border-ys-border rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#f7f9f8] disabled:opacity-60">
-                        Ignorar
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              ))}
             </div>
           )}
 
@@ -538,11 +596,8 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
                 productos={datos.productos}
                 onChange={(p) => setDatos((d) => (d ? { ...d, productos: p } : d))}
                 readOnly={!editable}
-                onSubirArchivo={importar}
-                analizando={importando}
                 msg={null}
-                accept=".pdf,.xlsx,.csv,.docx,.txt,image/*"
-                textoAyuda="También podés adjuntar tu lista de precios en el chat. Primero revisás qué se detectó y después lo aplicás."
+                textoAyuda="Para cargar tu lista de precios, adjuntala en el chat con el clip: primero revisás qué se detectó y después lo aplicás."
               />
             </div>
 

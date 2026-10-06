@@ -34,7 +34,7 @@ export function ProductosEditor({
   onChange,
   readOnly,
   onSubirArchivo,
-  analizando,
+  analizando = false,
   msg,
   accept = ".pdf,.csv,.xls,.xlsx,image/*",
   textoAyuda = "Aceptamos PDF, Excel/CSV o una foto del catálogo. La IA completa la lista y después la podés corregir.",
@@ -42,8 +42,9 @@ export function ProductosEditor({
   productos: Producto[];
   onChange: (p: Producto[]) => void;
   readOnly?: boolean;
-  onSubirArchivo: (file: File) => void;
-  analizando: boolean;
+  /** Si no se pasa, no se muestra el botón de subir catálogo. */
+  onSubirArchivo?: (file: File) => void;
+  analizando?: boolean;
   msg: { type: "ok" | "err"; text: string } | null;
   /** Tipos de archivo que acepta el selector. */
   accept?: string;
@@ -133,6 +134,7 @@ export function ProductosEditor({
             + Agregar producto
           </button>
 
+          {onSubirArchivo && (
           <button
             type="button"
             disabled={analizando}
@@ -141,6 +143,7 @@ export function ProductosEditor({
           >
             {analizando ? "Analizando archivo..." : "Subir catálogo con IA"}
           </button>
+          )}
 
           <input
             ref={fileInputRef}
@@ -153,7 +156,7 @@ export function ProductosEditor({
               // dispare onChange de nuevo (si no, el input lo considera sin
               // cambios y el segundo intento no hace nada).
               e.target.value = "";
-              if (file) onSubirArchivo(file);
+              if (file) onSubirArchivo?.(file);
             }}
           />
         </div>
