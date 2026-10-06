@@ -265,7 +265,7 @@ export function renderChatCard(
     onEnviarTemplatesProducto: (
       ediciones: { nombre: string; contenido: string }[],
       modo: "meta" | "borrador",
-    ) => Promise<void>;
+    ) => Promise<boolean>;
   },
   isLatest: boolean,
 ) {
@@ -296,7 +296,9 @@ export function renderChatCard(
         nombre={payload.nombre}
         totalContactos={payload.totalContactos}
         onVerAudiencia={() => handlers.onVerAudiencia(payload.audienciaId)}
-        onDeshacer={payload.deshacible ? () => handlers.onDeshacerAudiencias([payload.audienciaId]) : undefined}
+        onDeshacer={
+          payload.deshacible && isLatest ? () => handlers.onDeshacerAudiencias([payload.audienciaId]) : undefined
+        }
       />
     );
   }
@@ -305,7 +307,7 @@ export function renderChatCard(
       <AudienciasProductoCreadasCard
         items={payload.items}
         onVerAudiencias={handlers.onVerAudiencias}
-        onDeshacer={handlers.onDeshacerAudiencias}
+        onDeshacer={isLatest ? handlers.onDeshacerAudiencias : undefined}
       />
     );
   }
@@ -1877,6 +1879,8 @@ function BotonDeshacer({
       onClick={async () => {
         if (estado === "idle") {
           setEstado("confirmar");
+          // Si no confirma en unos segundos, vuelve solo (onBlur no anda en Safari).
+          setTimeout(() => setEstado((e) => (e === "confirmar" ? "idle" : e)), 4000);
           return;
         }
         setEstado("deshaciendo");
@@ -1902,7 +1906,8 @@ export function AudienciasProductoCreadasCard({
 }: {
   items: { audienciaId: string; nombre: string; producto: string; totalContactos: number; yaExistia: boolean }[];
   onVerAudiencias: () => void;
-  onDeshacer: (ids: string[]) => Promise<boolean>;
+  /** undefined cuando ya no se puede deshacer (la tarjeta no es la última). */
+  onDeshacer?: (ids: string[]) => Promise<boolean>;
 }) {
   const nuevas = items.filter((i) => !i.yaExistia);
   return (
@@ -1942,7 +1947,7 @@ export function AudienciasProductoCreadasCard({
         >
           Ver audiencias →
         </button>
-        {nuevas.length > 0 && (
+        {nuevas.length > 0 && onDeshacer && (
           <span className="ml-auto">
             <BotonDeshacer
               etiqueta={nuevas.length === 1 ? "Deshacer" : `Deshacer las ${nuevas.length}`}
@@ -1966,7 +1971,7 @@ export function ConfirmarTemplatesProductoCard({
   items: { producto: string; nombre: string; contenido: string; audienciaNombre: string | null }[];
   puedeEnviarMeta: boolean;
   disabled: boolean;
-  onEnviar: (ediciones: { nombre: string; contenido: string }[], modo: "meta" | "borrador") => Promise<void>;
+  onEnviar: (ediciones: { nombre: string; contenido: string }[], modo: "meta" | "borrador") => Promise<boolean>;
 }) {
   const [textos, setTextos] = useState<Record<string, string>>(() =>
     Object.fromEntries(items.map((i) => [i.nombre, i.contenido])),
@@ -1985,12 +1990,13 @@ export function ConfirmarTemplatesProductoCard({
 
   async function confirmar(modo: "meta" | "borrador") {
     setEnviando(modo);
-    await onEnviar(
+    const ok = await onEnviar(
       seleccionados.map((i) => ({ nombre: i.nombre, contenido: (textos[i.nombre] ?? "").trim() })),
       modo,
     );
     setEnviando(null);
-    setHecho(true);
+    // Si falló la llamada, la tarjeta queda habilitada para reintentar.
+    if (ok) setHecho(true);
   }
 
   return (
@@ -2076,7 +2082,7 @@ export function ConfirmarTemplatesProductoCard({
             {enviando === "meta"
               ? "Enviando a Meta..."
               : hecho
-                ? "Enviados ✓"
+                ? "Listo ✓"
                 : `Enviar ${seleccionados.length} a Meta`}
           </button>
         )}

@@ -37,7 +37,7 @@ export function slugProducto(nombre: string): string {
   const s = nombre
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 40)
@@ -306,10 +306,16 @@ Reglas estrictas (Meta las exige):
     crudo = {};
   }
 
-  const porNombre = new Map((crudo.templates ?? []).map((t) => [normalizar(t.producto), t.contenido]));
+  const generados = crudo.templates ?? [];
+  const porNombre = new Map(generados.map((t) => [normalizar(t.producto), t.contenido]));
   return productos
-    .map((p) => {
-      let contenido = String(porNombre.get(normalizar(p.producto)) ?? "").trim();
+    .map((p, i) => {
+      // Por nombre; si el modelo lo reescribió distinto, por posición.
+      let contenido = String(
+        porNombre.get(normalizar(p.producto)) ??
+          (generados.length === productos.length ? generados[i]?.contenido : "") ??
+          "",
+      ).trim();
       // Red de seguridad: si igual se coló una variable, se saca (el envío a
       // Meta la rechazaría con variables deshabilitadas).
       if (contieneVariablesTemplate(contenido)) contenido = contenido.replace(/\{\{[^{}]*\}\}/g, "").replace(/\s{2,}/g, " ").trim();

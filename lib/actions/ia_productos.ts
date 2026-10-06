@@ -1,6 +1,7 @@
 "use server";
 
 import { assertPermiso } from "@/lib/auth/permisos";
+import { createClient } from "@/lib/supabase/server";
 import {
   deleteListAction,
   saveTemplateDraftAction,
@@ -38,9 +39,27 @@ export async function deshacerAudienciasIAAction(
   const ids = Array.from(new Set(audienciaIds.filter((v) => typeof v === "string" && v))).slice(0, 20);
   if (ids.length === 0) return { eliminadas: 0, error: "No hay audiencias para deshacer." };
 
+  // Solo se deshacen audiencias que existen y que todavía no se usaron en
+  // una campaña (borrarlas dejaría la campaña sin audiencia).
+  const supabase = await createClient();
+  const [{ data: existentes }, { data: usadas }] = await Promise.all([
+    supabase.from("yamas_send_listas").select("id").in("id", ids),
+    supabase.from("yamas_send_campanas").select("lista_id").in("lista_id", ids),
+  ]);
+  const enCampana = new Set((usadas ?? []).map((r) => r.lista_id as string));
+  const borrables = (existentes ?? []).map((r) => r.id as string).filter((id) => !enCampana.has(id));
+  if (borrables.length === 0) {
+    return {
+      eliminadas: 0,
+      error: enCampana.size
+        ? "Ya se usa en una campaña, así que no se puede deshacer desde acá."
+        : "Esa audiencia ya no existe.",
+    };
+  }
+
   let eliminadas = 0;
   let ultimoError: string | null = null;
-  for (const id of ids) {
+  for (const id of borrables) {
     const r = await deleteListAction(id);
     if (r.error) ultimoError = r.error;
     else eliminadas++;
@@ -114,20 +133,15 @@ export async function enviarTemplatesProductoAction(
   const texto =
     modo === "meta"
       ? ok > 0
-        ? `Listo, mandé ${ok} template${ok === 1 ? "" : "s"} a aprobación de Meta${fallidos ? ` (${fallidos} no se pudo${fallidos === 1 ? "" : "ieron"} mandar, abajo te digo por qué)` : ""}. Quedan "En revisión": Meta suele tardar de minutos a unas horas y te aviso por acá apenas respondan. Después armamos la campaña de cada audiencia con su template.`
+        ? `Listo, mandé ${ok} template${ok === 1 ? "" : "s"} a aprobación de Meta${fallidos ? ` (${fallidos} no se pudo${fallidos === 1 ? "" : "ieron"} mandar, abajo te digo por qué; si querés, pedime de nuevo el template de ese producto)` : ""}. Quedan "En revisión": Meta suele tardar de minutos a unas horas y te aviso por acá apenas respondan. Después armamos la campaña de cada audiencia con su template.`
         : "No pude mandar los templates a Meta. Abajo te dejo el motivo de cada uno."
       : ok > 0
         ? `Listo, guardé ${ok} template${ok === 1 ? "" : "s"} como borrador${ok === 1 ? "" : "es"}. Los encontrás en Templates para mandarlos a Meta cuando quieras.${fallidos ? ` ${fallidos} no se pudo${fallidos === 1 ? "" : "ieron"} guardar.` : ""}`
         : "No pude guardar los templates. Abajo te dejo el motivo de cada uno.";
 
-  // Los que fallaron quedan en el draft para poder reintentar.
-  const pendientes = propuestos.filter((p) => resultados.some((r) => r.nombre === p.nombre && !r.ok));
   return {
     text: texto,
     payload: { kind: "templates_producto_resultado", resultado: modo === "meta" ? "enviado" : "borrador", items: resultados },
-    flowState: {
-      ...IA_FLOW_IDLE,
-      draft: { ...memoria, ...(pendientes.length ? { templatesProducto: pendientes } : {}) },
-    },
+    flowState: { ...IA_FLOW_IDLE, draft: memoria },
   };
 }

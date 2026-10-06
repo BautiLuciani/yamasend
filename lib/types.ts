@@ -565,6 +565,8 @@ export interface ListaContactosIA {
    */
   calidad: "fuerte" | "floja";
   contactos: { telefono: string; nombre: string }[];
+  /** Mensajes del usuario desde que se mostró (vale solo para el siguiente). */
+  turnosDesde?: number;
 }
 
 /** Un producto o categoría que piden los clientes (ver productos_clientes). */

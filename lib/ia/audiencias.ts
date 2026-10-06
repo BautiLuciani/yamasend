@@ -102,10 +102,13 @@ async function audienciaRecienteIgual(
   ids: string[],
 ): Promise<{ id: string; nombre: string } | null> {
   const desde = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  // Solo audiencias que creó la IA (descripcion "Creada por la IA..."): una
+  // que el usuario armó a mano con los mismos contactos no se "reutiliza".
   const { data } = await supabase
     .from("yamas_send_listas")
     .select("id, nombre, contactos_ids")
     .eq("tenant_id", tenantId)
+    .ilike("descripcion", "Creada por la IA%")
     .gte("created_at", desde)
     .order("created_at", { ascending: false })
     .limit(30);
@@ -157,16 +160,23 @@ export async function crearAudienciaIA(
     return { ok: true, error: null, id: repetida.id, nombre: repetida.nombre, total: resueltos.ids.length, yaExistia: true, ...base };
   }
 
-  if (opciones.reutilizarPorNombre) {
+  // Reutilizar solo la audiencia que la IA ya armó para lo MISMO (misma
+  // etiqueta filtro_ai_query, ej. el mismo producto) y con los mismos
+  // contactos. Una hecha a mano no se toca: se crea otra con nombre libre.
+  if (opciones.reutilizarPorNombre && opciones.filtroAiQuery) {
     const { data: mismoNombre } = await supabase
       .from("yamas_send_listas")
       .select("id, nombre, contactos_ids")
       .eq("tenant_id", tenantId)
-      .eq("nombre", opciones.nombre.trim())
+      .eq("filtro_ai_query", opciones.filtroAiQuery)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
-    if (mismoNombre) {
-      const total = Array.isArray(mismoNombre.contactos_ids) ? mismoNombre.contactos_ids.length : 0;
-      return { ok: true, error: null, id: mismoNombre.id as string, nombre: mismoNombre.nombre as string, total, yaExistia: true, ...base };
+    const previos = Array.isArray(mismoNombre?.contactos_ids) ? (mismoNombre!.contactos_ids as string[]) : [];
+    // Solo si tiene exactamente los mismos contactos; si cambiaron (entró
+    // gente nueva), se crea una nueva en vez de mostrar una desactualizada.
+    if (mismoNombre && [...previos].sort().join(",") === [...resueltos.ids].sort().join(",")) {
+      return { ok: true, error: null, id: mismoNombre.id as string, nombre: mismoNombre.nombre as string, total: previos.length, yaExistia: true, ...base };
     }
   }
 

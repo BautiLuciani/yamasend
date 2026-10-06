@@ -44,7 +44,7 @@ interface IAProps {
   onEnviarTemplatesProducto: (
     ediciones: { nombre: string; contenido: string }[],
     modo: "meta" | "borrador",
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   onNuevaConversacion: () => void;
   onSeleccionarConversacion: (conversacionId: string) => void;
   onBorrarConversacion: (conversacionId: string) => Promise<{ error: string | null }>;

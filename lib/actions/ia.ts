@@ -424,7 +424,7 @@ const REGEX_NO_ES_CREACION = /\b(borr|elimin|renombr|cambi|edit|modific|actualiz
 
 /** "que se llame X", "llamala X", o un nombre entre comillas. */
 function extraerNombrePedido(texto: string): string | null {
-  const comillas = texto.match(/["“«']([^"”»']{2,80})["”»']/);
+  const comillas = texto.match(/["“«]([^"”»]{2,80})["”»]/);
   if (comillas) return comillas[1].trim();
   const llamada = texto.match(/(?:que se llame|llam[aá]la|ponele(?: de nombre)?|con el nombre(?: de)?)\s+(.{2,80})$/i);
   return llamada ? llamada[1].replace(/[.!?]+$/, "").trim() : null;
@@ -448,11 +448,16 @@ async function intentaAudienciaDesdeUltimaLista(
   const t = texto
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "");
+    .replace(/[\u0300-\u036f]/g, "");
 
   if (REGEX_NO_ES_CREACION.test(t)) return null;
   if (!REGEX_ARMAR_AUDIENCIA.test(t)) return null;
   if (!REGEX_REFERENCIA_RESULTADOS.test(t)) return null;
+  // Si el pedido trae su propio criterio ("con los que preguntaron precio
+  // esta semana") o una temperatura, lo resuelve el agente: este atajo es
+  // solo para "con estos" a secas.
+  if (/\b(los|las) que\b|\bque (pregunt|compr|habl|escrib|pidi|quier|consult|dij|mostr)|\b(semana|mes|hoy|ayer|dias|ultimos?|primeros?)\b|\bsolo\b|\bmenos\b|\bsin\b/.test(t)) return null;
+  if (detectarFiltroTemperatura(texto)) return null;
 
   const tenantId = await resolverTenantId();
   if (!tenantId) return null;
@@ -476,15 +481,7 @@ async function intentaAudienciaDesdeUltimaLista(
         : undefined;
   if (!listaBase) return null;
 
-  // "Con los calientes de esos": filtro por temperatura sobre la búsqueda.
-  const filtroTemp = detectarFiltroTemperatura(texto);
-  if (filtroTemp && busqueda?.contactos.length) {
-    const tels = busqueda.contactos.filter((c) => c.temperatura === filtroTemp).map((c) => c.telefono.replace(/\D/g, ""));
-    if (tels.length === 0) return null;
-    args.telefonos = tels;
-  } else {
-    args.usar_ultima_lista = true;
-  }
+  args.usar_ultima_lista = true;
 
   let r: ResultadoHerramienta;
   try {
@@ -1045,6 +1042,8 @@ export async function sendIAMessageAction(
     };
   }
 
+  flowState = envejecerUltimaLista(flowState);
+
   // ---- Flujo activo: interpretar antes de pasar al handler rígido ------
   //
   // Los handlers esperan un input puntual por paso. Sin este chequeo,
@@ -1089,6 +1088,10 @@ export async function sendIAMessageAction(
           tenantIdFlujo,
           flowState.draft,
         );
+        // Si la respuesta abrió un flujo nuevo (ej. la tarjeta de selección
+        // de una audiencia), ese flujo reemplaza al anterior: si no, al
+        // confirmar la tarjeta se "perdía el contexto".
+        if (respuesta.flowState.kind) return respuesta;
         return {
           ...respuesta,
           flowState: {
@@ -3419,7 +3422,28 @@ function armarLista(
     contactos.push({ telefono: tel, nombre: (f.nombre ?? "").trim() || tel });
   }
   if (contactos.length === 0) return undefined;
-  return { titulo, nombreSugerido: nombreAudienciaSugerido(baseNombre), calidad, contactos };
+  return {
+    titulo,
+    nombreSugerido: nombreAudienciaSugerido(baseNombre),
+    calidad,
+    contactos: contactos.slice(0, 1000),
+    turnosDesde: 0,
+  };
+}
+
+/**
+ * La última lista vale para el mensaje siguiente a mostrarla ("armá una
+ * audiencia con estos"). Uno más tarde ya no: "estos" podría referirse a
+ * otra cosa, y crear directo con una lista vieja sería un error silencioso.
+ */
+function envejecerUltimaLista(flowState: IAFlowState): IAFlowState {
+  const l = flowState.draft.ultimaListaContactos;
+  if (!l) return flowState;
+  const edad = (l.turnosDesde ?? 0) + 1;
+  const draft = { ...flowState.draft };
+  if (edad > 1) delete draft.ultimaListaContactos;
+  else draft.ultimaListaContactos = { ...l, turnosDesde: edad };
+  return { ...flowState, draft };
 }
 
 /**
@@ -3970,6 +3994,12 @@ async function ejecutarHerramientaAgente(
       .slice(0, 10)
       .map((c) => ({ nombre: c.nombre, telefono: c.telefono }));
     return {
+      listaContactos: armarLista(
+        `Contactos llamados "${String(args.nombre ?? "").slice(0, 40)}"`,
+        String(args.nombre ?? "Contactos").slice(0, 40),
+        "fuerte",
+        contactos.map((c) => ({ telefono: c.telefono as string, nombre: c.nombre as string })),
+      ),
       datos: {
         encontrados: contactos.length,
         contactos,
@@ -4003,9 +4033,14 @@ async function ejecutarHerramientaAgente(
     }
     const telefonosUnicos = Array.from(new Set(filas.map((f) => f.telefono)));
     const mapaContactos = await resolverContactoIdsPorTelefono(supabase, tenantId, telefonosUnicos);
-    // Lo que se le muestra al usuario son las primeras `limite` citas: esa es
-    // la lista a la que se refiere con "estos".
-    const filasMostradas = contarTodo ? filas.slice(0, Math.max(limite, 1)) : filas;
+    // "Los últimos 15" son 15 CONTACTOS, no 15 citas (un contacto puede tener
+    // varias). Se muestran las citas de los primeros `limite` contactos.
+    const telefonosMostrados = new Set<string>();
+    for (const f of filas) {
+      if (telefonosMostrados.size >= Math.max(limite, 1)) break;
+      telefonosMostrados.add(f.telefono);
+    }
+    const filasMostradas = contarTodo ? filas.filter((f) => telefonosMostrados.has(f.telefono)) : filas;
     const etiquetaSenal = tipo ? ETIQUETA_LISTA_SENAL[tipo] : null;
     return {
       listaContactos: armarLista(
@@ -4022,7 +4057,8 @@ async function ejecutarHerramientaAgente(
             total_contactos_con_esta_senal: telefonosUnicos.length,
             total_citas: filas.length,
             total_recortado_en_100_citas: (data ?? []).length >= 100,
-            filas: filas.slice(0, Math.max(limite, 1)),
+            contactos_mostrados: telefonosMostrados.size,
+            filas: filasMostradas,
           }
         : filas,
       tabla: filas.length
@@ -4759,6 +4795,12 @@ async function ejecutarHerramientaAgente(
       const comercios = perfiles.filter((f) => /(shop|tienda|veterinari|local|comercio|negocio|revend|mayorista|distribu|petshop|forrajer)/i.test(f.valor));
       const destacadas = [...porMayor, ...comercios];
       return {
+        listaContactos: armarLista(
+          "Posibles compras por mayor",
+          "Compras por mayor",
+          "fuerte",
+          destacadas.map((f) => ({ telefono: f.telefono, nombre: f.contacto_nombre })),
+        ),
         datos: {
           ...base,
           posibles_compras_por_mayor: porMayor.map(ejemplo),
@@ -4825,6 +4867,14 @@ async function ejecutarHerramientaAgente(
     const porCategoria: Record<string, number> = {};
     for (const f of posibles) porCategoria[f.categoria] = (porCategoria[f.categoria] ?? 0) + 1;
     return {
+      // Las "posibles" son aproximadas: si se arma una audiencia con ellas,
+      // el usuario elige.
+      listaContactos: armarLista(
+        "Objeciones y reclamos",
+        "Objeciones y reclamos",
+        posibles.length > verificadas.length ? "floja" : "fuerte",
+        [...verificadas, ...posibles].map((f) => ({ telefono: f.telefono, nombre: f.contacto_nombre })),
+      ),
       datos: {
         dias,
         objeciones_verificadas_por_el_motor: verificadas.map((f) => ({
@@ -4990,7 +5040,7 @@ async function ejecutarHerramientaAgente(
         .map((f) => f.telefono.replace(/\D/g, ""));
       origen = `los ${top} más prioritarios del Motor a los que se puede escribir ahora`;
       nombreBase ??= nombreAudienciaSugerido(`Top ${top} prioritarios`);
-    } else if (filtroTemp) {
+    } else if (filtroTemp && args.usar_ultima_lista !== true && telefonosArg.length === 0) {
       const { data, error } = await supabase
         .from("yamas_send_leads")
         .select("telefono")
@@ -5008,10 +5058,14 @@ async function ejecutarHerramientaAgente(
       nombreBase ??= nombreAudienciaSugerido(`Contactos ${etiqueta}`);
     } else if (telefonosArg.length > 0) {
       telefonos = telefonosArg;
-      // Si son parte de la última lista, heredan su calidad.
+      // Si son parte de la última lista, heredan su calidad. Si no, no se
+      // sabe de dónde salieron (el modelo pudo tomarlos de otra respuesta):
+      // que el usuario los vea antes.
       if (lista && telefonosArg.every((t) => lista.contactos.some((c) => c.telefono === t))) {
         calidad = lista.calidad;
         nombreBase ??= lista.nombreSugerido;
+      } else {
+        calidad = "floja";
       }
       origen = "los contactos indicados";
       nombreBase ??= nombreAudienciaSugerido("Contactos del chat");
@@ -5049,6 +5103,26 @@ async function ejecutarHerramientaAgente(
       };
     }
 
+    // "Los calientes de estos": temperatura sobre la lista, nunca toda la cuenta.
+    if (filtroTemp && (args.usar_ultima_lista === true || telefonosArg.length > 0) && telefonos.length > 0) {
+      const { data: conTemp, error: errTemp } = await supabase
+        .from("yamas_send_leads")
+        .select("telefono")
+        .eq("tenant_id", tenantId)
+        .eq("activo", true)
+        .in("telefono", telefonos.slice(0, 500))
+        .or(`temperatura_efectiva.eq.${filtroTemp},and(temperatura_efectiva.is.null,temperatura.eq.${filtroTemp})`);
+      if (errTemp) return { datos: { error: "No se pudieron filtrar los contactos por temperatura." } };
+      const ok = new Set((conTemp ?? []).map((r) => String(r.telefono ?? "")));
+      telefonos = telefonos.filter((t) => ok.has(t));
+      const etiqueta = filtroTemp === "caliente" ? "calientes" : filtroTemp === "tibio" ? "tibios" : "fríos";
+      if (telefonos.length === 0) {
+        return { datos: { error: `Ninguno de esos contactos es ${etiqueta.slice(0, -1)}. Decíselo.` } };
+      }
+      origen = `${origen} (solo los ${etiqueta})`;
+      if (!nombrePedido) nombreBase = `${nombreBase ?? "Contactos"} · ${etiqueta}`.slice(0, 100);
+    }
+
     let resueltos: Awaited<ReturnType<typeof resolverContactosParaAudiencia>>;
     try {
       resueltos = await resolverContactosParaAudiencia(supabase, tenantId, telefonos);
@@ -5081,7 +5155,7 @@ async function ejecutarHerramientaAgente(
       return {
         datos: { ok: true, contactos_incluidos: n, se_mostro_tarjeta: true },
         accion: {
-          text: `${motivo}${fuera ? fuera.replace(/^ \(/, " (").replace(/\.$/, "") : ""}. La audiencia se va a llamar "${nombreAudiencia}" (podés pedirme otro nombre).`,
+          text: `${motivo}${fuera.replace(/\.$/, "")}. La audiencia se va a llamar "${nombreAudiencia}" (podés pedirme otro nombre).`,
           payload: { kind: "seleccionar_contactos", preselectedIds: resueltos.ids },
           flowState: {
             kind: "crear_audiencia",
@@ -5110,7 +5184,7 @@ async function ejecutarHerramientaAgente(
       accion: {
         text: r.yaExistia
           ? `Esa audiencia ya la había creado hace un momento: "${r.nombre}", con ${r.total} contacto${r.total === 1 ? "" : "s"}. No la dupliqué.`
-          : `Listo, creé la audiencia "${r.nombre}" con ${r.total} contacto${r.total === 1 ? "" : "s"} (${origen})${fuera ? fuera.replace(/\.$/, "") : ""}. Cuando quieras, armamos la campaña con un template aprobado.`,
+          : `Listo, creé la audiencia "${r.nombre}" con ${r.total} contacto${r.total === 1 ? "" : "s"} (${origen})${fuera.replace(/\.$/, "")}. Cuando quieras, armamos la campaña con un template aprobado.`,
         payload: {
           kind: "audiencia_creada",
           audienciaId: r.id,
@@ -5763,6 +5837,11 @@ REGLAS ESTRICTAS
       if (resultado.listaContactos) {
         memoriaAgente.ultimaListaContactos = resultado.listaContactos;
         memoriaHerramientas = { ...memoriaHerramientas, ultimaListaContactos: resultado.listaContactos };
+      } else if (resultado.tabla) {
+        // Mostró otra cosa (otra tabla): "estos" ya no se refiere a la lista
+        // anterior. Mejor no tener lista que usar una equivocada.
+        memoriaAgente.ultimaListaContactos = undefined;
+        memoriaHerramientas = { ...memoriaHerramientas, ultimaListaContactos: undefined };
       }
       if (resultado.memoria?.productosDetectados) memoriaAgente.productosDetectados = resultado.memoria.productosDetectados;
       if (resultado.memoria?.audienciasProducto) memoriaAgente.audienciasProducto = resultado.memoria.audienciasProducto;

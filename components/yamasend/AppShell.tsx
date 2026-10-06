@@ -1521,15 +1521,17 @@ export default function AppShell({
   async function handleIAEnviarTemplatesProducto(
     ediciones: { nombre: string; contenido: string }[],
     modo: "meta" | "borrador",
-  ) {
+  ): Promise<boolean> {
     setIaSending(true);
     try {
       const res = await enviarTemplatesProductoAction(iaFlowState, ediciones, modo, iaConversacionIdRef.current);
       setIaFlowState(res.flowState);
       addMsg(res.text, res.error ? "error" : "bot", res.payload);
       router.refresh();
+      return true;
     } catch {
-      addMsg("Tuve un problema para enviar los templates. Probá de nuevo en unos segundos.", "error");
+      notificar("No se pudieron enviar los templates. Revisá tu conexión y probá de nuevo.", "error");
+      return false;
     } finally {
       setIaSending(false);
     }
