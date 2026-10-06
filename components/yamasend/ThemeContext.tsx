@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { TEMA_OSCURO_HABILITADO } from "@/lib/tema";
 
 type Theme = "light" | "dark";
 
@@ -21,6 +22,8 @@ const STORAGE_KEY = "yamasend-theme";
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
+    // MVP: siempre claro (ver lib/tema.ts).
+    if (!TEMA_OSCURO_HABILITADO) return "light";
     if (typeof window === "undefined") return "light";
     const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
     if (stored === "light" || stored === "dark") return stored;
@@ -38,10 +41,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     } else {
       el.removeAttribute("data-theme");
     }
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    // Con el tema oscuro deshabilitado no se pisa la preferencia guardada:
+    // si se vuelve a habilitar, cada usuario recupera la que tenía.
+    if (TEMA_OSCURO_HABILITADO) window.localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
   const toggleTheme = (origin?: { x: number; y: number }) => {
+    if (!TEMA_OSCURO_HABILITADO) return;
     const next: Theme = theme === "dark" ? "light" : "dark";
 
     if (!document.startViewTransition) {

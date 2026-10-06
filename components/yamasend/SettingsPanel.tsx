@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { useTheme } from "./ThemeContext";
 import { useLang } from "./LangContext";
+import { TEMA_OSCURO_HABILITADO } from "@/lib/tema";
 
 interface SettingsPanelProps {
   onBack: () => void;
@@ -37,7 +38,8 @@ export default function SettingsPanel({ onBack }: SettingsPanelProps) {
         {t("settings_title")}
       </div>
 
-      {/* Tema */}
+      {/* Tema (oculto mientras la app sea solo clara, ver lib/tema.ts) */}
+      {TEMA_OSCURO_HABILITADO && (
       <div className="flex items-center justify-between gap-3 border-t border-ys-border-softest pt-4">
         <div className="flex flex-col gap-0.5 min-w-0">
           <div className="text-[13.5px] font-bold text-ys-text">
@@ -75,6 +77,7 @@ export default function SettingsPanel({ onBack }: SettingsPanelProps) {
           </span>
         </button>
       </div>
+      )}
 
       {/* Idioma */}
       <div className="flex items-center justify-between gap-3 border-t border-ys-border-softest pt-4">

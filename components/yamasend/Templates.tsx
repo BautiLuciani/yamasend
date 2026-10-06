@@ -283,13 +283,11 @@ export default function Templates({ templates, onNewTemplate, onOpenTemplate, pu
                 {t.contenido}
               </div>
               <div
-                className={`flex items-center justify-between border-t pt-3 ${
+                className={`flex items-center justify-end border-t pt-3 ${
                   t.esDeEmpresa ? "border-[#e6dffa]" : "border-ys-border-softer"
                 }`}
               >
-                <div className="text-xs text-ys-dimmer font-semibold">
-                  USD {t.precio ?? "0.0618"} / msj
-                </div>
+                {/* Sin precio en USD: la app se maneja con créditos (oct 2026). */}
                 <div className="text-[12.5px] font-bold text-ys-faint">Ver detalle →</div>
               </div>
             </button>

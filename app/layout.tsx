@@ -3,6 +3,7 @@ import { Manrope, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/yamasend/ThemeContext";
 import { LangProvider } from "@/components/yamasend/LangContext";
+import { TEMA_OSCURO_HABILITADO } from "@/lib/tema";
 
 const manrope = Manrope({
   variable: "--font-manrope",
@@ -22,7 +23,8 @@ export const metadata: Metadata = {
 };
 
 // Se ejecuta antes del primer paint para evitar el flash de tema claro
-// cuando el usuario ya tenía guardada la preferencia oscura.
+// cuando el usuario ya tenía guardada la preferencia oscura. Con el tema
+// oscuro deshabilitado (lib/tema.ts) no se inyecta: la app queda en claro.
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
@@ -48,7 +50,9 @@ export default function RootLayout({
       className={`${manrope.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {TEMA_OSCURO_HABILITADO && (
+          <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        )}
       </head>
       <body className="h-full flex flex-col overflow-hidden bg-ys-bg text-ys-text">
         <ThemeProvider>
