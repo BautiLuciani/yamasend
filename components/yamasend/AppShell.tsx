@@ -48,7 +48,7 @@ import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
 import ConfiguracionModal from "./ConfiguracionModal";
 import LogoutModal from "./LogoutModal";
-import KpiRow from "./KpiRow";
+import ContactosBarra, { type OrdenKey, type ScoreFiltro } from "./ContactosBarra";
 import ContactsTable from "./ContactsTable";
 import ContactsPagination from "./ContactsPagination";
 import QrImportModal from "./QrImportModal";
@@ -514,6 +514,9 @@ export default function AppShell({
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
   const [modo24h, setModo24h] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
+  const [tagFilt, setTagFilt] = useState<string[]>([]);
+  const [ordenKey, setOrdenKey] = useState<OrdenKey | null>(null);
+  const [ordenDir, setOrdenDir] = useState<"asc" | "desc">("asc");
   const [contactPage, setContactPage] = useState(1);
   const CONTACTS_PER_PAGE = 15;
 
@@ -982,7 +985,7 @@ export default function AppShell({
   // ── filtrado combinado, replicando la lógica del original ──
   const visibleContacts = useMemo(() => {
     const q = contactSearch.trim().toLowerCase();
-    return contacts.filter((c) => {
+    const filtradas = contacts.filter((c) => {
       if (c.bloqueado && !modo24h) return false;
       if (filt.has("24h") && !c.en24h) return false;
       if (filt.has("cliente") && c.etapa !== "cerrado") return false;
@@ -992,6 +995,8 @@ export default function AppShell({
       );
       if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
         return false;
+      // Las etiquetas se acumulan: tiene que tener TODAS las elegidas.
+      if (tagFilt.length > 0 && !tagFilt.every((t) => (c.etiquetas ?? []).includes(t))) return false;
       if (q) {
         const nombre = (c.nombre || "").toLowerCase();
         const tel = (c.tel || "").toLowerCase();
@@ -999,7 +1004,37 @@ export default function AppShell({
       }
       return true;
     });
-  }, [contacts, filt, modo24h, contactSearch]);
+    if (!ordenKey) return filtradas;
+
+    const dir = ordenDir === "asc" ? 1 : -1;
+    const clave = (c: Contact): string | number | null => {
+      switch (ordenKey) {
+        case "nombre":
+          return (c.nombre || "").trim().toLowerCase() || null;
+        case "tel":
+          return c.tel || null;
+        case "etiquetas":
+          return (c.etiquetas ?? []).join(" ") || null;
+        case "score":
+          return c.score === "caliente" ? 0 : c.score === "tibio" ? 1 : c.score === "frio" ? 2 : null;
+        case "mensajes":
+          return c.mensajes;
+        // Ascendente = el mensaje más viejo primero.
+        case "ultimo":
+          return typeof c.diasInactivo === "number" ? -c.diasInactivo : null;
+      }
+    };
+    // Lo que no tiene valor va siempre al final, sea cual sea el sentido.
+    return [...filtradas].sort((x, y) => {
+      const a = clave(x);
+      const b = clave(y);
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      if (typeof a === "number" && typeof b === "number") return (a - b) * dir;
+      return String(a).localeCompare(String(b), "es") * dir;
+    });
+  }, [contacts, filt, modo24h, contactSearch, tagFilt, ordenKey, ordenDir]);
 
   const contactTotalPages = Math.max(
     1,
@@ -1011,86 +1046,47 @@ export default function AppShell({
     return visibleContacts.slice(start, start + CONTACTS_PER_PAGE);
   }, [visibleContacts, contactPageSafe]);
 
-  const counts = useMemo(
-    () => ({
-      total: contacts.filter((c) => !c.bloqueado).length,
-      clientes: contacts.filter((c) => !c.bloqueado && c.etapa === "cliente")
-        .length,
-      ai: contacts.filter((c) => c.enListaAI).length,
-      h24: contacts.filter((c) => c.en24h).length,
-      caliente: contacts.filter((c) => !c.bloqueado && c.score === "caliente")
-        .length,
-      tibio: contacts.filter((c) => !c.bloqueado && c.score === "tibio")
-        .length,
-      frio: contacts.filter((c) => !c.bloqueado && c.score === "frio").length,
-    }),
-    [contacts],
-  );
-
-  function recomputeSelFromFilters(nextFilt: Set<KpiFilterKey>, next24h: boolean) {
-    const next = new Set<string>();
-    contacts.forEach((c) => {
-      if (c.bloqueado && !next24h) return;
-      if (nextFilt.has("24h") && !c.en24h) return;
-      if (nextFilt.has("cliente") && c.etapa !== "cerrado") return;
-      if (nextFilt.has("ai") && !c.enListaAI) return;
-      const scores = (["caliente", "tibio", "frio"] as const).filter((s) =>
-        nextFilt.has(s),
-      );
-      if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
-        return;
-      next.add(c.id);
-    });
-    setSel(next);
-  }
-
   function handleContactSearchChange(value: string) {
     setContactSearch(value);
     setContactPage(1);
   }
 
-  function handleSelectTotal() {
-    setFilt(new Set());
-    setModo24h(false);
-    setContactPage(1);
-    const next = new Set(contacts.filter((c) => !c.bloqueado).map((c) => c.id));
-    setSel(next);
-    setStatus(next.size > 0 ? "need-tpl" : "idle");
-    addMsg(
-      `Seleccionaste ${next.size} contactos. ¿Elegís un template existente o querés que te arme uno especial para esta lista?`,
-    );
-  }
-
-  function handleToggleFilter(key: KpiFilterKey) {
+  function handleToggleScore(key: ScoreFiltro) {
     setContactPage(1);
     setFilt((prev) => {
       const next = new Set(prev);
-      let next24h = modo24h;
-
-      if (key === "ai" && !prev.has("ai")) {
-        next.clear();
-        next.add("ai");
-      } else if (key !== "ai" && prev.has("ai")) {
-        next.delete("ai");
-        next.add(key);
-        if (key === "24h") next24h = true;
-      } else if (next.has(key)) {
-        next.delete(key);
-        if (key === "24h") next24h = false;
-      } else {
-        next.add(key);
-        if (key === "24h") next24h = true;
-      }
-
-      setModo24h(next24h);
-      if (next24h && tplId) {
-        setTplId(null);
-        setIsCreatingNew(false);
-      }
-      recomputeSelFromFilters(next, next24h);
-      setStatus("need-tpl");
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
+  }
+
+  function handleToggleTag(tag: string) {
+    setContactPage(1);
+    setTagFilt((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
+  function handleLimpiarFiltros() {
+    setFilt(new Set());
+    setTagFilt([]);
+    setContactSearch("");
+    setContactPage(1);
+  }
+
+  function handleOrden(key: OrdenKey) {
+    setContactPage(1);
+    if (ordenKey === key) setOrdenDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setOrdenKey(key);
+      setOrdenDir("asc");
+    }
+  }
+
+  // "Crear audiencia" de la barra: usa lo seleccionado o, si no hay nada
+  // seleccionado, todos los contactos que pasan los filtros.
+  function handleCrearAudienciaVista() {
+    if (sel.size === 0) setSel(new Set(visibleContacts.map((c) => c.id)));
+    setCreateGroupOpen(true);
   }
 
   function handleToggleRow(id: string) {
@@ -1167,11 +1163,18 @@ export default function AppShell({
     router.refresh();
   }
 
-  // Pone una etiqueta a todos los contactos seleccionados en Contactos.
-  async function handleEtiquetarSeleccion(etiqueta: string): Promise<string | null> {
-    const r = await etiquetarContactosAction([...sel], [etiqueta]);
+  // Pone o quita una etiqueta a todos los contactos seleccionados en Contactos.
+  async function handleEtiquetarSeleccion(etiqueta: string, modo: "agregar" | "quitar"): Promise<string | null> {
+    const r =
+      modo === "agregar"
+        ? await etiquetarContactosAction([...sel], [etiqueta])
+        : await quitarEtiquetasAction([...sel], [etiqueta]);
     if (r.error) return r.error;
-    notificar(`Etiqueta «${mostrarEtiqueta(etiqueta)}» agregada a ${r.afectados} contacto${r.afectados === 1 ? "" : "s"}.`);
+    notificar(
+      modo === "agregar"
+        ? `Etiqueta «${mostrarEtiqueta(etiqueta)}» agregada a ${r.afectados} contacto${r.afectados === 1 ? "" : "s"}.`
+        : `Etiqueta «${mostrarEtiqueta(etiqueta)}» quitada a ${r.afectados} contacto${r.afectados === 1 ? "" : "s"}.`,
+    );
     setEtiquetarSelOpen(false);
     router.refresh();
     return null;
@@ -1696,12 +1699,6 @@ export default function AppShell({
             onCreateGroup={() => setCreateGroupOpen(true)}
             puedeCrear={user.permisos.crear_audiencias}
             onSinPermiso={() => avisarSinPermiso("crear audiencias")}
-            onAudienciaCreada={(lista, cantidad) => {
-              setListasExtra((prev) => [...prev.filter((l) => l.id !== lista.id), lista]);
-              notificar(`Audiencia "${lista.nombre}" lista con ${cantidad} contactos.`);
-              router.refresh();
-            }}
-            onCambioEtiquetas={() => router.refresh()}
           />
         </div>
       )}
@@ -1793,44 +1790,30 @@ export default function AppShell({
         </div>
       </div>
 
-      <KpiRow
-        counts={counts}
-        activeFilters={filt}
-        onSelectTotal={handleSelectTotal}
-        onToggleFilter={handleToggleFilter}
-        onImportClick={() => setQrOpen(true)}
-        onAnalyzeClick={() => {
-          if (wahaConectada) {
-            setSyncModalOpen(true);
-          } else {
-            setWahaRequiredOpen(true);
-          }
-        }}
-        importing={false}
-        puedeImportar={user.permisos.importar_contactos}
-        onSinPermiso={() => avisarSinPermiso("importar contactos")}
+      <ContactosBarra
+        contacts={contacts}
+        visibles={visibleContacts.length}
+        scoreFilt={filt}
+        onToggleScore={handleToggleScore}
+        tagFilt={tagFilt}
+        onToggleTag={handleToggleTag}
+        onLimpiar={handleLimpiarFiltros}
+        busqueda={contactSearch}
+        onBusqueda={handleContactSearchChange}
+        ordenKey={ordenKey}
+        ordenDir={ordenDir}
+        onOrden={handleOrden}
+        puedeCrear={user.permisos.crear_audiencias}
+        onSinPermiso={() => avisarSinPermiso("crear audiencias")}
+        onCrearAudiencia={handleCrearAudienciaVista}
+        onCambio={() => router.refresh()}
+        onNotificar={notificar}
       />
 
-      {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
+      {/* ── Contenido desktop ── */}
       <div className="hidden md:flex relative px-[38px] pb-[34px]">
         <div className="flex flex-col flex-1 relative bg-white border border-ys-border rounded-2xl">
-          <div className="flex items-center gap-3 px-6 pt-[18px] pb-4 flex-none">
-            <div className="text-[15px] font-extrabold text-ys-text">Todos los contactos</div>
-            <div className="ml-auto flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 w-[250px] transition-colors focus-within:border-ys-green-border">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
-                <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
-                <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <input
-                type="text"
-                value={contactSearch}
-                onChange={(e) => handleContactSearchChange(e.target.value)}
-                placeholder="Buscar contacto..."
-                className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
-              />
-            </div>
-          </div>
-          <div className="overflow-hidden rounded-b-2xl">
+          <div className="overflow-hidden rounded-t-2xl rounded-b-2xl">
             <ContactsTable
               contacts={paginatedContacts}
               selected={sel}
@@ -1838,6 +1821,10 @@ export default function AppShell({
               onToggleAll={handleToggleAll}
               onOpenDetail={setDetailContact}
               modo24h={modo24h}
+              ordenKey={ordenKey}
+              ordenDir={ordenDir}
+              onOrden={handleOrden}
+              onVincular={user.permisos.importar_contactos && contacts.length === 0 ? () => setQrOpen(true) : undefined}
             />
           </div>
           <ContactsPagination
@@ -1891,22 +1878,6 @@ export default function AppShell({
       {/* ── Contenido mobile: misma tabla + barra flotante que en desktop ── */}
       <div className="flex md:hidden flex-col px-4 pb-4">
         <div className="flex flex-col relative bg-white border border-ys-border rounded-2xl">
-          <div className="px-4 pt-4 pb-3 flex-none">
-            <div className="text-sm font-extrabold text-ys-text mb-3">Todos los contactos</div>
-            <div className="flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 transition-colors focus-within:border-ys-green-border">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
-                <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
-                <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <input
-                type="text"
-                value={contactSearch}
-                onChange={(e) => handleContactSearchChange(e.target.value)}
-                placeholder="Buscar contacto..."
-                className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
-              />
-            </div>
-          </div>
           <div className="overflow-hidden rounded-b-2xl">
             <ContactsTable
               contacts={paginatedContacts}
@@ -1915,6 +1886,10 @@ export default function AppShell({
               onToggleAll={handleToggleAll}
               onOpenDetail={setDetailContact}
               modo24h={modo24h}
+              ordenKey={ordenKey}
+              ordenDir={ordenDir}
+              onOrden={handleOrden}
+              onVincular={user.permisos.importar_contactos && contacts.length === 0 ? () => setQrOpen(true) : undefined}
             />
           </div>
           <ContactsPagination

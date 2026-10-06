@@ -129,13 +129,11 @@ function Campo({
   valor,
   onChange,
   readOnly,
-  completadoPorIA,
 }: {
   def: DefCampo;
   valor: string;
   onChange: (v: string) => void;
   readOnly: boolean;
-  completadoPorIA: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -143,9 +141,6 @@ function Campo({
         <label className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-dimmer">
           {def.label}
         </label>
-        {completadoPorIA && valor.trim() && (
-          <span className="text-[11px] font-bold text-ys-green-text">✓ Completado desde tus chats</span>
-        )}
       </div>
       {def.lineas === 1 ? (
         <input
@@ -286,7 +281,7 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
       setNuevoTexto("");
     }
     setAgregando(false);
-    setMsg({ type: "ok", text: "Lo sumamos. Revisalo y tocá «Guardar cambios»." });
+    setMsg({ type: "ok", text: "Lo sumamos. Guardalo o cancelalo en la barra de abajo." });
   }
 
   function setCampo(key: CampoTexto, v: string) {
@@ -306,6 +301,12 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
       setGuardado(datos);
       setMsg({ type: "ok", text: "Cambios guardados." });
     }
+  }
+
+  /** Descarta lo editado y vuelve a lo último guardado. */
+  function cancelar() {
+    setDatos(guardado);
+    setMsg(null);
   }
 
   async function volverAAnalizar() {
@@ -425,7 +426,6 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
     );
   }
 
-  const decisiones = inferido?.decisiones ?? {};
   // Se calculan contra lo GUARDADO (no lo que se está tipeando), así no
   // parpadean mientras el usuario escribe.
   const novedades: Novedad[] =
@@ -579,7 +579,6 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
                 valor={datos[def.key]}
                 onChange={(v) => setCampo(def.key, v)}
                 readOnly={!editable}
-                completadoPorIA={!!def.inferido && decisiones[def.inferido] === "aplicado"}
               />
             ))}
 
@@ -588,9 +587,6 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
                 <label className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-dimmer">
                   Productos y servicios ({datos.productos.length})
                 </label>
-                {decisiones.productos === "aplicado" && datos.productos.length > 0 && (
-                  <span className="text-[11px] font-bold text-ys-green-text">✓ Incluye productos detectados en tus chats</span>
-                )}
               </div>
               <ProductosEditor
                 productos={datos.productos}
@@ -601,15 +597,22 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
               />
             </div>
 
-            {editable && (
-              <div className="flex items-center gap-3">
-                <button type="button" onClick={guardar} disabled={guardando || !sucio} className={BTN_PRIMARIO}>
-                  {guardando ? "Guardando…" : "Guardar cambios"}
-                </button>
-                {sucio && !guardando && <span className="text-[12px] font-semibold text-ys-warn-text">Tenés cambios sin guardar</span>}
-              </div>
-            )}
           </div>
+
+          {editable && sucio && (
+            <div
+              className="sticky bottom-0 z-[5] -mt-1 bg-white border border-ys-green-border rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap shadow-[0_8px_24px_rgba(16,24,20,0.12)]"
+              style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
+            >
+              <span className="text-[13px] font-bold text-ys-text flex-1 min-w-[160px]">Editaste tu perfil. ¿Guardás los cambios?</span>
+              <button type="button" onClick={cancelar} disabled={guardando} className={BTN_SECUNDARIO}>
+                Cancelar
+              </button>
+              <button type="button" onClick={guardar} disabled={guardando} className={BTN_PRIMARIO}>
+                {guardando ? "Guardando…" : "Guardar"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* ── Derecha: chat con el asistente ── */}

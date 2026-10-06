@@ -1,8 +1,8 @@
 # Etiquetas
 
-Submenú **Etiquetas** dentro de **Audiencias**. Las etiquetas son **acumulables**: un contacto
+Las etiquetas viven en **Contactos**: la barra única filtra por score y etiquetas, y el botón **Etiquetas** abre la administración (sugeridas, crear, renombrar, eliminar). Las etiquetas son **acumulables**: un contacto
 puede ser `cliente` + `producto` + `nuevo`, y elegir las tres en el filtro muestra a quienes
-tienen **todas**. De ahí se arma una audiencia con un click.
+tienen **todas**. De ahí se arma una audiencia con el botón **Crear audiencia** de la barra (usa lo seleccionado o todo lo filtrado).
 
 ## «Cliente»
 
@@ -15,7 +15,7 @@ sincronización lo crea con **todo el análisis vacío** (sin temperatura, sin s
 solo con la etiqueta: es «cliente y nada más». En Contactos aparece como «Sin analizar».
 
 La sincronización corre sola:
-- al abrir **Audiencias > Etiquetas** y **Campañas** (si la persona puede importar contactos);
+- al abrir **Contactos** y **Campañas** (si la persona puede importar contactos);
 - al terminar cada análisis de chats (último nodo del workflow n8n «Perfil del negocio (IA)»).
 
 Es idempotente: correrla de nuevo no crea ni cambia nada. Deja afuera a los contactos cuyo nombre
@@ -25,10 +25,10 @@ incluye el del propio negocio (otras sucursales).
 
 | Forma | Dónde |
 |---|---|
-| Crear una etiqueta propia | Audiencias > Etiquetas > **Crear etiqueta propia**. Existe aunque todavía no tenga contactos (catálogo, máx. 100). |
+| Crear una etiqueta propia | Contactos > **Etiquetas** > **Crear etiqueta**. Existe aunque todavía no tenga contactos (catálogo, máx. 100). |
 | A mano, un contacto | Detalle del contacto > **Etiquetas** (se eligen entre las existentes o se escribe una nueva). |
-| A mano, varios | Contactos: seleccionar contactos y tocar **Etiquetar**; o Audiencias > Etiquetas: elegir etiquetas y «Agregar otra etiqueta a estos N contactos». |
-| Sugeridas | Audiencias > Etiquetas > **Etiquetas sugeridas**: Aplicar o Ignorar (lo ignorado no vuelve). |
+| A mano, varios | Contactos: seleccionar contactos y tocar **Etiquetar** (agregar o quitar). |
+| Sugeridas | Contactos > **Etiquetas** > sugeridas: **Aplicar**, **Revisar** (destildar o sumar contactos antes de aplicar) o **Ignorar** (lo ignorado no vuelve). |
 | Automática | Solo `cliente`. |
 
 Las etiquetas se guardan en minúsculas, con espacios simples, hasta 30 caracteres y sin símbolos
@@ -67,7 +67,7 @@ En todos los grupos se descarta lo que ya está en uso, lo que el usuario ignor�
 | Columna `etiquetas` en `yamas_send_leads` y funciones SQL | `docs/etiquetas.sql` |
 | Lógica pura (normalización, filtro acumulable, sugerencias) | `lib/etiquetas/etiquetas.ts` — prueba: `node --experimental-strip-types --import ./scripts/register-alias.mjs scripts/test-etiquetas.mts` y `scripts/test-etiquetas-sugerencias.mts` |
 | Acciones del servidor | `lib/actions/etiquetas.ts` |
-| Pantalla del submenú | `components/yamasend/Etiquetas.tsx` (pestañas en `Audiencias.tsx`) |
+| Barra de Contactos | `ContactosBarra.tsx`; administración en `EtiquetasModal.tsx`; revisión en `RevisarSugerenciaModal.tsx` |
 | Chip de etiqueta | `components/yamasend/EtiquetaChip.tsx` |
 | Etiquetar varios contactos desde Contactos | `components/yamasend/EtiquetarSeleccionModal.tsx` |
 | Catálogo de etiquetas propias (SQL) | `docs/etiquetas-catalogo.sql` |

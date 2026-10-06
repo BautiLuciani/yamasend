@@ -21,11 +21,12 @@ export default function EtiquetarSeleccionModal({
   /** Etiquetas que ya existen en la cuenta. */
   etiquetasExistentes: string[];
   /** Devuelve un mensaje de error, o null si salió bien. */
-  onConfirmar: (etiqueta: string) => Promise<string | null>;
+  onConfirmar: (etiqueta: string, modo: "agregar" | "quitar") => Promise<string | null>;
   onClose: () => void;
 }) {
   const [texto, setTexto] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [modo, setModo] = useState<"agregar" | "quitar">("agregar");
   const [error, setError] = useState<string | null>(null);
 
   if (!open) return null;
@@ -37,7 +38,7 @@ export default function EtiquetarSeleccionModal({
     if (!normalizada || guardando) return;
     setGuardando(true);
     setError(null);
-    const e = await onConfirmar(normalizada);
+    const e = await onConfirmar(normalizada, modo);
     setGuardando(false);
     if (e) {
       setError(e);
@@ -59,10 +60,26 @@ export default function EtiquetarSeleccionModal({
       >
         <div className="flex flex-col gap-1.5">
           <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
-            Etiquetar {cantidad} contacto{cantidad === 1 ? "" : "s"}
+            Etiquetas de {cantidad} contacto{cantidad === 1 ? "" : "s"}
+          </div>
+          <div className="flex gap-1 bg-ys-el2 rounded-[10px] p-1 w-fit">
+            {(["agregar", "quitar"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setModo(m)}
+                className={`text-[13px] font-bold rounded-lg px-3.5 py-1.5 cursor-pointer transition-colors ${
+                  modo === m ? "bg-white text-ys-text shadow-sm" : "text-ys-muted"
+                }`}
+              >
+                {m === "agregar" ? "Agregar" : "Quitar"}
+              </button>
+            ))}
           </div>
           <div className="text-[13.5px] text-ys-muted font-medium leading-[1.5]">
-            Elegí una etiqueta o escribí una nueva. Se suma a las que ya tengan.
+            {modo === "agregar"
+              ? "Elegí una etiqueta o escribí una nueva. Se suma a las que ya tengan."
+              : "Elegí la etiqueta que querés sacarles. Los que no la tengan no cambian."}
           </div>
         </div>
 
@@ -100,7 +117,7 @@ export default function EtiquetarSeleccionModal({
             disabled={!normalizada || guardando}
             className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-60 disabled:cursor-default"
           >
-            {guardando ? "Etiquetando…" : "Etiquetar"}
+            {guardando ? "Aplicando…" : modo === "agregar" ? "Agregar etiqueta" : "Quitar etiqueta"}
           </button>
         </div>
       </div>

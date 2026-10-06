@@ -2,6 +2,7 @@
 
 import type { Contact, ScoreTemp } from "@/lib/types";
 import EtiquetaChip from "./EtiquetaChip";
+import type { OrdenKey } from "./ContactosBarra";
 
 interface ContactsTableProps {
   contacts: Contact[];
@@ -10,6 +11,11 @@ interface ContactsTableProps {
   onToggleAll: (checked: boolean) => void;
   onOpenDetail: (contact: Contact) => void;
   modo24h: boolean;
+  ordenKey?: OrdenKey | null;
+  ordenDir?: "asc" | "desc";
+  onOrden?: (k: OrdenKey) => void;
+  /** Se muestra en el estado vacío para conectar el WhatsApp. */
+  onVincular?: () => void;
 }
 
 function initialsOf(nombre: string): string {
@@ -74,6 +80,10 @@ export default function ContactsTable({
   onToggleAll,
   onOpenDetail,
   modo24h,
+  ordenKey = null,
+  ordenDir = "asc",
+  onOrden,
+  onVincular,
 }: ContactsTableProps) {
   const visibleSelectable = contacts.filter((c) => !c.bloqueado || modo24h);
   const allChecked =
@@ -93,7 +103,32 @@ export default function ContactsTable({
         <div className="text-[13px] text-ys-muted font-medium text-center">
           Vinculá tu WhatsApp e importá tus contactos para empezar.
         </div>
+        {onVincular && (
+          <button
+            type="button"
+            onClick={onVincular}
+            className="mt-1 text-[13px] font-bold text-white bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover"
+          >
+            Vincular WhatsApp
+          </button>
+        )}
       </div>
+    );
+  }
+
+  function th(k: OrdenKey, label: string, derecha?: boolean) {
+    const activo = ordenKey === k;
+    return (
+      <button
+        type="button"
+        onClick={() => onOrden?.(k)}
+        className={`inline-flex items-center gap-1 uppercase tracking-[0.07em] font-extrabold cursor-pointer hover:text-ys-text ${
+          derecha ? "justify-end" : "justify-start"
+        } ${activo ? "text-ys-text" : ""}`}
+      >
+        {label}
+        <span className={activo ? "" : "opacity-30"}>{activo ? (ordenDir === "asc" ? "▲" : "▼") : "↕"}</span>
+      </button>
     );
   }
 
@@ -127,6 +162,16 @@ export default function ContactsTable({
                 <div className="text-[14px] font-bold text-ys-text truncate">
                   {c.nombre || <span className="text-ys-muted font-normal">Sin nombre</span>}
                 </div>
+                {(c.etiquetas?.length ?? 0) > 0 && (
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                    {c.etiquetas!.slice(0, 3).map((e) => (
+                      <EtiquetaChip key={e} nombre={e} chica />
+                    ))}
+                    {c.etiquetas!.length > 3 && (
+                      <span className="text-[10.5px] font-bold text-ys-dimmer">+{c.etiquetas!.length - 3}</span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -135,17 +180,18 @@ export default function ContactsTable({
 
       {/* ── Vista desktop: tabla ── */}
       <div className="overflow-visible hidden md:block">
-        <div className="grid grid-cols-[44px_1.7fr_1fr_.8fr_.5fr_.6fr] items-center px-6 py-2.5 bg-ys-bg border-t border-b border-ys-border-soft text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">
+        <div className="grid grid-cols-[44px_1.5fr_1fr_1.4fr_.8fr_.5fr_.6fr] items-center px-6 py-2.5 bg-ys-bg border-t border-b border-ys-border-soft text-[11px] font-extrabold tracking-[0.07em] uppercase text-ys-dimmer">
           <div>
             <div onClick={() => onToggleAll(!allChecked)} className="cursor-pointer inline-flex">
               <Checkbox checked={allChecked} />
             </div>
           </div>
-          <div>Nombre</div>
-          <div>Tel.</div>
-          <div>Score</div>
-          <div className="text-right">Msjs</div>
-          <div className="text-right">Último</div>
+          {th("nombre", "Nombre")}
+          {th("tel", "Tel.")}
+          {th("etiquetas", "Etiquetas")}
+          {th("score", "Score")}
+          {th("mensajes", "Msjs", true)}
+          {th("ultimo", "Último", true)}
         </div>
 
         {contacts.map((c) => {
@@ -155,7 +201,7 @@ export default function ContactsTable({
             <div
               key={c.id}
               onClick={() => onOpenDetail(c)}
-              className={`grid grid-cols-[44px_1.7fr_1fr_.8fr_.5fr_.6fr] items-center px-6 py-[13px] border-b border-ys-border-softer cursor-pointer transition-colors hover:bg-[#f7fbf9] ${
+              className={`grid grid-cols-[44px_1.5fr_1fr_1.4fr_.8fr_.5fr_.6fr] items-center px-6 py-[13px] border-b border-ys-border-softer cursor-pointer transition-colors hover:bg-[#f7fbf9] ${
                 isSel ? "bg-ys-green-bg" : ""
               } ${bloq ? "opacity-60" : ""}`}
             >
@@ -175,20 +221,24 @@ export default function ContactsTable({
                   <div className="text-sm font-bold text-ys-text truncate">
                     {c.nombre || <span className="text-ys-muted font-normal">Sin nombre</span>}
                   </div>
-                  {(c.etiquetas?.length ?? 0) > 0 && (
-                    <div className="flex flex-wrap items-center gap-1">
-                      {c.etiquetas!.slice(0, 3).map((e) => (
-                        <EtiquetaChip key={e} nombre={e} chica />
-                      ))}
-                      {c.etiquetas!.length > 3 && (
-                        <span className="text-[10.5px] font-bold text-ys-dimmer">+{c.etiquetas!.length - 3}</span>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
               <div className="font-mono text-[12.5px] text-ys-muted truncate">
                 {c.tel || "—"}
+              </div>
+              <div className="flex flex-wrap items-center gap-1 min-w-0 pr-2">
+                {(c.etiquetas?.length ?? 0) === 0 ? (
+                  <span className="text-ys-faint text-[12.5px]">—</span>
+                ) : (
+                  <>
+                    {c.etiquetas!.slice(0, 3).map((e) => (
+                      <EtiquetaChip key={e} nombre={e} chica />
+                    ))}
+                    {c.etiquetas!.length > 3 && (
+                      <span className="text-[10.5px] font-bold text-ys-dimmer">+{c.etiquetas!.length - 3}</span>
+                    )}
+                  </>
+                )}
               </div>
               <div>
                 <ScoreBadge score={c.score} />

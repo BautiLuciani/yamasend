@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import type { Contact, ContactList } from "@/lib/types";
-import Etiquetas from "./Etiquetas";
 
 interface AudienciasProps {
   lists: ContactList[];
@@ -19,10 +18,6 @@ interface AudienciasProps {
   puedeCrear?: boolean;
   /** Se dispara al tocar el botón sin permiso. Muestra el aviso. */
   onSinPermiso?: () => void;
-  /** Una audiencia armada desde Etiquetas: el padre la suma a las listas. */
-  onAudienciaCreada?: (lista: ContactList, cantidad: number) => void;
-  /** Cambiaron etiquetas: el padre refresca los contactos. */
-  onCambioEtiquetas?: () => void;
 }
 
 function initialsOf(nombre: string): string {
@@ -32,9 +27,8 @@ function initialsOf(nombre: string): string {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
-export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup, puedeCrear = true, onSinPermiso, onAudienciaCreada, onCambioEtiquetas }: AudienciasProps) {
+export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup, puedeCrear = true, onSinPermiso }: AudienciasProps) {
   const [query, setQuery] = useState("");
-  const [vista, setVista] = useState<"audiencias" | "etiquetas">("audiencias");
 
   const totalContactosOrganizados = useMemo(
     () => new Set(lists.flatMap((l) => l.contactosIds)).size,
@@ -75,30 +69,7 @@ export default function Audiencias({ lists, contacts, onOpenGroup, onCreateGroup
         )}
       </div>
 
-      {/* Submenú: Audiencias | Etiquetas */}
-      <div className="flex items-center gap-1 border-b border-ys-border-soft -mt-2">
-        {(["audiencias", "etiquetas"] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setVista(v)}
-            className={`px-4 py-2.5 text-[13.5px] font-bold cursor-pointer border-b-2 -mb-px transition-colors ${
-              vista === v ? "border-ys-green text-ys-text" : "border-transparent text-ys-muted hover:text-ys-text"
-            }`}
-          >
-            {v === "audiencias" ? "Audiencias" : "Etiquetas"}
-          </button>
-        ))}
-      </div>
-
-      {vista === "etiquetas" ? (
-        <Etiquetas
-          puedeCrear={puedeCrear}
-          onSinPermiso={onSinPermiso ?? (() => {})}
-          onAudienciaCreada={(lista, cantidad) => onAudienciaCreada?.(lista, cantidad)}
-          onCambio={() => onCambioEtiquetas?.()}
-        />
-      ) : lists.length === 0 ? (
+      {lists.length === 0 ? (
         <div className="bg-white border border-ys-border rounded-2xl py-16 px-6 flex flex-col items-center gap-3.5">
           <div className="w-[58px] h-[58px] rounded-[18px] bg-ys-green-bg flex items-center justify-center">
             <svg width="26" height="26" viewBox="0 0 16 16" fill="none">

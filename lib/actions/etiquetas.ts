@@ -292,6 +292,20 @@ export async function aplicarSugerenciaAction(etiqueta: string): Promise<Resulta
   return { afectados: total, error: null };
 }
 
+/** A quiénes se les pondría una sugerencia, para revisarlo antes de aplicarla. */
+export async function contactosDeSugerenciaAction(etiqueta: string): Promise<{ ids: string[]; error: string | null }> {
+  const gate = await assertPermiso("crear_audiencias");
+  if (!gate.ok || !gate.tenantId) return { ids: [], error: gate.error ?? "No tenés permiso." };
+  const nombre = normalizarEtiqueta(etiqueta);
+  if (!nombre) return { ids: [], error: mensajeDe("etiquetas_invalidas") };
+
+  const { contactos, productos, palabrasNegocio, ignoradas, error } = await cargarParaSugerir(gate.tenantId);
+  if (error) return { ids: [], error };
+  const sug = sugerirEtiquetas({ contactos, productos, palabrasNegocio, ignoradas, ahora: Date.now() }).find((s) => s.etiqueta === nombre);
+  if (!sug) return { ids: [], error: "Esa sugerencia ya no está disponible." };
+  return { ids: sug.contactoIds, error: null };
+}
+
 export async function ignorarSugerenciaAction(etiqueta: string): Promise<{ error: string | null }> {
   const gate = await assertPermiso("crear_audiencias");
   if (!gate.ok) return { error: gate.error };
