@@ -95,6 +95,14 @@ export async function getCampanasSugeridasAction(
   const membership = await getCurrentMembership();
   if (!membership?.tenantId) return { sugeridas: [], error: null };
 
+  // Antes de calcular, pone al día la etiqueta "cliente": crea los contactos que
+  // compraron pero nunca escribieron, para que entren en estas audiencias.
+  // Idempotente; solo si la persona puede importar contactos.
+  if (membership.permisos.importar_contactos) {
+    const supabase = await createClient();
+    await supabase.rpc("yamas_send_clientes_sincronizar");
+  }
+
   const { sugeridas, error } = await calcular(membership.tenantId, productoElegido);
   return {
     sugeridas: sugeridas.map(({ leadIds: _ids, ...resto }) => {

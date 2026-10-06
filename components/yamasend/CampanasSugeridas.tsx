@@ -191,7 +191,7 @@ export default function CampanasSugeridas({ puedeCrear, onSinPermiso, onCrear, o
         <div className="text-[16px] font-extrabold tracking-[-0.01em] text-ys-text">Campañas sugeridas</div>
         <div className="text-[12.5px] font-medium text-ys-muted leading-[1.5] max-w-[760px]">
           Armadas con el perfil de tu negocio y lo que detectamos en tus chats. Se actualizan solas y nunca se envía
-          nada sin que lo revises. Solo incluyen contactos con chats analizados.
+          nada sin que lo revises. Incluyen a tus clientes aunque nunca hayan escrito.
         </div>
       </div>
 

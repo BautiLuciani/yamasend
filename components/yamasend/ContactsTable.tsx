@@ -1,6 +1,7 @@
 "use client";
 
 import type { Contact, ScoreTemp } from "@/lib/types";
+import EtiquetaChip from "./EtiquetaChip";
 
 interface ContactsTableProps {
   contacts: Contact[];
@@ -170,8 +171,20 @@ export default function ContactsTable({
                 <div className="w-8 h-8 flex-none rounded-full bg-ys-green-bg text-ys-green-text text-[11.5px] font-extrabold flex items-center justify-center">
                   {initialsOf(c.nombre)}
                 </div>
-                <div className="text-sm font-bold text-ys-text truncate">
-                  {c.nombre || <span className="text-ys-muted font-normal">Sin nombre</span>}
+                <div className="min-w-0 flex flex-col gap-1">
+                  <div className="text-sm font-bold text-ys-text truncate">
+                    {c.nombre || <span className="text-ys-muted font-normal">Sin nombre</span>}
+                  </div>
+                  {(c.etiquetas?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap items-center gap-1">
+                      {c.etiquetas!.slice(0, 3).map((e) => (
+                        <EtiquetaChip key={e} nombre={e} chica />
+                      ))}
+                      {c.etiquetas!.length > 3 && (
+                        <span className="text-[10.5px] font-bold text-ys-dimmer">+{c.etiquetas!.length - 3}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="font-mono text-[12.5px] text-ys-muted truncate">

@@ -133,7 +133,7 @@ export async function getContactsForTenant(
   const { data: rows, error } = await supabase
     .from("yamas_send_leads")
     .select(
-      "id, telefono, nombre, temperatura, temperatura_manual, temperatura_efectiva, score_interes, interes_nivel, producto_servicio, necesidad, resumen, sentimiento, urgencia, keywords_detectados, conversaciones_count, ultimo_mensaje_at, dias_inactivo, consulta_usada, activo",
+      "id, telefono, nombre, temperatura, temperatura_manual, temperatura_efectiva, score_interes, interes_nivel, producto_servicio, necesidad, resumen, sentimiento, urgencia, keywords_detectados, conversaciones_count, ultimo_mensaje_at, dias_inactivo, consulta_usada, activo, etiquetas",
     )
     .eq("tenant_id", tenantId)
     .eq("activo", true)
@@ -184,6 +184,7 @@ export async function getContactsForTenant(
       keywords: r.keywords_detectados ?? [],
       diasInactivo: r.dias_inactivo,
       consultaUsada: r.consulta_usada,
+      etiquetas: r.etiquetas ?? [],
     };
   });
 }

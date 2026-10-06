@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import type { Contact, ScoreTemp } from "@/lib/types";
+import { normalizarEtiqueta } from "@/lib/etiquetas/etiquetas";
+import EtiquetaChip from "./EtiquetaChip";
 
 interface ContactDetailModalProps {
   contact: Contact | null;
@@ -10,6 +12,11 @@ interface ContactDetailModalProps {
     contactId: string,
     temperatura: "caliente" | "tibio" | "frio" | null,
   ) => Promise<void>;
+  /** Etiquetas: si no se pasan, la sección se muestra solo de lectura. */
+  onEtiquetar?: (contactId: string, etiqueta: string) => Promise<void>;
+  onQuitarEtiqueta?: (contactId: string, etiqueta: string) => Promise<void>;
+  /** Etiquetas que ya existen en la cuenta, para elegir en vez de escribir. */
+  etiquetasExistentes?: string[];
 }
 
 const TEMP_CONFIG: Record<
@@ -88,8 +95,13 @@ export default function ContactDetailModal({
   contact,
   onClose,
   onSetTemperaturaManual,
+  onEtiquetar,
+  onQuitarEtiqueta,
+  etiquetasExistentes = [],
 }: ContactDetailModalProps) {
   const [savingOverride, setSavingOverride] = useState(false);
+  const [nuevaEtiqueta, setNuevaEtiqueta] = useState("");
+  const [guardandoEtiqueta, setGuardandoEtiqueta] = useState(false);
 
   if (!contact) return null;
 
@@ -205,6 +217,68 @@ export default function ContactDetailModal({
                 </span>
               ))}
             </div>
+          </Field>
+        )}
+
+        {((contact.etiquetas?.length ?? 0) > 0 || onEtiquetar) && (
+          <Field label="Etiquetas">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(contact.etiquetas ?? []).map((e) => (
+                <EtiquetaChip
+                  key={e}
+                  nombre={e}
+                  onQuitar={
+                    onQuitarEtiqueta
+                      ? async () => {
+                          setGuardandoEtiqueta(true);
+                          await onQuitarEtiqueta(contact.id, e);
+                          setGuardandoEtiqueta(false);
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+              {(contact.etiquetas?.length ?? 0) === 0 && (
+                <span className="text-[12px] font-medium text-ys-dim">Sin etiquetas</span>
+              )}
+            </div>
+            {onEtiquetar && (
+              <form
+                className="flex gap-2 mt-1"
+                onSubmit={async (ev) => {
+                  ev.preventDefault();
+                  const n = normalizarEtiqueta(nuevaEtiqueta);
+                  if (!n || guardandoEtiqueta) return;
+                  setGuardandoEtiqueta(true);
+                  await onEtiquetar(contact.id, n);
+                  setGuardandoEtiqueta(false);
+                  setNuevaEtiqueta("");
+                }}
+              >
+                <input
+                  value={nuevaEtiqueta}
+                  onChange={(ev) => setNuevaEtiqueta(ev.target.value)}
+                  list="etiquetas-existentes"
+                  maxLength={30}
+                  placeholder="Agregar etiqueta"
+                  className="flex-1 min-w-0 border border-ys-border rounded-[10px] px-3 py-2 text-[13px] font-medium text-ys-text outline-none focus:border-ys-green"
+                />
+                <datalist id="etiquetas-existentes">
+                  {etiquetasExistentes
+                    .filter((e) => !(contact.etiquetas ?? []).includes(e))
+                    .map((e) => (
+                      <option key={e} value={e} />
+                    ))}
+                </datalist>
+                <button
+                  type="submit"
+                  disabled={guardandoEtiqueta || !normalizarEtiqueta(nuevaEtiqueta)}
+                  className="text-[12.5px] font-bold text-white bg-ys-green rounded-[10px] px-3.5 py-2 cursor-pointer hover:bg-ys-green-hover disabled:opacity-60 disabled:cursor-default"
+                >
+                  Agregar
+                </button>
+              </form>
+            )}
           </Field>
         )}
 

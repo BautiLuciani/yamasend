@@ -54,10 +54,11 @@ clave) con el nombre de cada producto del perfil:
 
 ## Límites conocidos
 
-- Las audiencias de YamaSend se arman con contactos **analizados** (leads). Los compradores
-  que nunca tuvieron un chat analizado no pueden entrar. En `+pets` se detectaron ~234
-  compradores y 99 están en Contactos.
+- Las compras se **infieren** de tus mensajes; no hay registro de ventas. Un cliente que compró y
+  nunca recibió una confirmación por WhatsApp no se detecta.
+- Quien compró pero **nunca escribió** igual entra: la sincronización de clientes (ver
+  `docs/etiquetas.md`) lo crea como contacto con la etiqueta «cliente», sin análisis de interés.
 - Cuando el interés detectado es genérico ("productos para mascotas"), no alcanza para asociar
-  al cliente con un producto puntual.
+  al cliente con un producto puntual. Los clientes sin análisis no entran en «por producto».
 - El mensaje sugerido es una base fija con el nombre del negocio y usa `{{1}}` para el nombre
   del cliente. Un template de marketing igual necesita la aprobación de Meta.

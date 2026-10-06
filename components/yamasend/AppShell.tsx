@@ -40,6 +40,8 @@ import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import Perfil from "./Perfil";
 import CampanasSugeridas from "./CampanasSugeridas";
+import { etiquetarContactosAction, quitarEtiquetasAction } from "@/lib/actions/etiquetas";
+import { contarEtiquetas, normalizarEtiquetas } from "@/lib/etiquetas/etiquetas";
 import type { CrearAudienciaSugeridaResult } from "@/lib/actions/campanas_sugeridas";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
@@ -1676,12 +1678,18 @@ export default function AppShell({
       {activeSection === "grupos" && (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
           <Audiencias
-            lists={lists}
+            lists={listasVisibles}
             contacts={contacts}
             onOpenGroup={(group) => setOpenGroupId(group.id)}
             onCreateGroup={() => setCreateGroupOpen(true)}
             puedeCrear={user.permisos.crear_audiencias}
             onSinPermiso={() => avisarSinPermiso("crear audiencias")}
+            onAudienciaCreada={(lista, cantidad) => {
+              setListasExtra((prev) => [...prev.filter((l) => l.id !== lista.id), lista]);
+              notificar(`Audiencia "${lista.nombre}" lista con ${cantidad} contactos.`);
+              router.refresh();
+            }}
+            onCambioEtiquetas={() => router.refresh()}
           />
         </div>
       )}
@@ -2178,6 +2186,41 @@ export default function AppShell({
       <ContactDetailModal
         contact={detailContact}
         onClose={() => setDetailContact(null)}
+        etiquetasExistentes={contarEtiquetas(contacts.map((c) => ({ etiquetas: c.etiquetas ?? [] }))).map((e) => e.nombre)}
+        onEtiquetar={
+          user.permisos.crear_audiencias
+            ? async (contactId, etiqueta) => {
+                const r = await etiquetarContactosAction([contactId], [etiqueta]);
+                if (r.error) {
+                  notificar(r.error, "error");
+                  return;
+                }
+                setDetailContact((prev) =>
+                  prev && prev.id === contactId
+                    ? { ...prev, etiquetas: normalizarEtiquetas([...(prev.etiquetas ?? []), etiqueta]) }
+                    : prev,
+                );
+                router.refresh();
+              }
+            : undefined
+        }
+        onQuitarEtiqueta={
+          user.permisos.crear_audiencias
+            ? async (contactId, etiqueta) => {
+                const r = await quitarEtiquetasAction([contactId], [etiqueta]);
+                if (r.error) {
+                  notificar(r.error, "error");
+                  return;
+                }
+                setDetailContact((prev) =>
+                  prev && prev.id === contactId
+                    ? { ...prev, etiquetas: (prev.etiquetas ?? []).filter((e) => e !== etiqueta) }
+                    : prev,
+                );
+                router.refresh();
+              }
+            : undefined
+        }
         onSetTemperaturaManual={async (contactId, temperatura) => {
           const result = await setTemperaturaManualAction(contactId, temperatura);
           if (result.error) {

@@ -36,6 +36,8 @@ export interface Contact {
   keywords?: string[];
   diasInactivo?: number | null;
   consultaUsada?: string | null;
+  /** Etiquetas acumulables (cliente, eukanuba, nuevo...). Ver lib/etiquetas/etiquetas.ts. */
+  etiquetas?: string[];
 }
 
 export type PlanKey = "starter" | "pro" | "uso";
