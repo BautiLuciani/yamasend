@@ -768,3 +768,55 @@ export interface SugerenciaHorario {
   /** Total de mensajes analizados en toda la cuenta. */
   totalAnalizados: number;
 }
+
+/* ───────────── Actividad de WhatsApp (card de Contactos) ───────────── */
+
+/** Métricas de un período, calculadas sobre el historial de mensajes. */
+export interface ActividadPeriodo {
+  /** Contactos distintos que mandaron al menos un mensaje. */
+  escribieron: number;
+  /** Mensajes entrantes. */
+  mensajes: number;
+  /** Contactos cuyo primer mensaje cae en el período. */
+  nuevos: number;
+}
+
+export interface ActividadWhatsapp {
+  h24: ActividadPeriodo;
+  d7: ActividadPeriodo;
+  generadoAt: string;
+}
+
+/* ───────────── Contactos excluidos del Motor ───────────── */
+
+export interface ContactoExcluido {
+  telefono: string;
+  nombre: string | null;
+  /** "excluido_usuario" si lo excluyó el usuario; otras (ej. "equipo") vienen de antes. */
+  categoria: string;
+  excluidoAt: string;
+}
+
+/* ───────────── Avisos del sidebar ───────────── */
+
+/** Estado categorizado de un template para los avisos: */
+export type EstadoTemplateAviso = "aprobado" | "rechazado" | "pendiente";
+/** Estado categorizado de una campaña programada o del motor: */
+export type EstadoCampanaAviso = "enviado" | "error" | "pendiente";
+
+/**
+ * Datos para los avisos del sidebar. Ver yamas_send_novedades() en
+ * docs/migraciones/2026-10-actividad-y-novedades.sql.
+ * - templates/campañas: estado actual por id (el navegador lo compara con la
+ *   "foto" de la última visita para detectar cambios).
+ * - contactos/dashboard: último momento (ISO) del evento. null = nunca.
+ */
+export interface Novedades {
+  ahora: string;
+  templatesEstados: Record<string, EstadoTemplateAviso>;
+  campanasEstados: Record<string, EstadoCampanaAviso>;
+  contactosNuevoAt: string | null;
+  dashboardRespuestaAt: string | null;
+  /** Hubo conexión de WhatsApp y ya no está conectada (no cuenta vínculos sin terminar). */
+  whatsappDesvinculado: boolean;
+}
