@@ -198,12 +198,15 @@ interface AudienciaCreadaCardProps {
   nombre: string;
   totalContactos: number;
   onVerAudiencia: () => void;
+  /** Solo para las que creó la IA directo: permite deshacerla. */
+  onDeshacer?: () => Promise<boolean>;
 }
 
 export function AudienciaCreadaCard({
   nombre,
   totalContactos,
   onVerAudiencia,
+  onDeshacer,
 }: AudienciaCreadaCardProps) {
   return (
     <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex items-center gap-3">
@@ -218,6 +221,7 @@ export function AudienciaCreadaCard({
           {totalContactos} contacto{totalContactos === 1 ? "" : "s"} · Audiencia creada
         </div>
       </div>
+      {onDeshacer && <BotonDeshacer etiqueta="Deshacer" onDeshacer={onDeshacer} />}
       <button
         onClick={onVerAudiencia}
         className="flex-none text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
@@ -256,6 +260,12 @@ export function renderChatCard(
     onElegirTemperatura: (temperatura: "caliente" | "tibio" | "frio") => void;
     onElegirCampoCampana: (campo: "nombre" | "template" | "audiencia" | "fecha") => void;
     onRevisarMotor: () => void;
+    onVerAudiencias: () => void;
+    onDeshacerAudiencias: (ids: string[]) => Promise<boolean>;
+    onEnviarTemplatesProducto: (
+      ediciones: { nombre: string; contenido: string }[],
+      modo: "meta" | "borrador",
+    ) => Promise<boolean>;
   },
   isLatest: boolean,
 ) {
@@ -286,6 +296,37 @@ export function renderChatCard(
         nombre={payload.nombre}
         totalContactos={payload.totalContactos}
         onVerAudiencia={() => handlers.onVerAudiencia(payload.audienciaId)}
+        onDeshacer={
+          payload.deshacible && isLatest ? () => handlers.onDeshacerAudiencias([payload.audienciaId]) : undefined
+        }
+      />
+    );
+  }
+  if (payload.kind === "audiencias_producto_creadas") {
+    return (
+      <AudienciasProductoCreadasCard
+        items={payload.items}
+        onVerAudiencias={handlers.onVerAudiencias}
+        onDeshacer={isLatest ? handlers.onDeshacerAudiencias : undefined}
+      />
+    );
+  }
+  if (payload.kind === "confirmar_templates_producto") {
+    return (
+      <ConfirmarTemplatesProductoCard
+        items={payload.items}
+        puedeEnviarMeta={payload.puedeEnviarMeta}
+        disabled={!isLatest}
+        onEnviar={handlers.onEnviarTemplatesProducto}
+      />
+    );
+  }
+  if (payload.kind === "templates_producto_resultado") {
+    return (
+      <TemplatesProductoResultadoCard
+        resultado={payload.resultado}
+        items={payload.items}
+        onVerTemplates={handlers.onVerTemplates}
       />
     );
   }
@@ -1812,6 +1853,297 @@ function ElegirTemperaturaCard({ contactoNombre, onElegir, disabled }: ElegirTem
           </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// Audiencias automáticas y templates por producto (oct 2026)
+// -------------------------------------------------------------------------
+
+/** Botón "Deshacer" con confirmación en dos toques (evita borrados por accidente). */
+function BotonDeshacer({
+  etiqueta,
+  onDeshacer,
+}: {
+  etiqueta: string;
+  onDeshacer: () => Promise<boolean>;
+}) {
+  const [estado, setEstado] = useState<"idle" | "confirmar" | "deshaciendo" | "hecho">("idle");
+  if (estado === "hecho") {
+    return <span className="flex-none text-[12px] font-bold text-ys-dim">Deshecho</span>;
+  }
+  return (
+    <button
+      disabled={estado === "deshaciendo"}
+      onClick={async () => {
+        if (estado === "idle") {
+          setEstado("confirmar");
+          // Si no confirma en unos segundos, vuelve solo (onBlur no anda en Safari).
+          setTimeout(() => setEstado((e) => (e === "confirmar" ? "idle" : e)), 4000);
+          return;
+        }
+        setEstado("deshaciendo");
+        const ok = await onDeshacer();
+        setEstado(ok ? "hecho" : "idle");
+      }}
+      onBlur={() => estado === "confirmar" && setEstado("idle")}
+      className={`flex-none text-[12px] font-bold rounded-lg px-2.5 py-1.5 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-wait ${
+        estado === "confirmar"
+          ? "text-ys-red-text bg-ys-red-bg"
+          : "text-ys-dim hover:text-ys-text hover:bg-ys-el2"
+      }`}
+    >
+      {estado === "confirmar" ? "¿Seguro? Tocá de nuevo" : estado === "deshaciendo" ? "Deshaciendo..." : etiqueta}
+    </button>
+  );
+}
+
+export function AudienciasProductoCreadasCard({
+  items,
+  onVerAudiencias,
+  onDeshacer,
+}: {
+  items: { audienciaId: string; nombre: string; producto: string; totalContactos: number; yaExistia: boolean }[];
+  onVerAudiencias: () => void;
+  /** undefined cuando ya no se puede deshacer (la tarjeta no es la última). */
+  onDeshacer?: (ids: string[]) => Promise<boolean>;
+}) {
+  const nuevas = items.filter((i) => !i.yaExistia);
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <div className="w-[38px] h-[38px] flex-none rounded-xl bg-ys-green-bg flex items-center justify-center">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+            <path d="m3 8.4 4 4L14 3.6" stroke="#12B76A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[14.5px] font-extrabold text-ys-text">Audiencias por producto</div>
+          <div className="text-xs text-ys-dim font-semibold">
+            {items.length} audiencia{items.length === 1 ? "" : "s"}
+            {nuevas.length !== items.length ? ` · ${items.length - nuevas.length} ya existía${items.length - nuevas.length === 1 ? "" : "n"}` : ""}
+          </div>
+        </div>
+      </div>
+      <ul className="flex flex-col divide-y divide-ys-border-softest border-y border-ys-border-softest">
+        {items.map((i) => (
+          <li key={i.audienciaId} className="flex items-center gap-3 py-2.5">
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-bold text-ys-text truncate">{i.producto}</div>
+              <div className="text-[11.5px] text-ys-dim font-medium truncate">{i.nombre}</div>
+            </div>
+            {i.yaExistia && (
+              <span className="flex-none text-[10.5px] font-bold text-ys-dim bg-ys-el2 rounded-full px-2 py-0.5">Ya existía</span>
+            )}
+            <span className="flex-none font-mono text-[12.5px] text-ys-text">{i.totalContactos}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onVerAudiencias}
+          className="text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
+        >
+          Ver audiencias →
+        </button>
+        {nuevas.length > 0 && onDeshacer && (
+          <span className="ml-auto">
+            <BotonDeshacer
+              etiqueta={nuevas.length === 1 ? "Deshacer" : `Deshacer las ${nuevas.length}`}
+              onDeshacer={() => onDeshacer(nuevas.map((n) => n.audienciaId))}
+            />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const REGEX_VARIABLE_UI = /\{\{[^{}]*\}\}/;
+
+export function ConfirmarTemplatesProductoCard({
+  items,
+  puedeEnviarMeta,
+  disabled,
+  onEnviar,
+}: {
+  items: { producto: string; nombre: string; contenido: string; audienciaNombre: string | null }[];
+  puedeEnviarMeta: boolean;
+  disabled: boolean;
+  onEnviar: (ediciones: { nombre: string; contenido: string }[], modo: "meta" | "borrador") => Promise<boolean>;
+}) {
+  const [textos, setTextos] = useState<Record<string, string>>(() =>
+    Object.fromEntries(items.map((i) => [i.nombre, i.contenido])),
+  );
+  const [incluidos, setIncluidos] = useState<Set<string>>(() => new Set(items.map((i) => i.nombre)));
+  const [enviando, setEnviando] = useState<null | "meta" | "borrador">(null);
+  const [hecho, setHecho] = useState(false);
+
+  const bloqueado = disabled || hecho || enviando !== null;
+  const seleccionados = items.filter((i) => incluidos.has(i.nombre));
+  const problemas = seleccionados.filter((i) => {
+    const t = (textos[i.nombre] ?? "").trim();
+    return t.length < 10 || t.length > 1024 || REGEX_VARIABLE_UI.test(t);
+  });
+  const puedeConfirmar = seleccionados.length > 0 && problemas.length === 0 && !bloqueado;
+
+  async function confirmar(modo: "meta" | "borrador") {
+    setEnviando(modo);
+    const ok = await onEnviar(
+      seleccionados.map((i) => ({ nombre: i.nombre, contenido: (textos[i.nombre] ?? "").trim() })),
+      modo,
+    );
+    setEnviando(null);
+    // Si falló la llamada, la tarjeta queda habilitada para reintentar.
+    if (ok) setHecho(true);
+  }
+
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5">
+      <div className="flex flex-col gap-0.5">
+        <div className="text-[14.5px] font-extrabold text-ys-text">
+          {items.length} template{items.length === 1 ? "" : "s"} por producto
+        </div>
+        <div className="text-xs text-ys-dim font-medium">
+          Revisá los textos (podés editarlos o destildar los que no quieras). Una vez enviados a Meta no se pueden modificar.
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        {items.map((i) => {
+          const texto = textos[i.nombre] ?? "";
+          const activo = incluidos.has(i.nombre);
+          const conVariables = REGEX_VARIABLE_UI.test(texto);
+          const largoMal = texto.trim().length < 10 || texto.trim().length > 1024;
+          return (
+            <div
+              key={i.nombre}
+              className={`border rounded-xl px-3.5 py-3 flex flex-col gap-2 transition-opacity ${
+                activo ? "border-ys-border" : "border-ys-border-softest opacity-55"
+              }`}
+            >
+              <label className="flex items-center gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={activo}
+                  disabled={bloqueado}
+                  onChange={() =>
+                    setIncluidos((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(i.nombre)) next.delete(i.nombre);
+                      else next.add(i.nombre);
+                      return next;
+                    })
+                  }
+                  className="w-4 h-4 accent-[#12B76A] cursor-pointer"
+                />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-[13px] font-bold text-ys-text truncate">{i.producto}</span>
+                  <span className="block text-[11px] font-mono text-ys-dim truncate">
+                    {i.nombre}
+                    {i.audienciaNombre ? ` · para "${i.audienciaNombre}"` : ""}
+                  </span>
+                </span>
+              </label>
+              <textarea
+                value={texto}
+                disabled={bloqueado || !activo}
+                onChange={(e) => setTextos((prev) => ({ ...prev, [i.nombre]: e.target.value }))}
+                rows={4}
+                className="w-full resize-y border border-ys-border rounded-[10px] px-3 py-2.5 text-[12.5px] leading-[1.5] font-medium text-ys-text outline-none transition-colors focus:border-ys-green disabled:bg-ys-bg"
+              />
+              {activo && (conVariables || largoMal) && (
+                <div className="text-[11.5px] font-semibold text-ys-red-text">
+                  {conVariables
+                    ? "Sacá las variables como {{1}}: por ahora los templates no pueden llevarlas."
+                    : "El mensaje tiene que tener entre 10 y 1024 caracteres."}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <button
+          onClick={() => confirmar("borrador")}
+          disabled={!puedeConfirmar}
+          className="text-[12.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {enviando === "borrador" ? "Guardando..." : "Guardar como borradores"}
+        </button>
+        {puedeEnviarMeta && (
+          <button
+            onClick={() => confirmar("meta")}
+            disabled={!puedeConfirmar}
+            className="ml-auto text-[12.5px] font-extrabold text-white bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {enviando === "meta"
+              ? "Enviando a Meta..."
+              : hecho
+                ? "Listo ✓"
+                : `Enviar ${seleccionados.length} a Meta`}
+          </button>
+        )}
+      </div>
+      {!puedeEnviarMeta && (
+        <div className="text-[11.5px] text-ys-warn-text bg-ys-warn-bg rounded-lg px-3 py-2 font-semibold">
+          Tu cuenta todavía no tiene WhatsApp Business conectado: por ahora se pueden guardar como borradores.
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TemplatesProductoResultadoCard({
+  resultado,
+  items,
+  onVerTemplates,
+}: {
+  resultado: "enviado" | "borrador";
+  items: { producto: string; nombre: string; ok: boolean; error: string | null }[];
+  onVerTemplates: () => void;
+}) {
+  return (
+    <div className="bg-white border border-ys-border rounded-2xl px-5 py-[18px] flex flex-col gap-3">
+      <ul className="flex flex-col gap-2">
+        {items.map((i) => (
+          <li key={i.nombre} className="flex items-start gap-2.5">
+            <span
+              className={`mt-[3px] w-4 h-4 flex-none rounded-full flex items-center justify-center ${
+                i.ok ? "bg-ys-green-bg" : "bg-ys-red-bg"
+              }`}
+            >
+              {i.ok ? (
+                <svg width="9" height="9" viewBox="0 0 16 16" fill="none">
+                  <path d="m3 8.4 4 4L14 3.6" stroke="#12B76A" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : (
+                <svg width="8" height="8" viewBox="0 0 16 16" fill="none">
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="#a8443b" strokeWidth="2.6" strokeLinecap="round" />
+                </svg>
+              )}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[13px] font-bold text-ys-text truncate">{i.producto}</span>
+              <span className="block text-[11.5px] text-ys-dim font-medium">
+                {i.ok
+                  ? resultado === "enviado"
+                    ? `${i.nombre} · En revisión de Meta`
+                    : `${i.nombre} · Borrador`
+                  : i.error ?? "No se pudo"}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <button
+        onClick={onVerTemplates}
+        className="self-start text-[12.5px] font-bold text-ys-green-text cursor-pointer transition-colors hover:text-ys-green"
+      >
+        Ver templates →
+      </button>
     </div>
   );
 }
