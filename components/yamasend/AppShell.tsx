@@ -49,6 +49,8 @@ import MyProfileModal from "./MyProfileModal";
 import ConfiguracionModal from "./ConfiguracionModal";
 import LogoutModal from "./LogoutModal";
 import ContactosBarra, { type OrdenKey, type ScoreFiltro } from "./ContactosBarra";
+import NombrarAudienciaModal from "./NombrarAudienciaModal";
+import { renombrarContactoAction } from "@/lib/actions/contactos";
 import ContactsTable from "./ContactsTable";
 import ContactsPagination from "./ContactsPagination";
 import QrImportModal from "./QrImportModal";
@@ -112,6 +114,32 @@ import { createClient } from "@/lib/supabase/client";
 // URL del workflow de n8n que genera/consulta la sesión de WhatsApp (WAHA).
 // Devuelve una imagen PNG (QR para escanear) o un JSON { status: "WORKING", ... }
 // si la sesión ya está conectada.
+/**
+ * Contactos que pasan los filtros de la barra. El score elige entre sí
+ * (caliente O tibio) y las etiquetas se acumulan (tiene que tener TODAS).
+ */
+function filtrarContactos(
+  contacts: Contact[],
+  f: { filt: Set<KpiFilterKey>; tagFilt: string[]; q: string; modo24h: boolean },
+): Contact[] {
+  const q = f.q.trim().toLowerCase();
+  const scores = (["caliente", "tibio", "frio"] as const).filter((s) => f.filt.has(s));
+  return contacts.filter((c) => {
+    if (c.bloqueado && !f.modo24h) return false;
+    if (f.filt.has("24h") && !c.en24h) return false;
+    if (f.filt.has("cliente") && c.etapa !== "cerrado") return false;
+    if (f.filt.has("ai") && !c.enListaAI) return false;
+    if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio")) return false;
+    if (f.tagFilt.length > 0 && !f.tagFilt.every((t) => (c.etiquetas ?? []).includes(t))) return false;
+    if (q) {
+      const nombre = (c.nombre || "").toLowerCase();
+      const tel = (c.tel || "").toLowerCase();
+      if (!nombre.includes(q) && !tel.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
 const WAHA_QR_WEBHOOK_URL =
   "https://yamasai.app.n8n.cloud/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
 
@@ -597,6 +625,7 @@ export default function AppShell({
   const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [etiquetarSelOpen, setEtiquetarSelOpen] = useState(false);
+  const [nombrarAudienciaOpen, setNombrarAudienciaOpen] = useState(false);
   // Audiencias recién armadas por las campañas sugeridas. La prop `lists` viene
   // del Server Component y tarda un refresh en incluirlas; mientras tanto el
   // asistente de campañas las necesita ya, así que se suman acá (sin duplicar).
@@ -1028,26 +1057,7 @@ export default function AppShell({
 
   // ── filtrado combinado, replicando la lógica del original ──
   const visibleContacts = useMemo(() => {
-    const q = contactSearch.trim().toLowerCase();
-    const filtradas = contacts.filter((c) => {
-      if (c.bloqueado && !modo24h) return false;
-      if (filt.has("24h") && !c.en24h) return false;
-      if (filt.has("cliente") && c.etapa !== "cerrado") return false;
-      if (filt.has("ai") && !c.enListaAI) return false;
-      const scores = (["caliente", "tibio", "frio"] as const).filter((s) =>
-        filt.has(s),
-      );
-      if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
-        return false;
-      // Las etiquetas se acumulan: tiene que tener TODAS las elegidas.
-      if (tagFilt.length > 0 && !tagFilt.every((t) => (c.etiquetas ?? []).includes(t))) return false;
-      if (q) {
-        const nombre = (c.nombre || "").toLowerCase();
-        const tel = (c.tel || "").toLowerCase();
-        if (!nombre.includes(q) && !tel.includes(q)) return false;
-      }
-      return true;
-    });
+    const filtradas = filtrarContactos(contacts, { filt, tagFilt, q: contactSearch, modo24h });
     if (!ordenKey) return filtradas;
 
     const dir = ordenDir === "asc" ? 1 : -1;
@@ -1090,24 +1100,33 @@ export default function AppShell({
     return visibleContacts.slice(start, start + CONTACTS_PER_PAGE);
   }, [visibleContacts, contactPageSafe]);
 
+  // Lo que queda filtrado queda seleccionado: esa selección es la que después se
+  // vuelve audiencia. Sin filtros no se selecciona nada solo.
+  function seleccionarFiltrados(next: { filt: Set<KpiFilterKey>; tagFilt: string[]; q: string }) {
+    const hay = next.filt.size > 0 || next.tagFilt.length > 0 || next.q.trim() !== "";
+    setSel(hay ? new Set(filtrarContactos(contacts, { ...next, modo24h }).map((c) => c.id)) : new Set());
+  }
+
   function handleContactSearchChange(value: string) {
     setContactSearch(value);
     setContactPage(1);
+    seleccionarFiltrados({ filt, tagFilt, q: value });
   }
 
   function handleToggleScore(key: ScoreFiltro) {
+    const next = new Set(filt);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setFilt(next);
     setContactPage(1);
-    setFilt((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+    seleccionarFiltrados({ filt: next, tagFilt, q: contactSearch });
   }
 
   function handleToggleTag(tag: string) {
+    const next = tagFilt.includes(tag) ? tagFilt.filter((t) => t !== tag) : [...tagFilt, tag];
+    setTagFilt(next);
     setContactPage(1);
-    setTagFilt((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+    seleccionarFiltrados({ filt, tagFilt: next, q: contactSearch });
   }
 
   function handleLimpiarFiltros() {
@@ -1115,6 +1134,7 @@ export default function AppShell({
     setTagFilt([]);
     setContactSearch("");
     setContactPage(1);
+    setSel(new Set());
   }
 
   function handleOrden(key: OrdenKey) {
@@ -1126,11 +1146,20 @@ export default function AppShell({
     }
   }
 
-  // "Crear audiencia" de la barra: usa lo seleccionado o, si no hay nada
-  // seleccionado, todos los contactos que pasan los filtros.
-  function handleCrearAudienciaVista() {
-    if (sel.size === 0) setSel(new Set(visibleContacts.map((c) => c.id)));
-    setCreateGroupOpen(true);
+  // Nombre sugerido para la audiencia, a partir de los filtros activos.
+  function nombreSugeridoAudiencia(): string {
+    const partes = [
+      ...tagFilt.map((t) => mostrarEtiqueta(t)),
+      ...(["caliente", "tibio", "frio"] as const).filter((k) => filt.has(k)).map((k) => (k === "frio" ? "Frío" : k === "tibio" ? "Tibio" : "Caliente")),
+    ];
+    return partes.length > 0 ? partes.join(" + ") : "Mi audiencia";
+  }
+
+  async function handleRenombrarContacto(id: string, nombre: string): Promise<string | null> {
+    const r = await renombrarContactoAction(id, nombre);
+    if (r.error) return r.error;
+    router.refresh();
+    return null;
   }
 
   function handleToggleRow(id: string) {
@@ -1852,7 +1881,8 @@ export default function AppShell({
 
       <ContactosBarra
         contacts={contacts}
-        visibles={visibleContacts.length}
+        seleccionados={sel.size}
+        totalContactos={contacts.filter((c) => !c.bloqueado).length}
         scoreFilt={filt}
         onToggleScore={handleToggleScore}
         tagFilt={tagFilt}
@@ -1865,7 +1895,11 @@ export default function AppShell({
         onOrden={handleOrden}
         puedeCrear={user.permisos.crear_audiencias}
         onSinPermiso={() => avisarSinPermiso("crear audiencias")}
-        onCrearAudiencia={handleCrearAudienciaVista}
+        onCrearAudiencia={() => setNombrarAudienciaOpen(true)}
+        onEtiquetarSel={() =>
+          user.permisos.crear_audiencias ? setEtiquetarSelOpen(true) : avisarSinPermiso("etiquetar contactos")
+        }
+        onAgregarAExistente={() => setAddToGroupOpen(true)}
         onCambio={() => router.refresh()}
         onNotificar={notificar}
       />
@@ -1884,6 +1918,7 @@ export default function AppShell({
               ordenKey={ordenKey}
               ordenDir={ordenDir}
               onOrden={handleOrden}
+              onRenombrar={user.permisos.crear_audiencias ? handleRenombrarContacto : undefined}
               onVincular={user.permisos.importar_contactos && contacts.length === 0 ? () => setQrOpen(true) : undefined}
             />
           </div>
@@ -1896,45 +1931,6 @@ export default function AppShell({
           />
         </div>
       </div>
-      {sel.size > 0 && (
-        <div
-          className="hidden md:flex fixed bottom-6 left-[calc(248px+38px)] right-[38px] z-[9] bg-ys-dark rounded-2xl pl-[18px] pr-3.5 py-3 items-center gap-3.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
-          style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
-        >
-          <div className="text-[13.5px] font-bold text-white">
-            {sel.size} contacto{sel.size === 1 ? "" : "s"} seleccionado{sel.size === 1 ? "" : "s"}
-          </div>
-          <button
-            onClick={handleClearSel}
-            className="text-[12.5px] font-semibold text-[#9aa9a3] hover:text-white transition-colors cursor-pointer"
-          >
-            Deseleccionar
-          </button>
-          <div className="ml-auto flex items-center gap-2.5">
-            <button
-              onClick={() =>
-                user.permisos.crear_audiencias ? setEtiquetarSelOpen(true) : avisarSinPermiso("etiquetar contactos")
-              }
-              className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
-            >
-              Etiquetar
-            </button>
-            <button
-              onClick={() => setAddToGroupOpen(true)}
-              className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
-            >
-              Agregar a audiencia existente
-            </button>
-            <button
-              onClick={() => setCreateGroupOpen(true)}
-              className="text-[13px] font-extrabold text-[#0b1310] bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-[#3ddb8f] hover:-translate-y-px"
-            >
-              Crear nueva audiencia
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ── Contenido mobile: misma tabla + barra flotante que en desktop ── */}
       <div className="flex md:hidden flex-col px-4 pb-4">
         <div className="flex flex-col relative bg-white border border-ys-border rounded-2xl">
@@ -1949,6 +1945,7 @@ export default function AppShell({
               ordenKey={ordenKey}
               ordenDir={ordenDir}
               onOrden={handleOrden}
+              onRenombrar={user.permisos.crear_audiencias ? handleRenombrarContacto : undefined}
               onVincular={user.permisos.importar_contactos && contacts.length === 0 ? () => setQrOpen(true) : undefined}
             />
           </div>
@@ -1962,42 +1959,6 @@ export default function AppShell({
           />
         </div>
       </div>
-      {sel.size > 0 && (
-        <div
-          className="flex md:hidden fixed bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
-          style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
-        >
-          <div className="text-[13px] font-bold text-white">{sel.size} sel.</div>
-          <button
-            onClick={handleClearSel}
-            className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
-          >
-            Deseleccionar
-          </button>
-          <div className="w-full flex items-center gap-2 mt-1">
-            <button
-              onClick={() =>
-                user.permisos.crear_audiencias ? setEtiquetarSelOpen(true) : avisarSinPermiso("etiquetar contactos")
-              }
-              className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
-            >
-              Etiquetar
-            </button>
-            <button
-              onClick={() => setAddToGroupOpen(true)}
-              className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
-            >
-              Agregar a audiencia
-            </button>
-            <button
-              onClick={() => setCreateGroupOpen(true)}
-              className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
-            >
-              Crear audiencia
-            </button>
-          </div>
-        </div>
-      )}
       </div>
       )}
 
@@ -2172,6 +2133,23 @@ export default function AppShell({
           }
         }}
       />
+
+      {nombrarAudienciaOpen && (
+        <NombrarAudienciaModal
+          cantidad={sel.size}
+          nombreSugerido={nombreSugeridoAudiencia()}
+          onClose={() => setNombrarAudienciaOpen(false)}
+          onConfirmar={async (nombre) => {
+            const result = await saveListAction(nombre, Array.from(sel));
+            if (result.error) return result.error;
+            notificar(`Audiencia "${nombre}" creada con ${sel.size} contacto${sel.size === 1 ? "" : "s"}.`);
+            setNombrarAudienciaOpen(false);
+            handleLimpiarFiltros();
+            router.refresh();
+            return null;
+          }}
+        />
+      )}
 
       <AddToAudienceModal
         open={addToGroupOpen}

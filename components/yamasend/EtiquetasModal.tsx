@@ -25,6 +25,8 @@ const BTN_SECUNDARIO =
 
 export default function EtiquetasModal({
   resumen,
+  elegidas,
+  onToggle,
   puedeCrear,
   onSinPermiso,
   onRevisar,
@@ -32,6 +34,9 @@ export default function EtiquetasModal({
   onClose,
 }: {
   resumen: EtiquetasResumen;
+  /** Etiquetas que hoy filtran la lista de contactos. */
+  elegidas: string[];
+  onToggle: (etiqueta: string) => void;
   puedeCrear: boolean;
   onSinPermiso: () => void;
   /** Abre la revisión de una sugerencia. */
@@ -136,6 +141,81 @@ export default function EtiquetasModal({
             </div>
           )}
 
+          <div className="flex flex-col gap-2.5">
+            <div className="text-[14px] font-extrabold text-ys-text">
+              Elegí etiquetas para filtrar <span className="font-mono text-ys-muted font-bold">({resumen.etiquetas.length})</span>
+            </div>
+            <div className="text-[12.5px] font-medium text-ys-dim">Tocá una o más: aparecen arriba en la barra y los contactos que las tengan todas quedan seleccionados.</div>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={propia}
+                onChange={(e) => setPropia(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && crear()}
+                maxLength={30}
+                placeholder="Crear etiqueta propia (ej: vip, mayorista, evento)"
+                className="flex-1 min-w-[220px] max-w-[380px] border border-ys-border rounded-[10px] px-3 py-2 text-[13px] font-medium text-ys-text outline-none focus:border-ys-green"
+              />
+              <button type="button" disabled={!propia.trim() || ocupado === "crear"} onClick={crear} className={BTN_PRIMARIO}>
+                {ocupado === "crear" ? "Creando…" : "Crear etiqueta"}
+              </button>
+            </div>
+
+            {resumen.etiquetas.length === 0 ? (
+              <div className="text-[13px] font-semibold text-ys-muted bg-ys-el2 rounded-[10px] px-3.5 py-3 leading-[1.5]">
+                Todavía no hay etiquetas. Creá una o aceptá alguna sugerencia.
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {resumen.etiquetas.map((e) => (
+                  <div key={e.nombre} className="flex items-center gap-2 py-2 border-b border-ys-border-softest last:border-b-0 flex-wrap">
+                    {renombrando === e.nombre ? (
+                      <>
+                        <input
+                          value={nombreNuevo}
+                          onChange={(ev) => setNombreNuevo(ev.target.value)}
+                          onKeyDown={(ev) => ev.key === "Enter" && renombrar(e.nombre)}
+                          maxLength={30}
+                          autoFocus
+                          className="min-w-[160px] border border-ys-border rounded-[10px] px-3 py-1.5 text-[13px] font-medium text-ys-text outline-none focus:border-ys-green"
+                        />
+                        <button type="button" disabled={ocupado === "renombrar"} onClick={() => renombrar(e.nombre)} className={BTN_PRIMARIO}>
+                          Guardar
+                        </button>
+                        <button type="button" onClick={() => setRenombrando(null)} className={BTN_SECUNDARIO}>
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <EtiquetaChip nombre={e.nombre} activa={elegidas.includes(e.nombre)} onClick={() => onToggle(e.nombre)} />
+                        <span className="text-[12px] font-semibold text-ys-muted">{e.cantidad} contacto{e.cantidad === 1 ? "" : "s"}</span>
+                        {esEtiquetaDeSistema(e.nombre) ? (
+                          <span className="ml-auto text-[11.5px] font-semibold text-ys-dim">La administra el sistema</span>
+                        ) : (
+                          <span className="ml-auto flex gap-3">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRenombrando(e.nombre);
+                                setNombreNuevo(e.nombre);
+                              }}
+                              className="text-[12px] font-bold text-ys-muted hover:text-ys-text cursor-pointer"
+                            >
+                              Renombrar
+                            </button>
+                            <button type="button" disabled={ocupado === "eliminar"} onClick={() => eliminar(e.nombre)} className="text-[12px] font-bold text-ys-red-text cursor-pointer disabled:opacity-60">
+                              Eliminar
+                            </button>
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {resumen.sugerencias.length > 0 && (
             <div className="flex flex-col gap-3.5">
               <div className="text-[14px] font-extrabold text-ys-text">
@@ -184,80 +264,16 @@ export default function EtiquetasModal({
               })}
             </div>
           )}
+        </div>
 
-          <div className="flex flex-col gap-2.5">
-            <div className="text-[14px] font-extrabold text-ys-text">
-              Tus etiquetas <span className="font-mono text-ys-muted font-bold">({resumen.etiquetas.length})</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={propia}
-                onChange={(e) => setPropia(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && crear()}
-                maxLength={30}
-                placeholder="Crear etiqueta propia (ej: vip, mayorista, evento)"
-                className="flex-1 min-w-[220px] max-w-[380px] border border-ys-border rounded-[10px] px-3 py-2 text-[13px] font-medium text-ys-text outline-none focus:border-ys-green"
-              />
-              <button type="button" disabled={!propia.trim() || ocupado === "crear"} onClick={crear} className={BTN_PRIMARIO}>
-                {ocupado === "crear" ? "Creando…" : "Crear etiqueta"}
-              </button>
-            </div>
-
-            {resumen.etiquetas.length === 0 ? (
-              <div className="text-[13px] font-semibold text-ys-muted bg-ys-el2 rounded-[10px] px-3.5 py-3 leading-[1.5]">
-                Todavía no hay etiquetas. Creá una o aceptá alguna sugerencia.
-              </div>
-            ) : (
-              <div className="flex flex-col">
-                {resumen.etiquetas.map((e) => (
-                  <div key={e.nombre} className="flex items-center gap-2 py-2 border-b border-ys-border-softest last:border-b-0 flex-wrap">
-                    {renombrando === e.nombre ? (
-                      <>
-                        <input
-                          value={nombreNuevo}
-                          onChange={(ev) => setNombreNuevo(ev.target.value)}
-                          onKeyDown={(ev) => ev.key === "Enter" && renombrar(e.nombre)}
-                          maxLength={30}
-                          autoFocus
-                          className="min-w-[160px] border border-ys-border rounded-[10px] px-3 py-1.5 text-[13px] font-medium text-ys-text outline-none focus:border-ys-green"
-                        />
-                        <button type="button" disabled={ocupado === "renombrar"} onClick={() => renombrar(e.nombre)} className={BTN_PRIMARIO}>
-                          Guardar
-                        </button>
-                        <button type="button" onClick={() => setRenombrando(null)} className={BTN_SECUNDARIO}>
-                          Cancelar
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <EtiquetaChip nombre={e.nombre} />
-                        <span className="text-[12px] font-semibold text-ys-muted">{e.cantidad} contacto{e.cantidad === 1 ? "" : "s"}</span>
-                        {esEtiquetaDeSistema(e.nombre) ? (
-                          <span className="ml-auto text-[11.5px] font-semibold text-ys-dim">La administra el sistema</span>
-                        ) : (
-                          <span className="ml-auto flex gap-3">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRenombrando(e.nombre);
-                                setNombreNuevo(e.nombre);
-                              }}
-                              className="text-[12px] font-bold text-ys-muted hover:text-ys-text cursor-pointer"
-                            >
-                              Renombrar
-                            </button>
-                            <button type="button" disabled={ocupado === "eliminar"} onClick={() => eliminar(e.nombre)} className="text-[12px] font-bold text-ys-red-text cursor-pointer disabled:opacity-60">
-                              Eliminar
-                            </button>
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-5 py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover"
+          >
+            Listo
+          </button>
         </div>
       </div>
     </div>

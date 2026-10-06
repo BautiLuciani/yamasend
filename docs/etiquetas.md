@@ -1,8 +1,8 @@
 # Etiquetas
 
-Las etiquetas viven en **Contactos**: la barra única filtra por score y etiquetas, y el botón **Etiquetas** abre la administración (sugeridas, crear, renombrar, eliminar). Las etiquetas son **acumulables**: un contacto
+Las etiquetas viven en **Contactos**: la barra única tiene **+ Etiquetas** (abre la sección: elegir etiquetas, sugeridas, crear, renombrar, eliminar), Caliente / Tibio / Frío (siempre visibles) y las etiquetas elegidas con su ×. Lo filtrado queda **seleccionado** y el contador es la selección que se vuelve audiencia. Las etiquetas son **acumulables**: un contacto
 puede ser `cliente` + `producto` + `nuevo`, y elegir las tres en el filtro muestra a quienes
-tienen **todas**. De ahí se arma una audiencia con el botón **Crear audiencia** de la barra (usa lo seleccionado o todo lo filtrado).
+tienen **todas**. De ahí se arma una audiencia con **Crear audiencia**: un popup pide el nombre y los contactos seleccionados pasan a ser la audiencia. El nombre de un contacto se edita desde la tabla (lápiz).
 
 ## «Cliente»
 
