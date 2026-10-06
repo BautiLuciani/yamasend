@@ -50,6 +50,7 @@ import ConfiguracionModal from "./ConfiguracionModal";
 import LogoutModal from "./LogoutModal";
 import ContactosBarra, { type OrdenKey, type ScoreFiltro } from "./ContactosBarra";
 import NombrarAudienciaModal from "./NombrarAudienciaModal";
+import ActividadWhatsapp from "./ActividadWhatsapp";
 import { renombrarContactoAction } from "@/lib/actions/contactos";
 import ContactsTable from "./ContactsTable";
 import ContactsPagination from "./ContactsPagination";
@@ -1870,13 +1871,16 @@ export default function AppShell({
 
       {activeSection === "contactos" && (
       <div className="flex-1 min-w-0 flex flex-col overflow-y-auto pt-[58px] md:pt-0">
-      <div className="px-4 md:px-[38px] pt-3 md:pt-[34px] flex flex-col gap-1.5">
-        <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
-          Contactos
+      <div className="px-4 md:px-[38px] pt-3 md:pt-[34px] flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-1.5">
+          <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
+            Contactos
+          </div>
+          <div className="text-sm md:text-[15px] text-ys-dim font-medium">
+            Gestioná y analizá tus contactos de WhatsApp.
+          </div>
         </div>
-        <div className="text-sm md:text-[15px] text-ys-dim font-medium">
-          Gestioná y analizá tus contactos de WhatsApp.
-        </div>
+        <ActividadWhatsapp conectada={wahaConectada} />
       </div>
 
       <ContactosBarra
