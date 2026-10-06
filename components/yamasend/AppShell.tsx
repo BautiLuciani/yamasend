@@ -445,6 +445,50 @@ export default function AppShell({
     };
   }, [realtimeClient, user.tenantId]);
 
+  // Chequeo real contra WAHA para el botón fijo "Vincular WhatsApp": el webhook
+  // del QR contesta JSON con status WORKING si la sesión está viva y la imagen
+  // del QR si no. La base y Realtime pueden quedar atrasadas (la sesión se
+  // cae desde el celular), así que se vuelve a preguntar al abrir, al volver a
+  // la pestaña y cada tanto. Si el chequeo falla, se queda con el último estado.
+  const verificarWaha = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch(WAHA_QR_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: session.access_token,
+      });
+      if (!res.ok) return;
+      if ((res.headers.get("content-type") || "").includes("application/json")) {
+        const data = await res.json();
+        if (data.status === "WORKING") setWahaConectada(true);
+        return;
+      }
+      setWahaConectada(false);
+    } catch {
+      // sin cambios
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user.permisos.importar_contactos) return;
+    const inicial = setTimeout(verificarWaha, 0);
+    const alVolver = () => {
+      if (document.visibilityState === "visible") verificarWaha();
+    };
+    document.addEventListener("visibilitychange", alVolver);
+    const id = setInterval(alVolver, 120_000);
+    return () => {
+      document.removeEventListener("visibilitychange", alVolver);
+      clearInterval(id);
+      clearTimeout(inicial);
+    };
+  }, [verificarWaha, user.permisos.importar_contactos]);
+
   const VALID_SECTIONS: AppSection[] = [
     "dashboard",
     "contactos",
@@ -1620,6 +1664,22 @@ export default function AppShell({
       />
 
       <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} />
+
+      {/* Botón fijo arriba a la derecha: verde para vincular, gris cuando ya está vinculado. */}
+      <button
+        type="button"
+        disabled={wahaConectada === true || wahaConectada === null}
+        onClick={() => (user.permisos.importar_contactos ? setQrOpen(true) : avisarSinPermiso("vincular WhatsApp"))}
+        title={wahaConectada ? "WhatsApp vinculado" : "Vincular WhatsApp"}
+        className={`fixed z-[61] top-[calc(env(safe-area-inset-top)+13px)] right-[64px] md:top-4 md:right-[38px] inline-flex items-center gap-2 rounded-[10px] px-3.5 py-2 text-[12.5px] md:text-[13px] font-bold transition-all ${
+          wahaConectada === false
+            ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover shadow-[0_4px_14px_rgba(18,183,106,0.28)]"
+            : "bg-ys-el2 text-ys-muted cursor-default border border-ys-border"
+        }`}
+      >
+        <span className={`w-2 h-2 rounded-full ${wahaConectada === true ? "bg-ys-green" : wahaConectada === false ? "bg-white" : "bg-[#b8beba]"}`} />
+        {wahaConectada === null ? "Verificando…" : wahaConectada ? "WhatsApp vinculado" : "Vincular WhatsApp"}
+      </button>
       <MobileDrawer
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
