@@ -780,6 +780,20 @@ export interface SyncResult {
   }[];
 }
 
+// Estado del análisis inicial automático (RPC yamas_send_analisis_estado).
+// Arranca solo al vincular el WhatsApp y corre en segundo plano en n8n.
+export interface AnalisisEstado {
+  job_id: string;
+  estado: "pendiente" | "listando" | "procesando" | "pausado" | "completado" | "error" | "cancelado";
+  total_chats: number | null;
+  procesados: number;
+  leads: number;
+  porcentaje: number;
+  ventana_dias: number;
+  creado: string;
+  terminado: string | null;
+}
+
 // Valores reales de yamas_send_activity_log.tipo en Supabase (constraint CHECK).
 // Usado por la card "Actividad reciente" del Dashboard para elegir ícono/color.
 export type ActivityTipo =

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
+  AnalisisEstado,
   AppSection,
   AppUser,
   Campaign,
@@ -49,6 +50,7 @@ import ContactsTable from "./ContactsTable";
 import ContactsPagination from "./ContactsPagination";
 import QrImportModal from "./QrImportModal";
 import SyncConfigModal from "./SyncConfigModal";
+import AnalisisProgreso from "./AnalisisProgreso";
 import WahaRequiredModal from "./WahaRequiredModal";
 import ContactDetailModal from "./ContactDetailModal";
 import ExcluirMotorModal from "./ExcluirMotorModal";
@@ -455,6 +457,99 @@ export default function AppShell({
       realtimeClient.removeChannel(channel);
     };
   }, [realtimeClient, user.tenantId]);
+
+  // Análisis inicial automático: arranca solo en Supabase cuando el WhatsApp
+  // queda vinculado (trigger sobre yamas_send_waha_sessions) y lo procesa n8n
+  // en segundo plano. Acá solo se muestra el progreso: se consulta cada 4 s
+  // mientras hay un análisis en curso y se deja de consultar cuando termina.
+  // Mientras avanza se refrescan los contactos cada ~45 s para que los leads
+  // vayan apareciendo, y al terminar se avisa con un toast.
+  const [analisis, setAnalisis] = useState<AnalisisEstado | null>(null);
+  const [analisisCerrado, setAnalisisCerrado] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return window.localStorage.getItem("ys_analisis_cerrado");
+    } catch {
+      return null;
+    }
+  });
+  const analisisPrevRef = useRef<AnalisisEstado | null>(null);
+  const analisisRefreshRef = useRef<number>(0);
+
+  useEffect(() => {
+    let cancelado = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const supabase = createClient();
+
+    async function consultar() {
+      const { data, error } = await supabase.rpc("yamas_send_analisis_estado");
+      if (cancelado) return;
+      const actual = error ? analisisPrevRef.current : ((data ?? null) as AnalisisEstado | null);
+      const previo = analisisPrevRef.current;
+      analisisPrevRef.current = actual;
+      setAnalisis(actual);
+
+      const enCurso =
+        !!actual && ["pendiente", "listando", "procesando", "pausado"].includes(actual.estado);
+
+      if (
+        previo &&
+        actual &&
+        previo.job_id === actual.job_id &&
+        previo.estado !== "completado" &&
+        actual.estado === "completado"
+      ) {
+        notificar(
+          `Terminamos de analizar tus conversaciones: ${actual.leads} ${
+            actual.leads === 1 ? "contacto con interés" : "contactos con interés"
+          }.`,
+        );
+        router.refresh();
+      } else if (
+        enCurso &&
+        actual.procesados > (previo?.procesados ?? 0) &&
+        Date.now() - analisisRefreshRef.current > 45_000
+      ) {
+        analisisRefreshRef.current = Date.now();
+        router.refresh();
+      }
+
+      if (enCurso) timer = setTimeout(consultar, 4_000);
+    }
+
+    // Recién vinculado: el trigger crea el análisis al instante, pero se le
+    // da un respiro para no consultar antes de que exista.
+    timer = setTimeout(consultar, wahaConectada ? 1_500 : 0);
+
+    return () => {
+      cancelado = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wahaConectada, user.tenantId]);
+
+  function cerrarAvisoAnalisis() {
+    if (!analisis) return;
+    setAnalisisCerrado(analisis.job_id);
+    try {
+      window.localStorage.setItem("ys_analisis_cerrado", analisis.job_id);
+    } catch {
+      // Sin storage (modo privado): el aviso se oculta solo en esta visita.
+    }
+  }
+
+  // El aviso de "análisis completo" solo se muestra el primer día y hasta que
+  // el usuario lo cierra; el de en curso se muestra siempre.
+  const analisisVisible: AnalisisEstado | null = (() => {
+    if (!analisis) return null;
+    if (analisis.estado === "completado" || analisis.estado === "error" || analisis.estado === "cancelado") {
+      if (analisis.estado === "cancelado") return null;
+      if (analisisCerrado === analisis.job_id) return null;
+      const fin = analisis.terminado ? Date.parse(analisis.terminado) : Date.parse(analisis.creado);
+      if (Number.isFinite(fin) && Date.now() - fin > 24 * 60 * 60 * 1000) return null;
+    }
+    return analisis;
+  })();
 
   const VALID_SECTIONS: AppSection[] = [
     "dashboard",
@@ -1805,6 +1900,7 @@ export default function AppShell({
 
       {activeSection === "dashboard" && (
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
+          <AnalisisProgreso estado={analisisVisible} onCerrar={cerrarAvisoAnalisis} />
           <Dashboard
             userName={user.contactoNombre}
             tenantId={user.tenantId}
@@ -1916,6 +2012,8 @@ export default function AppShell({
           Gestioná y analizá tus contactos de WhatsApp.
         </div>
       </div>
+
+      <AnalisisProgreso estado={analisisVisible} onCerrar={cerrarAvisoAnalisis} />
 
       <KpiRow
         counts={counts}
