@@ -2,12 +2,20 @@
 
 import { useState } from "react";
 import type { EmpleadoResumen } from "@/lib/types";
+import {
+  CATEGORIA_TEMPLATE_UNICA,
+  VARIABLES_TEMPLATE_HABILITADAS,
+  validarVariablesTemplate,
+} from "@/lib/templates/config";
 
-const CATEGORIAS = [
-  { key: "marketing", label: "Marketing" },
-  { key: "utility", label: "Utilidad" },
-  { key: "authentication", label: "Autenticación" },
-] as const;
+// Selector de categoría desactivado (2026-10): por ahora todos los templates
+// son de Marketing (lib/templates/config.ts). Se deja la lista comentada
+// para poder reactivarlo.
+// const CATEGORIAS = [
+//   { key: "marketing", label: "Marketing" },
+//   { key: "utility", label: "Utilidad" },
+//   { key: "authentication", label: "Autenticación" },
+// ] as const;
 
 /**
  * Alta de un template de empresa.
@@ -36,7 +44,8 @@ export default function EmpresaTemplateCreateModal({
 }) {
   const [nombre, setNombre] = useState("");
   const [contenido, setContenido] = useState("");
-  const [categoria, setCategoria] = useState<string>("marketing");
+  // Fija: el selector ya no se muestra y el servidor fuerza Marketing igual.
+  const categoria = CATEGORIA_TEMPLATE_UNICA;
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,10 +62,15 @@ export default function EmpresaTemplateCreateModal({
     (e) => e.estado === "activo" && !e.whatsappConfigurado,
   );
 
+  // Variables deshabilitadas: un {{1}} escrito a mano no se puede mandar a
+  // Meta (el servidor también lo rechaza).
+  const errorVariables = validarVariablesTemplate(contenido);
+
   const valido =
     nombre.trim().length >= 3 &&
     contenido.trim().length > 10 &&
-    seleccionados.size > 0;
+    seleccionados.size > 0 &&
+    !errorVariables;
 
   function toggle(tenantId: string) {
     setSeleccionados((prev) => {
@@ -115,33 +129,23 @@ export default function EmpresaTemplateCreateModal({
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <span className="text-[12.5px] font-extrabold text-ys-text">Categoría</span>
-          <div className="flex gap-[3px] bg-ys-el2 rounded-[10px] p-[3px]">
-            {CATEGORIAS.map((c) => (
-              <button
-                key={c.key}
-                onClick={() => setCategoria(c.key)}
-                className={`flex-1 text-[12.5px] rounded-lg px-3 py-[7px] cursor-pointer transition-colors ${
-                  categoria === c.key
-                    ? "font-bold text-ys-text bg-white shadow-[0_1px_2px_rgba(16,24,20,0.07)]"
-                    : "font-semibold text-[#7b837e]"
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
           <span className="text-[12.5px] font-extrabold text-ys-text">Mensaje</span>
           <textarea
             value={contenido}
             onChange={(e) => setContenido(e.target.value)}
             rows={4}
-            placeholder="Hola {{1}}, tenemos novedades para vos..."
+            placeholder={
+              VARIABLES_TEMPLATE_HABILITADAS
+                ? "Hola {{1}}, tenemos novedades para vos..."
+                : "Hola, tenemos novedades para vos..."
+            }
             className="bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13.5px] font-semibold text-ys-text outline-none focus:border-ys-green-border resize-none leading-[1.5]"
           />
+          {errorVariables && (
+            <span className="text-[12px] text-ys-red-text font-semibold">
+              {errorVariables}
+            </span>
+          )}
         </div>
 
         <div className="flex flex-col gap-2 border-t border-ys-border-softest pt-4">

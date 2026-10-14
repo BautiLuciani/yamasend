@@ -112,7 +112,7 @@ const STEPS = [
   {
     n: "02",
     title: "Creá el mensaje y elegí a quién",
-    text: "Armá tu template con variables, revisá cómo se ve y seleccioná el grupo que lo va a recibir.",
+    text: "Armá tu template (o pedíselo a la IA), revisá cómo se ve y seleccioná el grupo que lo va a recibir.",
   },
   {
     n: "03",
@@ -164,10 +164,10 @@ const TOUR = [
   {
     tag: "04 · TEMPLATES",
     title: "Mensajes listos para reutilizar",
-    text: "Guardá tus mensajes con variables, organizalos por categoría y seguí el estado de cada uno.",
+    text: "Guardá tus mensajes, mandalos a aprobar a Meta y seguí el estado de cada uno.",
     bullets: [],
     img: "/landing/shot-templates.png",
-    alt: "Pantalla de Templates de YamaSend con mensajes por categoría y estado",
+    alt: "Pantalla de Templates de YamaSend con mensajes y su estado",
     w: 909,
     h: 540,
     reverse: true,

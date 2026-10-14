@@ -17,6 +17,16 @@ interface ContactDetailModalProps {
   onQuitarEtiqueta?: (contactId: string, etiqueta: string) => Promise<void>;
   /** Etiquetas que ya existen en la cuenta, para elegir en vez de escribir. */
   etiquetasExistentes?: string[];
+  /**
+   * Excluye este contacto del Motor (ej: es otra sucursal, no un cliente).
+   * Si no se pasa, la sección no se muestra.
+   */
+  onExcluirMotor?: (contact: Contact) => Promise<void>;
+  /**
+   * Le pone nombre al contacto (sobre todo a los "Sin nombre"). Devuelve
+   * true si se guardó. Si no se pasa (sin permiso), el nombre es de solo lectura.
+   */
+  onRenombrar?: (contactId: string, nombre: string) => Promise<boolean>;
 }
 
 const TEMP_CONFIG: Record<
@@ -98,12 +108,40 @@ export default function ContactDetailModal({
   onEtiquetar,
   onQuitarEtiqueta,
   etiquetasExistentes = [],
+  onExcluirMotor,
+  onRenombrar,
 }: ContactDetailModalProps) {
   const [savingOverride, setSavingOverride] = useState(false);
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState("");
   const [guardandoEtiqueta, setGuardandoEtiqueta] = useState(false);
+  const [excluyendo, setExcluyendo] = useState(false);
+  // Edición del nombre. Se guarda el id del contacto que se está editando
+  // (no un booleano) para que, si se cierra y se abre otro contacto, no
+  // aparezca en modo edición.
+  const [editandoNombreId, setEditandoNombreId] = useState<string | null>(null);
+  const [nombreBorrador, setNombreBorrador] = useState("");
+  const [guardandoNombre, setGuardandoNombre] = useState(false);
 
   if (!contact) return null;
+
+  const editandoNombre = editandoNombreId === contact.id;
+  const nombreLimpio = nombreBorrador.replace(/\s+/g, " ").trim();
+  const puedeGuardarNombre =
+    nombreLimpio.length > 0 && nombreLimpio !== (contact.nombre ?? "").trim() && !guardandoNombre;
+
+  function empezarEdicionNombre() {
+    if (!contact) return;
+    setNombreBorrador(contact.nombre ?? "");
+    setEditandoNombreId(contact.id);
+  }
+
+  async function guardarNombre() {
+    if (!contact || !onRenombrar || !puedeGuardarNombre) return;
+    setGuardandoNombre(true);
+    const ok = await onRenombrar(contact.id, nombreLimpio);
+    setGuardandoNombre(false);
+    if (ok) setEditandoNombreId(null);
+  }
 
   const overrideActivo = contact.scoreManual !== "";
 
@@ -128,10 +166,85 @@ export default function ContactDetailModal({
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-lg font-extrabold tracking-[-0.015em] text-ys-text truncate">
-              {contact.nombre || "Sin nombre"}
-            </h3>
+          <div className="min-w-0 flex-1">
+            {editandoNombre ? (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  guardarNombre();
+                }}
+                className="flex flex-col gap-2"
+              >
+                <input
+                  autoFocus
+                  value={nombreBorrador}
+                  onChange={(e) => setNombreBorrador(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setEditandoNombreId(null);
+                    }
+                  }}
+                  maxLength={80}
+                  placeholder="Nombre del contacto"
+                  aria-label="Nombre del contacto"
+                  disabled={guardandoNombre}
+                  className="w-full border border-ys-border rounded-[10px] px-3 py-2 text-[15px] font-bold text-ys-text outline-none focus:border-ys-green disabled:opacity-60"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={!puedeGuardarNombre}
+                    className="text-[12.5px] font-bold text-white bg-ys-green rounded-[10px] px-3.5 py-1.5 cursor-pointer hover:bg-ys-green-hover disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {guardandoNombre ? "Guardando..." : "Guardar"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={guardandoNombre}
+                    onClick={() => setEditandoNombreId(null)}
+                    className="text-[12.5px] font-bold text-ys-muted border border-ys-border rounded-[10px] px-3.5 py-1.5 cursor-pointer hover:bg-[#f7f9f8] disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h3
+                  className={`text-lg font-extrabold tracking-[-0.015em] truncate ${
+                    contact.nombre ? "text-ys-text" : "text-ys-muted"
+                  }`}
+                >
+                  {contact.nombre || "Sin nombre"}
+                </h3>
+                {onRenombrar &&
+                  (contact.nombre ? (
+                    <button
+                      onClick={empezarEdicionNombre}
+                      aria-label="Editar nombre"
+                      title="Editar nombre"
+                      className="flex-none w-7 h-7 rounded-lg flex items-center justify-center text-ys-dimmer hover:bg-ys-el2 hover:text-ys-text transition-colors cursor-pointer"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                        <path
+                          d="M10.8 2.7a1.6 1.6 0 0 1 2.3 2.3L5.6 12.5 2.5 13.5l1-3.1 7.3-7.7Z"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={empezarEdicionNombre}
+                      className="flex-none text-[12px] font-bold text-ys-green-text bg-ys-green-bg border border-ys-green-border rounded-full px-2.5 py-1 cursor-pointer transition-all hover:-translate-y-px"
+                    >
+                      + Agregar nombre
+                    </button>
+                  ))}
+              </div>
+            )}
             <div className="font-mono text-[13px] text-ys-muted mt-0.5">
               {contact.tel || "—"}
             </div>
@@ -326,6 +439,29 @@ export default function ContactDetailModal({
             Tu ajuste queda guardado y se prioriza sobre el cálculo de la IA. Click de nuevo en la misma opción para volver a usar el valor automático.
           </p>
         </div>
+
+        {/* Excluir del motor: para números que no son clientes */}
+        {onExcluirMotor && (
+          <div className="border-t border-ys-border-soft pt-4 flex items-center gap-3">
+            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+              <div className="text-[12.5px] font-extrabold text-ys-text">¿No es un cliente?</div>
+              <p className="text-[11.5px] text-ys-dim font-medium leading-[1.5]">
+                Excluilo del motor si es otra sucursal, un proveedor o alguien de tu equipo. Lo podés volver a incluir cuando quieras.
+              </p>
+            </div>
+            <button
+              disabled={excluyendo}
+              onClick={async () => {
+                setExcluyendo(true);
+                await onExcluirMotor(contact);
+                setExcluyendo(false);
+              }}
+              className="flex-none text-[12.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-wait"
+            >
+              {excluyendo ? "Excluyendo..." : "Excluir del motor"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

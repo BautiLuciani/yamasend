@@ -4,6 +4,9 @@ import { useState } from "react";
 import Image from "next/image";
 import type { AppSection } from "@/lib/types";
 import { useLang } from "./LangContext";
+import NavIaItem from "./NavIaItem";
+import AvisoDot from "./AvisoDot";
+import type { AvisosSidebar } from "./useAvisosSidebar";
 
 interface SidebarProps {
   active: AppSection;
@@ -15,6 +18,8 @@ interface SidebarProps {
   onOpenSettings: () => void;
   /** Secciones a ocultar del nav según los permisos del usuario. */
   hiddenSections?: AppSection[];
+  /** Avisos (puntitos) por sección. Ver useAvisosSidebar. */
+  avisos?: AvisosSidebar;
 }
 
 const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_profile" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
@@ -103,6 +108,7 @@ export default function Sidebar({
   onOpenMyProfile,
   onOpenSettings,
   hiddenSections = [],
+  avisos = {},
 }: SidebarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const { t } = useLang();
@@ -127,7 +133,20 @@ export default function Sidebar({
       </div>
 
       <div className="flex flex-col gap-[3px]">
-        {NAV_ITEMS.filter((item) => !hiddenSections.includes(item.key)).map((item) => {
+        {/* IA va destacada, separada del resto del nav (ver NavIaItem). */}
+        {!hiddenSections.includes("ia") && (
+          <>
+            <NavIaItem
+              label={t("nav_ai")}
+              isActive={active === "ia"}
+              onClick={() => onNavigate("ia")}
+            />
+            <div className="h-px bg-ys-border-softest mx-1.5 my-2.5" />
+          </>
+        )}
+        {NAV_ITEMS.filter(
+          (item) => item.key !== "ia" && !hiddenSections.includes(item.key),
+        ).map((item) => {
           const isActive = active === item.key;
           return (
             <button
@@ -140,7 +159,8 @@ export default function Sidebar({
               }`}
             >
               {item.icon(isActive ? "#12B76A" : "currentColor")}
-              {t(item.labelKey)}
+              <span className="flex-1 min-w-0 truncate">{t(item.labelKey)}</span>
+              {avisos[item.key] && <AvisoDot tipo={avisos[item.key]!} className="mr-1" />}
             </button>
           );
         })}

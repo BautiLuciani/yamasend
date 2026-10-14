@@ -58,20 +58,13 @@ export default function TemplateDetailModal({ template, onClose, onContinueDraft
           </button>
         </div>
 
-        <div className="bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-4 py-3.5 grid grid-cols-2 gap-3.5">
-          <div className="flex flex-col gap-0.5">
-            <div className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-dimmer">
-              Estado
-            </div>
-            <div className="text-[13.5px] font-bold text-ys-text">
-              {STATUS_LABEL[template.status] ?? template.status}
-            </div>
+        {/* Sin "Costo estimado" en USD: la app se maneja con créditos (oct 2026). */}
+        <div className="bg-[#fbfcfb] border border-ys-border-softest rounded-xl px-4 py-3.5 flex flex-col gap-0.5">
+          <div className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-dimmer">
+            Estado
           </div>
-          <div className="flex flex-col gap-0.5">
-            <div className="text-[11px] font-extrabold tracking-[0.05em] uppercase text-ys-dimmer">
-              Costo estimado
-            </div>
-            <div className="font-mono text-[13px] text-[#3f4844]">USD {template.precio ?? "0.0618"}</div>
+          <div className="text-[13.5px] font-bold text-ys-text">
+            {STATUS_LABEL[template.status] ?? template.status}
           </div>
         </div>
 

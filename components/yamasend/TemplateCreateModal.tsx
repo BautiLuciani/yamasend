@@ -1,6 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import {
+  VARIABLES_TEMPLATE_HABILITADAS,
+  validarVariablesTemplate,
+} from "@/lib/templates/config";
 
 interface TemplateCreateModalProps {
   open: boolean;
@@ -8,6 +12,10 @@ interface TemplateCreateModalProps {
   onContentChange: (v: string) => void;
   name: string;
   onNameChange: (v: string) => void;
+  // categoria/onCategoriaChange quedan en la interfaz para no romper a
+  // AppShell, pero el selector ya no se muestra: por ahora todos los
+  // templates son de Marketing y el servidor lo fuerza igual
+  // (lib/templates/config.ts).
   categoria: string;
   onCategoriaChange: (v: string) => void;
   onCancel: () => void;
@@ -18,11 +26,13 @@ interface TemplateCreateModalProps {
   savingDraft: boolean;
 }
 
-const CATEGORIAS = [
-  { key: "marketing", label: "Marketing" },
-  { key: "utility", label: "Utilidad" },
-  { key: "authentication", label: "Autenticación" },
-] as const;
+// Selector de categoría desactivado (2026-10): solo Marketing. Se deja la
+// lista comentada para poder reactivarlo.
+// const CATEGORIAS = [
+//   { key: "marketing", label: "Marketing" },
+//   { key: "utility", label: "Utilidad" },
+//   { key: "authentication", label: "Autenticación" },
+// ] as const;
 
 export default function TemplateCreateModal({
   open,
@@ -30,8 +40,6 @@ export default function TemplateCreateModal({
   onContentChange,
   name,
   onNameChange,
-  categoria,
-  onCategoriaChange,
   onCancel,
   onSaveDraft,
   onSendToMeta,
@@ -49,7 +57,12 @@ export default function TemplateCreateModal({
   if (!open) return null;
 
   const busy = sending || savingDraft;
-  const canSend = content.trim().length > 10 && name.trim().length >= 3;
+  // Con las variables deshabilitadas, un {{1}} escrito a mano no se puede
+  // mandar a Meta (el servidor también lo rechaza). Sí se puede guardar como
+  // borrador para corregirlo después.
+  const errorVariables = validarVariablesTemplate(content);
+  const canSend =
+    content.trim().length > 10 && name.trim().length >= 3 && !errorVariables;
 
   async function handleGenerar() {
     if (!iaDescripcion.trim()) return;
@@ -144,28 +157,6 @@ export default function TemplateCreateModal({
             </div>
 
             <div className="flex flex-col gap-2">
-              <div className="text-[13px] font-extrabold text-ys-text">Categoría</div>
-              <div className="flex gap-2 flex-wrap">
-                {CATEGORIAS.map((c) => {
-                  const active = categoria === c.key;
-                  return (
-                    <button
-                      key={c.key}
-                      onClick={() => onCategoriaChange(c.key)}
-                      className={`text-[12.5px] font-bold rounded-full px-3.5 py-2 cursor-pointer transition-colors ${
-                        active
-                          ? "border-[1.5px] border-ys-green bg-ys-green-bg text-ys-green-text"
-                          : "border border-ys-border text-[#3f4844] hover:bg-[#f7fbf9] hover:border-ys-green-border"
-                      }`}
-                    >
-                      {c.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
               <div className="flex items-center gap-2.5">
                 <div className="text-[13px] font-extrabold text-ys-text">Mensaje</div>
                 <button
@@ -190,6 +181,11 @@ export default function TemplateCreateModal({
                 placeholder="Escribí el mensaje que recibirán tus contactos..."
                 className="min-h-[132px] resize-y border border-ys-border rounded-xl px-[15px] py-[13px] text-[13.5px] leading-[1.55] font-medium text-ys-text outline-none transition-colors focus:border-ys-green"
               />
+              {/* Variables deshabilitadas por ahora (lib/templates/config.ts).
+                  El botón y la ayuda quedan en el código para reactivarlos
+                  cambiando VARIABLES_TEMPLATE_HABILITADAS. */}
+              {VARIABLES_TEMPLATE_HABILITADAS && (
+              <>
               <div className="flex items-center gap-2.5">
                 <button
                   onClick={handleAgregarVariable}
@@ -205,6 +201,13 @@ export default function TemplateCreateModal({
                 Las variables permiten personalizar el mensaje para cada contacto. Ejemplo: &ldquo;Hola{" "}
                 {"{{1}}"}, tenemos una promoción especial para vos.&rdquo;
               </div>
+              </>
+              )}
+              {errorVariables && (
+                <div className="text-[12.5px] text-ys-red-text font-semibold bg-ys-red-bg border border-ys-red-border rounded-[10px] px-3 py-2">
+                  {errorVariables}
+                </div>
+              )}
             </div>
 
             {iaAbierta && (
@@ -290,10 +293,12 @@ export default function TemplateCreateModal({
                 <div className="self-end font-mono text-[10.5px] text-ys-dimmer">14:32</div>
               </div>
             </div>
-            <div className="text-xs text-ys-dim font-medium">
-              Las variables se muestran con datos de ejemplo:{" "}
-              <span className="font-mono text-[#3f4844]">{"{{1}}"}</span> → Martina.
-            </div>
+            {VARIABLES_TEMPLATE_HABILITADAS && (
+              <div className="text-xs text-ys-dim font-medium">
+                Las variables se muestran con datos de ejemplo:{" "}
+                <span className="font-mono text-[#3f4844]">{"{{1}}"}</span> → Martina.
+              </div>
+            )}
           </div>
         </div>
 

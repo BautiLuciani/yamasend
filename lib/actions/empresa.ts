@@ -3,6 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/auth/permisos";
 import {
+  CATEGORIA_TEMPLATE_UNICA,
+  validarVariablesTemplate,
+} from "@/lib/templates/config";
+import {
   PERMISO_KEYS,
   PERMISOS_COMPLETOS,
   type EmpleadoResumen,
@@ -543,11 +547,20 @@ export async function getEmpresaTemplatesPropiosAction(): Promise<
 export async function crearTemplateEmpresaAction(
   nombre: string,
   contenido: string,
-  categoria: string,
+  // Se ignora: por ahora todos los templates son de Marketing (ver
+  // lib/templates/config.ts). Queda en la firma para no romper al que llama.
+  _categoria: string,
   tenantIds: string[],
 ): Promise<{ ok: boolean; error: string | null; enviados: number; fallidos: number }> {
   if (!(await assertEmpresa()))
     return { ok: false, error: ERRORES.sin_permiso, enviados: 0, fallidos: 0 };
+
+  // Variables deshabilitadas: se valida ANTES de la RPC para no dejar copias
+  // creadas por empleado que después no se pueden aprobar en Meta.
+  const errorVariables = validarVariablesTemplate(contenido);
+  if (errorVariables) return { ok: false, error: errorVariables, enviados: 0, fallidos: 0 };
+
+  const categoria = CATEGORIA_TEMPLATE_UNICA;
 
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("yamas_send_empresa_crear_template", {
