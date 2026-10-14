@@ -992,3 +992,37 @@ export interface Novedades {
   /** Hubo conexión de WhatsApp y ya no está conectada (no cuenta vínculos sin terminar). */
   whatsappDesvinculado: boolean;
 }
+
+/* ───────────── Campañas recurrentes ───────────── */
+
+export type FrecuenciaRecurrencia = "semanal" | "cada_n_dias" | "mensual";
+
+/** Cuándo se repite una campaña. La hora es la de Argentina ("HH:MM"). */
+export interface RecurrenciaConfig {
+  frecuencia: FrecuenciaRecurrencia;
+  /** 1 = lunes … 7 = domingo. Solo para "semanal". */
+  diasSemana: number[];
+  /** Solo para "cada_n_dias". */
+  intervaloDias: number | null;
+  /** 1 a 28. Solo para "mensual". */
+  diaMes: number | null;
+  hora: string;
+  /** null = no termina nunca. */
+  maxOcurrencias: number | null;
+}
+
+/** Una serie de campañas que se repite (yamas_send_campanas_recurrentes). */
+export interface CampanaRecurrente extends RecurrenciaConfig {
+  id: string;
+  nombre: string;
+  listaId: string;
+  templateId: string;
+  listaNombre: string | null;
+  templateNombre: string | null;
+  activa: boolean;
+  proximaEjecucion: string | null;
+  ultimaEjecucion: string | null;
+  ocurrencias: number;
+  /** Por qué falló la última ocurrencia (sin saldo, template no aprobado…). */
+  ultimoError: string | null;
+}

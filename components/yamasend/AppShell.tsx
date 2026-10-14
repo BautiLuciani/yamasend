@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   AppSection,
+  CampanaRecurrente,
   AppUser,
   Campaign,
   CampaignStatus,
@@ -42,6 +43,14 @@ import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
 import Perfil from "./Perfil";
 import CampanasSugeridas from "./CampanasSugeridas";
+import CampanasRecurrentes from "./CampanasRecurrentes";
+import {
+  crearRecurrenteAction,
+  eliminarRecurrenteAction,
+  getRecurrentesAction,
+  pausarRecurrenteAction,
+} from "@/lib/actions/recurrentes";
+import { describirRecurrencia } from "@/lib/campanas/recurrencia";
 import EtiquetarSeleccionModal from "./EtiquetarSeleccionModal";
 import { etiquetarContactosAction, quitarEtiquetasAction } from "@/lib/actions/etiquetas";
 import { contarEtiquetas, mostrarEtiqueta, normalizarEtiquetas } from "@/lib/etiquetas/etiquetas";
@@ -1106,6 +1115,32 @@ export default function AppShell({
   const [vistaContactos, setVistaContactos] = useState<"todos" | "excluidos">("todos");
   const [excluirModalOpen, setExcluirModalOpen] = useState(false);
 
+  // Series de campañas que se repiten. Se leen al entrar a Campañas y después
+  // de cada cambio; si la migración todavía no está aplicada, queda vacío.
+  const [recurrentes, setRecurrentes] = useState<CampanaRecurrente[]>([]);
+  const recargarRecurrentes = useCallback(async () => {
+    const r = await getRecurrentesAction();
+    if (r.disponible) setRecurrentes(r.recurrentes);
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== "campanas") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga al entrar a la sección
+    void recargarRecurrentes();
+  }, [activeSection, recargarRecurrentes]);
+
+  // Etiquetas en vivo: un contacto que escribe recién queda etiquetado en la base
+  // en el acto; acá se vuelve a leer la lista mientras Contactos está a la vista
+  // para que se vea sin recargar. Solo con la pestaña visible y sin selección
+  // en curso (refrescar no debería pisar lo que la persona está armando).
+  useEffect(() => {
+    if (activeSection !== "contactos" || sel.size > 0) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [activeSection, sel.size, router]);
+
   // Escape sale de la selección de Contactos: la barra flotante no tiene
   // botón "Deseleccionar".
   useEffect(() => {
@@ -2043,6 +2078,25 @@ export default function AppShell({
             }}
             puedeCrear={user.permisos.crear_campanas}
             onSinPermiso={() => avisarSinPermiso("crear campañas")}
+            recurrentes={
+              <CampanasRecurrentes
+                recurrentes={recurrentes}
+                puedeGestionar={user.permisos.crear_campanas}
+                onSinPermiso={() => avisarSinPermiso("crear campañas")}
+                onPausar={async (id, activa) => {
+                  const r = await pausarRecurrenteAction(id, activa);
+                  if (r.error) notificar(r.error, "error");
+                  else notificar(activa ? "Repetición reanudada." : "Repetición pausada.");
+                  await recargarRecurrentes();
+                }}
+                onEliminar={async (id) => {
+                  const r = await eliminarRecurrenteAction(id);
+                  if (r.error) notificar(r.error, "error");
+                  else notificar("Repetición eliminada. Las campañas ya generadas se mantienen.");
+                  await recargarRecurrentes();
+                }}
+              />
+            }
             sugeridas={
               user.tenantId ? (
                 <CampanasSugeridas
@@ -2281,7 +2335,15 @@ export default function AppShell({
         onClose={() => setWizardOpen(false)}
         onFetchInsight={obtenerInsightCacheado}
         onFetchSugerenciaHorario={getSugerenciaHorarioAction}
-        onConfirm={async ({ nombre, listaId, templateId, contactosIds, momento, fechaProgramada }) => {
+        onConfirm={async ({ nombre, listaId, templateId, contactosIds, momento, fechaProgramada, recurrencia }) => {
+          if (momento === "repetir" && recurrencia) {
+            const r = await crearRecurrenteAction({ nombre, listaId, templateId, config: recurrencia });
+            if (r.error) return { error: r.error };
+            notificar(`Campaña "${nombre}" programada: ${describirRecurrencia(recurrencia).toLowerCase()}.`);
+            void recargarRecurrentes();
+            router.refresh();
+            return { error: null };
+          }
           const saveResult = await saveCampaignAction(
             nombre,
             listaId,

@@ -35,6 +35,8 @@ interface CampanasProps {
   onDelete: (ids: string[]) => Promise<void>;
   /** Campañas sugeridas por IA: se muestran arriba de la lista. */
   sugeridas?: ReactNode;
+  /** Series que se repiten (CampanasRecurrentes); null/undefined si no hay. */
+  recurrentes?: ReactNode;
 }
 
 const ESTADO_CONFIG: Record<CampaignStatus, { label: string; text: string; bg: string }> = {
@@ -159,6 +161,7 @@ export default function Campanas({
   puedeCrear = true,
   onSinPermiso,
   sugeridas,
+  recurrentes,
 }: CampanasProps) {
   const [query, setQuery] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<CampaignStatus | "todas">("todas");
@@ -272,6 +275,7 @@ export default function Campanas({
 
       <SectionBody>
         {sugeridas}
+        {recurrentes}
 
         {!hayCampanas ? (
           <div className="bg-ys-card border border-ys-border rounded-2xl py-16 px-6 flex flex-col items-center gap-3.5">

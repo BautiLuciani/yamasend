@@ -205,6 +205,15 @@ export default function EtiquetasModal({
                       <>
                         <EtiquetaChip nombre={e.nombre} activa={elegidas.includes(e.nombre)} onClick={() => onToggle(e.nombre)} />
                         <span className="text-[12px] font-semibold text-ys-muted">{e.cantidad} contacto{e.cantidad === 1 ? "" : "s"}</span>
+                        {resumen.enVivo.includes(e.nombre) && (
+                          <span
+                            title="Cuando un contacto escribe sobre esto, se le pone la etiqueta solo."
+                            className="inline-flex items-center gap-1.5 text-[11.5px] font-extrabold text-ys-green-text bg-ys-green-bg rounded-full px-2 py-0.5"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-ys-green" />
+                            En vivo
+                          </span>
+                        )}
                         {esEtiquetaDeSistema(e.nombre) ? (
                           <span className="ml-auto text-[11.5px] font-semibold text-ys-dim">La administra el sistema</span>
                         ) : (
@@ -251,6 +260,11 @@ export default function EtiquetasModal({
                             <span className="text-[12px] font-bold text-ys-muted">{s.cantidad} contactos</span>
                           </div>
                           <div className="text-[12.5px] font-medium text-ys-muted leading-[1.45]">{s.descripcion}</div>
+                          {origen === "producto" && resumen.enVivoDisponible && (
+                            <div className="text-[11.5px] font-bold text-ys-green-text">
+                              Queda en vivo: cuando alguien escriba sobre esto, se etiqueta solo.
+                            </div>
+                          )}
                           <div className="flex flex-wrap gap-2">
                             <button type="button" disabled={ocupado !== null} onClick={() => aplicar(s.etiqueta)} className={BTN_PRIMARIO}>
                               {ocupado === `sug-${s.etiqueta}` ? "Aplicando…" : "Aplicar"}

@@ -36,6 +36,13 @@ export interface EtiquetasResumen {
   totalContactos: number;
   /** Cuántos clientes se agregaron o etiquetaron recién en esta carga. */
   clientesNuevos: number;
+  /**
+   * Etiquetas que se ponen solas cuando un contacto escribe sobre el producto
+   * (yamas_send_etiquetas_auto). Vacío mientras la migración no esté aplicada.
+   */
+  enVivo: string[];
+  /** false mientras la migración del etiquetado en vivo no esté aplicada. */
+  enVivoDisponible: boolean;
   error: string | null;
 }
 
@@ -133,6 +140,8 @@ export async function getEtiquetasAction(): Promise<EtiquetasResumen> {
     sugerencias: [],
     totalContactos: 0,
     clientesNuevos: 0,
+    enVivo: [],
+    enVivoDisponible: false,
     error,
   });
 
@@ -145,6 +154,25 @@ export async function getEtiquetasAction(): Promise<EtiquetasResumen> {
     const { data } = await supabase.rpc("yamas_send_clientes_sincronizar");
     const r = data as { ok?: boolean; creados?: number; etiquetados?: number } | null;
     if (r?.ok) clientesNuevos = (r.creados ?? 0) + (r.etiquetados ?? 0);
+  }
+
+  // Las reglas del etiquetado en vivo se arman desde el catálogo y las etiquetas
+  // que ya existen. Best-effort: si la migración no está aplicada, no pasa nada.
+  let enVivo: string[] = [];
+  let enVivoDisponible = false;
+  if (membership.permisos.crear_audiencias) {
+    await supabase.rpc("yamas_send_etiquetas_auto_sincronizar");
+  }
+  {
+    const { data: reglas, error: errReglas } = await supabase
+      .from("yamas_send_etiquetas_auto")
+      .select("etiqueta")
+      .eq("tenant_id", membership.tenantId)
+      .eq("activa", true);
+    if (!errReglas) {
+      enVivoDisponible = true;
+      enVivo = ((reglas ?? []) as { etiqueta: string }[]).map((r) => r.etiqueta);
+    }
   }
 
   const { filas, contactos, productos, palabrasNegocio, ignoradas, error } = await cargarParaSugerir(membership.tenantId);
@@ -171,6 +199,8 @@ export async function getEtiquetasAction(): Promise<EtiquetasResumen> {
     }),
     totalContactos: filas.length,
     clientesNuevos,
+    enVivo,
+    enVivoDisponible,
     error: null,
   };
 }
