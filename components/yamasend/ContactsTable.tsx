@@ -61,10 +61,13 @@ export function ScoreBadge({ score }: { score: ScoreTemp }) {
 }
 
 /** Colores del score como etiqueta fija (Caliente, Tibio y Frío están siempre). */
-export const SCORE_PILL: Record<"caliente" | "tibio" | "frio", { label: string; solido: string; suave: string }> = {
-  caliente: { label: "Caliente", solido: "#e5383b", suave: "#fdecec" },
-  tibio: { label: "Tibio", solido: "#12a150", suave: "#e7f7ee" },
-  frio: { label: "Frío", solido: "#2f6fe0", suave: "#e8f0fd" },
+export const SCORE_PILL: Record<
+  "caliente" | "tibio" | "frio",
+  { label: string; solido: string; suave: string; texto: string }
+> = {
+  caliente: { label: "Caliente", solido: "#1e40af", suave: "#dbe6ff", texto: "#ffffff" },
+  tibio: { label: "Tibio", solido: "#2563eb", suave: "#e3edff", texto: "#ffffff" },
+  frio: { label: "Frío", solido: "#93c5fd", suave: "#eef5ff", texto: "#0b1b3a" },
 };
 
 function ScorePill({ score }: { score: ScoreTemp }) {
@@ -78,8 +81,8 @@ function ScorePill({ score }: { score: ScoreTemp }) {
   const c = SCORE_PILL[score];
   return (
     <span
-      className="inline-flex items-center rounded-full px-2.5 py-[1px] text-[10.5px] font-bold text-white whitespace-nowrap"
-      style={{ background: c.solido }}
+      className="inline-flex items-center rounded-full px-2 py-[1px] text-[10.5px] font-bold whitespace-nowrap"
+      style={{ background: c.solido, color: c.texto }}
     >
       {c.label}
     </span>

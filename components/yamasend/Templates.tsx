@@ -1,12 +1,30 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Template } from "@/lib/types";
+import {
+  ActionBar,
+  BarBtn,
+  BtnPrimary,
+  CheckBox,
+  SearchBox,
+  SectionBody,
+  SectionHeader,
+  SectionPage,
+  Segmented,
+  SelectionBar,
+  pluralizar,
+  type StatusTone,
+} from "./SectionChrome";
 
 interface TemplatesProps {
   templates: Template[];
   onNewTemplate: () => void;
-  /** false esconde los botones de alta. El gate real está en el server action. */
+  onOpenTemplate: (tpl: Template) => void;
+  /** Arma un template nuevo con el mismo texto (para variar uno que anduvo bien). */
+  onDuplicate: (tpl: Template) => void;
+  /** Borra borradores (los ya enviados a Meta no se borran desde acá). */
+  onDeleteDrafts: (ids: string[]) => Promise<void>;
   /**
    * false NO esconde el botón: lo deja visible y bloqueado. Esconderlo hacía
    * que el permiso revocado fuera invisible —la sección simplemente perdía el
@@ -16,7 +34,6 @@ interface TemplatesProps {
   puedeCrear?: boolean;
   /** Se dispara al tocar el botón sin permiso. Muestra el aviso. */
   onSinPermiso?: () => void;
-  onOpenTemplate: (tpl: Template) => void;
 }
 
 const CATEGORIA_LABEL: Record<string, string> = {
@@ -29,271 +46,235 @@ const CATEGORIA_LABEL: Record<string, string> = {
 function StatusBadge({ status }: { status: Template["status"] }) {
   if (status === "verificado")
     return (
-      <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-green-text bg-ys-green-bg rounded-full px-2.5 py-1">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-          <path d="m3 8.4 3.4 3L13 4.6" stroke="#067647" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+      <span className="inline-flex items-center gap-1.5 flex-none text-xs font-extrabold text-ys-green-text bg-[#d3f2e3] rounded-full px-[11px] py-1">
         Aprobado
       </span>
     );
   if (status === "enviado")
     return (
-      <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-warn-text bg-ys-warn-bg rounded-full px-2.5 py-1">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-          <circle cx="8" cy="8" r="6" stroke="#c07a12" strokeWidth="1.8" />
-          <path d="M8 4.6v3.6l2.2 1.3" stroke="#c07a12" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
+      <span className="inline-flex items-center gap-1.5 flex-none text-xs font-extrabold text-ys-warn-text bg-ys-warn-bg rounded-full px-[11px] py-1">
         En revisión
       </span>
     );
   if (status === "borrador")
     return (
-      <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-dim bg-ys-el2 rounded-full px-2.5 py-1">
-        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-          <path d="M4 12.5V4.5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v8" stroke="#7b837e" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-          <path d="M4 12.5h8" stroke="#7b837e" strokeWidth="1.6" strokeLinecap="round" />
-        </svg>
+      <span className="inline-flex items-center gap-1.5 flex-none text-xs font-extrabold text-ys-muted bg-ys-el2 rounded-full px-[11px] py-1">
         Borrador
       </span>
     );
-  // rechazado o error
   return (
-    <span className="inline-flex items-center gap-1.5 flex-none text-[11.5px] font-bold text-ys-red-text bg-ys-red-bg rounded-full px-2.5 py-1">
-      <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-        <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" stroke="#a8443b" strokeWidth="2.2" strokeLinecap="round" />
-      </svg>
+    <span className="inline-flex items-center gap-1.5 flex-none text-xs font-extrabold text-ys-red-text bg-ys-red-bg rounded-full px-[11px] py-1">
       {status === "error" ? "Error" : "Rechazado"}
     </span>
   );
 }
 
-export default function Templates({ templates, onNewTemplate, onOpenTemplate, puedeCrear = true, onSinPermiso }: TemplatesProps) {
+type Filtro = "todos" | "verificado" | "enviado" | "rechazado" | "borrador";
+
+const GRID = "md:grid-cols-[44px_minmax(0,1.1fr)_minmax(0,1.6fr)_130px_130px]";
+
+export default function Templates({
+  templates,
+  onNewTemplate,
+  onOpenTemplate,
+  onDuplicate,
+  onDeleteDrafts,
+  puedeCrear = true,
+  onSinPermiso,
+}: TemplatesProps) {
   const [query, setQuery] = useState("");
-  const [estado, setEstado] = useState<
-    "todos" | "verificado" | "enviado" | "rechazado" | "borrador"
-  >("todos");
+  const [estado, setEstado] = useState<Filtro>("todos");
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [borrando, setBorrando] = useState(false);
 
   const counts = useMemo(
     () => ({
-      total: templates.length,
       aprobados: templates.filter((t) => t.status === "verificado").length,
       revision: templates.filter((t) => t.status === "enviado").length,
-      rechazados: templates.filter(
-        (t) => t.status === "rechazado" || t.status === "error",
-      ).length,
+      rechazados: templates.filter((t) => t.status === "rechazado" || t.status === "error").length,
     }),
     [templates],
   );
 
   const filtered = templates.filter((t) => {
     if (estado !== "todos") {
-      const matches =
-        estado === "rechazado"
-          ? t.status === "rechazado" || t.status === "error"
-          : t.status === estado;
-      if (!matches) return false;
+      const ok = estado === "rechazado" ? t.status === "rechazado" || t.status === "error" : t.status === estado;
+      if (!ok) return false;
     }
     if (query && !t.nombre.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   });
 
+  // Escape sale de la selección (no hay botón "Deseleccionar").
+  useEffect(() => {
+    if (sel.size === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSel(new Set());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sel.size]);
+
+  // Lo que ya no existe o quedó filtrado afuera sale de la selección.
+  const visibles = new Set(filtered.map((t) => t.id));
+  const seleccionados = filtered.filter((t) => sel.has(t.id));
+  const todosMarcados = filtered.length > 0 && seleccionados.length === filtered.length;
+
+  function toggle(id: string) {
+    setSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleTodos() {
+    setSel(todosMarcados ? new Set() : new Set(filtered.map((t) => t.id)));
+  }
+
+  const soloBorradores = seleccionados.length > 0 && seleccionados.every((t) => t.status === "borrador" && !t.esDeEmpresa);
+  const unico = seleccionados.length === 1 ? seleccionados[0] : null;
+
+  const tone: StatusTone = counts.rechazados > 0 ? "warn" : counts.aprobados > 0 ? "ok" : "neutral";
+  const valor =
+    templates.length === 0
+      ? "Sin templates"
+      : [
+          `${counts.aprobados} aprobado${counts.aprobados === 1 ? "" : "s"}`,
+          counts.revision > 0 ? `${counts.revision} en revisión` : null,
+          counts.rechazados > 0 ? `${counts.rechazados} rechazado${counts.rechazados === 1 ? "" : "s"}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+  async function borrar() {
+    setBorrando(true);
+    await onDeleteDrafts(seleccionados.map((t) => t.id));
+    setBorrando(false);
+    setSel(new Set());
+  }
+
   return (
-    <div className="flex-1 min-w-0 bg-ys-bg px-4 md:px-[38px] pt-3 md:pt-[34px] pb-7 md:pb-10 flex flex-col gap-[18px] md:gap-[22px] overflow-y-auto">
-      <div className="flex items-end gap-5 flex-wrap">
-        <div className="flex flex-col gap-1.5">
-          <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
-            Templates
-          </div>
-          <div className="text-sm md:text-[15px] text-ys-muted font-medium">
-            Creá y administrá tus mensajes de WhatsApp.
-          </div>
-        </div>
-        <button
-          onClick={puedeCrear ? onNewTemplate : onSinPermiso}
-          className={`ml-auto w-full md:w-auto justify-center flex items-center gap-2 text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] transition-all ${
-            puedeCrear
-              ? "bg-ys-green text-white cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
-              : "bg-ys-el2 text-ys-faint cursor-not-allowed"
-          }`}
-        >
-          {puedeCrear ? (
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    <SectionPage>
+      <SectionHeader
+        title="Templates"
+        subtitle="Creá y administrá tus mensajes de WhatsApp."
+        status={{
+          icon: (
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M2.5 6h11M6 6v7.5" stroke="currentColor" strokeWidth="1.5" />
             </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="currentColor" strokeWidth="1.6" />
-              </svg>
-          )}
+          ),
+          label: "Estado en Meta",
+          value: valor,
+          tone,
+        }}
+      />
+
+      <ActionBar>
+        <BtnPrimary onClick={puedeCrear ? onNewTemplate : onSinPermiso} bloqueado={!puedeCrear}>
           Nuevo template
-        </button>
-      </div>
-
-      {templates.length > 0 && (
-        <div className="flex items-center gap-3.5 flex-wrap text-[13px] text-ys-muted font-semibold">
-          <span>
-            <span className="font-mono text-ys-text">{counts.total}</span> templates
-          </span>
-          <span className="w-px h-3.5 bg-[#e2e5e3]" />
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-[7px] h-[7px] rounded-full bg-ys-green" />
-            <span className="font-mono text-ys-text">{counts.aprobados}</span> aprobados
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-[7px] h-[7px] rounded-full border-[1.5px]" style={{ borderColor: "#c07a12", background: "linear-gradient(90deg,#c07a12 50%,transparent 50%)" }} />
-            <span className="font-mono text-ys-text">{counts.revision}</span> en revisión
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-[7px] h-[7px] rounded-full bg-[#c9584f]" />
-            <span className="font-mono text-ys-text">{counts.rechazados}</span> rechazado
-          </span>
-        </div>
-      )}
-
-      {templates.length > 0 && (
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="flex items-center gap-2.5 bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 w-full md:w-[260px]">
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-              <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
-              <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Buscar template..."
-              className="flex-1 min-w-0 border-none outline-none bg-transparent text-[13.5px] font-semibold text-ys-text"
-            />
-          </div>
-          <div className="flex gap-[3px] bg-ys-el2 rounded-[10px] p-[3px] overflow-x-auto">
-            {(
-              [
+        </BtnPrimary>
+        {templates.length > 0 && (
+          <>
+            <SearchBox value={query} onChange={setQuery} placeholder="Buscar template..." />
+            <Segmented<Filtro>
+              value={estado}
+              onChange={setEstado}
+              options={[
                 { key: "todos", label: "Todos" },
                 { key: "verificado", label: "Aprobados" },
                 { key: "enviado", label: "En revisión" },
                 { key: "rechazado", label: "Rechazados" },
                 { key: "borrador", label: "Borradores" },
-              ] as const
-            ).map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setEstado(f.key)}
-                className={`flex-none text-[12.5px] rounded-lg px-3.5 py-[7px] cursor-pointer transition-colors ${
-                  estado === f.key
-                    ? "font-bold text-ys-text bg-white shadow-[0_1px_2px_rgba(16,24,20,0.07)]"
-                    : "font-semibold text-[#7b837e]"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+              ]}
+            />
+          </>
+        )}
+      </ActionBar>
 
-      {templates.length === 0 && (
-        <div className="bg-white border border-ys-border rounded-2xl py-16 px-6 flex flex-col items-center gap-3.5">
-          <div className="w-[58px] h-[58px] rounded-[18px] bg-ys-green-bg flex items-center justify-center">
-            <svg width="26" height="26" viewBox="0 0 16 16" fill="none">
-              <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="#12B76A" strokeWidth="1.5" />
-              <path d="M2.5 6h11M6 6v7.5" stroke="#12B76A" strokeWidth="1.5" />
-            </svg>
+      <SectionBody>
+        {templates.length === 0 && (
+          <div className="bg-ys-card border border-ys-border rounded-2xl py-16 px-6 flex flex-col items-center gap-3.5">
+            <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">Creá tu primer template</div>
+            <div className="text-sm text-ys-muted font-medium text-center max-w-[420px]">
+              Los templates son los mensajes que vas a utilizar para comunicarte con tus contactos.
+            </div>
           </div>
-          <div className="text-[19px] font-extrabold tracking-[-0.02em] text-ys-text">
-            Creá tu primer template
-          </div>
-          <div className="text-sm text-ys-muted font-medium text-center max-w-[420px]">
-            Los templates son los mensajes que vas a utilizar para comunicarte con tus contactos.
-          </div>
-          <button
-            onClick={puedeCrear ? onNewTemplate : onSinPermiso}
-            className={`mt-1.5 flex items-center gap-2 text-[13.5px] font-bold rounded-[10px] px-[18px] py-2.5 transition-all ${
-              puedeCrear
-                ? "text-white bg-ys-green cursor-pointer hover:bg-ys-green-hover hover:-translate-y-px"
-                : "bg-ys-el2 text-ys-faint cursor-not-allowed"
-            }`}
-          >
-            {puedeCrear ? (
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-              </svg>
-            ) : (
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-                <path d="M4.2 7.2V5.4a3.8 3.8 0 0 1 7.6 0v1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                <rect x="3" y="7.2" width="10" height="6.3" rx="1.8" stroke="currentColor" strokeWidth="1.6" />
-              </svg>
-            )}
-            Crear template
-          </button>
-        </div>
-      )}
+        )}
 
-      {templates.length > 0 && filtered.length === 0 && (
-        <div className="bg-white border border-ys-border rounded-2xl py-[52px] px-6 flex flex-col items-center gap-2.5">
-          <div className="text-base font-extrabold text-ys-text">Sin resultados</div>
-          <div className="text-[13.5px] text-ys-muted font-medium">
-            Probá con otro nombre o cambiá los filtros.
+        {templates.length > 0 && filtered.length === 0 && (
+          <div className="bg-ys-card border border-ys-border rounded-2xl py-[52px] px-6 flex flex-col items-center gap-2.5">
+            <div className="text-base font-extrabold text-ys-text">Sin resultados</div>
+            <div className="text-[13.5px] text-ys-muted font-medium">Probá con otro nombre o cambiá los filtros.</div>
           </div>
-        </div>
-      )}
+        )}
 
-      {filtered.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => onOpenTemplate(t)}
-              /* Los que bajó la empresa van en violeta: el empleado no los
-                 creó él y no los puede editar, así que necesita distinguirlos
-                 de un vistazo. Se cambia el fondo, no solo un detalle, para
-                 que la diferencia se lea sin buscarla. */
-              className={`text-left border rounded-2xl px-5 py-[18px] flex flex-col gap-3.5 cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)] ${
-                t.esDeEmpresa
-                  ? "bg-[#faf8ff] border-[#ddd3f5] hover:border-[#a889e8]"
-                  : "bg-white border-ys-border hover:border-ys-green-border"
-              }`}
+        {filtered.length > 0 && (
+          <div className="bg-ys-card border border-ys-border rounded-2xl overflow-hidden">
+            <div
+              className={`hidden md:grid ${GRID} items-center px-5 py-3 border-b border-ys-border text-[11px] font-extrabold tracking-[0.06em] uppercase text-ys-muted`}
             >
-              <div className="flex items-start gap-3">
-                <div className="flex-1 min-w-0 flex flex-col gap-1">
-                  <div className="font-mono text-sm text-ys-text truncate">{t.nombre}</div>
-                  <div className="text-xs text-ys-dim font-semibold">
-                    {CATEGORIA_LABEL[t.tipo ?? "marketing"] ?? "Marketing"}
+              <CheckBox
+                checked={todosMarcados}
+                indeterminate={!todosMarcados && seleccionados.length > 0}
+                onChange={toggleTodos}
+                label="Seleccionar todos los templates"
+              />
+              <span>Nombre</span>
+              <span>Mensaje</span>
+              <span>Categoría</span>
+              <span>Estado</span>
+            </div>
+            {filtered.map((t, i) => {
+              const marcado = sel.has(t.id) && visibles.has(t.id);
+              return (
+                <div
+                  key={t.id}
+                  onClick={() => onOpenTemplate(t)}
+                  className={`grid grid-cols-[28px_minmax(0,1fr)_auto] ${GRID} items-center gap-x-3 gap-y-1 px-4 md:px-5 py-3.5 cursor-pointer transition-colors ${
+                    i > 0 ? "border-t border-ys-border-softer" : ""
+                  } ${marcado ? "bg-ys-green-bg" : t.esDeEmpresa ? "bg-[#faf8ff] hover:bg-[#f5f1ff]" : "hover:bg-[#fbfcfb]"}`}
+                >
+                  <CheckBox checked={marcado} onChange={() => toggle(t.id)} label={`Seleccionar ${t.nombre}`} />
+                  <div className="min-w-0 flex flex-col gap-0.5">
+                    <span className="font-mono text-sm font-medium text-ys-text truncate">{t.nombre}</span>
+                    {t.esDeEmpresa && <span className="text-[11.5px] font-bold text-[#5b3fa8]">De tu empresa</span>}
                   </div>
+                  <span className="md:hidden">
+                    <StatusBadge status={t.status} />
+                  </span>
+                  <span className="hidden md:block text-[13px] font-medium text-ys-muted truncate">{t.contenido}</span>
+                  <span className="hidden md:block text-[13.5px] font-semibold text-ys-muted">
+                    {CATEGORIA_LABEL[t.tipo ?? "marketing"] ?? "Marketing"}
+                  </span>
+                  <span className="hidden md:block">
+                    <StatusBadge status={t.status} />
+                  </span>
                 </div>
-                <StatusBadge status={t.status} />
-              </div>
+              );
+            })}
+          </div>
+        )}
+      </SectionBody>
 
-              {t.esDeEmpresa && (
-                <span className="inline-flex items-center gap-1.5 self-start text-[11.5px] font-bold text-[#5b3fa8] bg-[#f0eafd] border border-[#ddd3f5] rounded-full px-2.5 py-1">
-                  <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
-                    <rect x="2.5" y="2.5" width="11" height="11" rx="1.5" stroke="#5b3fa8" strokeWidth="1.6" />
-                    <path d="M5.5 5.5h1.2M9.3 5.5h1.2M5.5 8h1.2M9.3 8h1.2M6.5 13.5V11h3v2.5" stroke="#5b3fa8" strokeWidth="1.6" strokeLinecap="round" />
-                  </svg>
-                  De tu empresa
-                </span>
-              )}
-
-              <div
-                className={`border rounded-xl px-3.5 py-3 text-[13px] text-[#3f4844] leading-[1.5] font-medium line-clamp-3 ${
-                  t.esDeEmpresa
-                    ? "bg-white border-[#e6dffa]"
-                    : "bg-[#fbfcfb] border-ys-border-soft"
-                }`}
-              >
-                {t.contenido}
-              </div>
-              <div
-                className={`flex items-center justify-end border-t pt-3 ${
-                  t.esDeEmpresa ? "border-[#e6dffa]" : "border-ys-border-softer"
-                }`}
-              >
-                {/* Sin precio en USD: la app se maneja con créditos (oct 2026). */}
-                <div className="text-[12.5px] font-bold text-ys-faint">Ver detalle →</div>
-              </div>
-            </button>
-          ))}
-        </div>
+      {seleccionados.length > 0 && (
+        <SelectionBar texto={pluralizar(seleccionados.length, "template", "templates")}>
+          {!unico && !(soloBorradores && puedeCrear) && (
+            <span className="text-[13px] font-semibold text-[#9aa9a3] pr-3 whitespace-nowrap">
+              Elegí uno solo para ver o duplicar
+            </span>
+          )}
+          {unico && <BarBtn onClick={() => onOpenTemplate(unico)}>Ver detalle</BarBtn>}
+          {unico && puedeCrear && <BarBtn onClick={() => onDuplicate(unico)}>Duplicar</BarBtn>}
+          {soloBorradores && puedeCrear && (
+            <BarBtn variante="danger" onClick={borrar} disabled={borrando}>
+              {borrando ? "Eliminando…" : "Eliminar"}
+            </BarBtn>
+          )}
+        </SelectionBar>
       )}
-    </div>
+    </SectionPage>
   );
 }

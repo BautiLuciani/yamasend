@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  ActionBar,
+  BtnPrimary,
+  BtnSecondary,
+  SectionHeader,
+} from "./SectionChrome";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage, Contact, IAConversacionResumen } from "@/lib/types";
 import { renderChatCard } from "./IAChatCards";
@@ -13,6 +19,10 @@ import {
 
 interface IAProps {
   userName: string;
+  /** null = todavía verificando. Alimenta el estado del encabezado. */
+  whatsappVinculado: boolean | null;
+  /** Abre el QR para vincular (solo si hay permiso; si no, undefined). */
+  onVincular?: () => void;
   messages: ChatMessage[];
   contacts: Contact[];
   onSend: (text: string) => void;
@@ -72,6 +82,8 @@ const BIENVENIDAS = [
 
 export default function IA({
   userName,
+  whatsappVinculado,
+  onVincular,
   messages,
   contacts,
   onSend,
@@ -109,7 +121,6 @@ export default function IA({
 }: IAProps) {
   const [value, setValue] = useState("");
   const [historialOpen, setHistorialOpen] = useState(false);
-  const [accionesAbiertas, setAccionesAbiertas] = useState(false);
   const [ayudaAbierta, setAyudaAbierta] = useState(false);
   const [historialConversaciones, setHistorialConversaciones] = useState<
     IAConversacionResumen[]
@@ -184,41 +195,36 @@ export default function IA({
   return (
     <>
     <div className="flex-1 min-w-0 bg-ys-bg flex flex-col h-full pt-[58px] md:pt-0">
-      <div className="flex-none px-4 md:px-[38px] pt-3 md:pt-7 pb-3 md:pb-[18px] flex flex-col md:flex-row md:items-end gap-3 md:gap-4 border-b border-ys-border-softest bg-ys-bg">
-        <div className="flex flex-col gap-1.5">
-          <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
-            IA
-          </div>
-          <button
-            onClick={() => setAccionesAbiertas((v) => !v)}
-            className="flex md:hidden items-center gap-1.5 text-sm text-ys-muted font-medium text-left cursor-pointer"
-            aria-expanded={accionesAbiertas}
-            aria-controls="ia-header-acciones"
-          >
-            <span>Analizá tu negocio conversando con YamaSend.</span>
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-              className="flex-none transition-transform duration-200"
-              style={{ transform: accionesAbiertas ? "rotate(180deg)" : "rotate(0deg)" }}
-            >
-              <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      <SectionHeader
+        title="IA"
+        subtitle="Analizá tu negocio conversando con YamaSend."
+        status={{
+          icon: (
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
             </svg>
-          </button>
-          <div className="hidden md:block text-[15px] text-ys-muted font-medium">
-            Analizá tu negocio conversando con YamaSend.
-          </div>
-        </div>
-        <div
-          id="ia-header-acciones"
-          className={`${accionesAbiertas ? "flex" : "hidden"} md:flex flex-col md:flex-row md:ml-auto items-stretch md:items-center gap-2.5`}
+          ),
+          label: "WhatsApp",
+          value:
+            whatsappVinculado === null ? "Verificando…" : whatsappVinculado ? "Vinculado" : "Vincular WhatsApp",
+          tone: whatsappVinculado === null ? "neutral" : whatsappVinculado ? "ok" : "off",
+          onClick: whatsappVinculado === false ? onVincular : undefined,
+        }}
+      />
+
+      <ActionBar>
+        <BtnPrimary
+          onClick={() => {
+            onNuevaConversacion();
+            setHistorialOpen(false);
+          }}
         >
-          <div className="relative w-full md:w-auto">
+          Nueva conversación
+        </BtnPrimary>
+          <div className="relative">
             <button
               onClick={handleToggleHistorial}
-              className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-white border border-ys-border rounded-[10px] px-3.5 py-2.5 text-[13px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8]"
+              className="inline-flex items-center gap-2 h-11 px-[18px] bg-ys-card border border-ys-border rounded-[10px] text-sm font-bold text-ys-text cursor-pointer transition-colors hover:bg-[#f7f9f8]"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
                 <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.5" />
@@ -296,45 +302,22 @@ export default function IA({
               </div>
             )}
           </div>
-          {conversacionActivaId && (
-            <button
-              onClick={() =>
-                setConfirmandoBorrado({
-                  id: conversacionActivaId,
-                  titulo:
-                    historialConversaciones.find((c) => c.id === conversacionActivaId)
-                      ?.titulo ?? "esta conversación",
-                  updatedAt: "",
-                })
-              }
-              className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-white border border-ys-border text-[13px] font-bold text-[#3f4844] px-3.5 py-2.5 rounded-[10px] cursor-pointer transition-colors hover:bg-ys-warn-bg hover:text-ys-orange hover:border-ys-warn-bg"
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
-                <path
-                  d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.25 4.5l.55 8.05a1.2 1.2 0 0 0 1.2 1.1h4a1.2 1.2 0 0 0 1.2-1.1l.55-8.05M6.75 7.3v3.6M9.25 7.3v3.6"
-                  stroke="currentColor"
-                  strokeWidth="1.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              Eliminar conversación
-            </button>
-          )}
-          <button
-            onClick={() => {
-              onNuevaConversacion();
-              setHistorialOpen(false);
-            }}
-            className="w-full md:w-auto flex items-center justify-center md:justify-start gap-2 bg-ys-green text-white text-[13.5px] font-bold px-4 py-2.5 rounded-[10px] cursor-pointer transition-all hover:bg-ys-green-hover hover:-translate-y-px shadow-[var(--shadow-cta)]"
+        {conversacionActivaId && (
+          <BtnSecondary
+            onClick={() =>
+              setConfirmandoBorrado({
+                id: conversacionActivaId,
+                titulo:
+                  historialConversaciones.find((c) => c.id === conversacionActivaId)?.titulo ??
+                  "esta conversación",
+                updatedAt: "",
+              })
+            }
           >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-            </svg>
-            Nueva conversación
-          </button>
-        </div>
-      </div>
+            Eliminar conversación
+          </BtnSecondary>
+        )}
+      </ActionBar>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-[38px] py-5">
         <div className="w-full max-w-[760px] mx-auto flex flex-col gap-5">
@@ -360,7 +343,8 @@ export default function IA({
             </div>
           )}
 
-          {messages.map((m) =>
+          {/* El saludo de arriba ya hace de bienvenida: el mensaje fijo del bot se oculta. */}
+          {messages.filter((m) => m.id !== "welcome").map((m) =>
             m.type === "user" ? (
               <div
                 key={m.id}

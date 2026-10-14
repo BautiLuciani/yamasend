@@ -32,6 +32,8 @@ export default function EtiquetasModal({
   onRevisar,
   onCambio,
   onClose,
+  seleccionados = 0,
+  onEtiquetarSeleccion,
 }: {
   resumen: EtiquetasResumen;
   /** Etiquetas que hoy filtran la lista de contactos. */
@@ -44,6 +46,9 @@ export default function EtiquetasModal({
   /** Algo cambió: el padre vuelve a leer etiquetas y contactos. */
   onCambio: () => Promise<void>;
   onClose: () => void;
+  /** Contactos seleccionados en la lista: se les puede poner una etiqueta desde acá. */
+  seleccionados?: number;
+  onEtiquetarSeleccion?: () => void;
 }) {
   const [propia, setPropia] = useState("");
   const [renombrando, setRenombrando] = useState<string | null>(null);
@@ -138,6 +143,17 @@ export default function EtiquetasModal({
           {msg && (
             <div className={`text-[12.5px] font-semibold rounded-[10px] px-3.5 py-2.5 ${msg.type === "ok" ? "bg-ys-green-bg text-ys-green-text" : "bg-ys-red-bg text-ys-red-text"}`}>
               {msg.text}
+            </div>
+          )}
+
+          {seleccionados > 0 && onEtiquetarSeleccion && (
+            <div className="flex items-center justify-between gap-3 flex-wrap bg-ys-green-bg border border-ys-green-border rounded-[12px] px-4 py-3">
+              <div className="text-[13px] font-bold text-ys-green-text">
+                {seleccionados} contacto{seleccionados === 1 ? "" : "s"} seleccionado{seleccionados === 1 ? "" : "s"}
+              </div>
+              <button type="button" onClick={onEtiquetarSeleccion} className={BTN_PRIMARIO}>
+                Ponerles una etiqueta
+              </button>
             </div>
           )}
 

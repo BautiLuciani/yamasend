@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  ActionBar,
+  BtnPrimary,
+  SectionBody,
+  SectionHeader,
+  SectionPage,
+  Segmented,
+} from "./SectionChrome";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { getRecentActivityAction } from "@/lib/actions/activity";
@@ -375,51 +383,43 @@ export default function Dashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
-  return (
-    <div className="flex-1 min-w-0 bg-ys-bg px-4 md:px-[38px] pt-3 md:pt-[34px] pb-7 md:pb-10 flex flex-col gap-5 md:gap-6 overflow-y-auto">
-      <div className="flex items-end gap-5 flex-wrap">
-        <div className="flex flex-col gap-1.5">
-          <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
-            Hola, {firstName}
-          </div>
-          <div className="text-sm md:text-[15px] text-ys-muted font-medium">
-            Así viene tu actividad de mensajería.
-          </div>
-        </div>
-        <div className="ml-auto flex items-center gap-3 flex-wrap w-full md:w-auto">
-          <div className="flex gap-[3px] bg-ys-el2 rounded-[10px] p-[3px] w-full md:w-auto">
-            {(
-              [
-                { key: "7d", label: "7 días" },
-                { key: "30d", label: "30 días" },
-                { key: "ano", label: "Año" },
-              ] as const
-            ).map((p) => (
-              <button
-                key={p.key}
-                onClick={() => setPeriodo(p.key)}
-                className={`flex-1 md:flex-none text-[13px] rounded-lg px-[15px] py-[7px] cursor-pointer transition-colors ${
-                  periodo === p.key
-                    ? "font-bold text-ys-text bg-white shadow-[0_1px_2px_rgba(16,24,20,0.07)]"
-                    : "font-semibold text-[#7b837e]"
-                }`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <button
-            onClick={onNewCampaign}
-            className="w-full md:w-auto justify-center flex items-center gap-2 bg-ys-green text-white text-[13.5px] font-bold px-[17px] py-[11px] rounded-[10px] cursor-pointer shadow-[var(--shadow-cta)] hover:brightness-95 transition"
-          >
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 3v10M3 8h10" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
-            </svg>
-            Nueva campaña
-          </button>
-        </div>
-      </div>
+  const bajosCreditos =
+    creditosAsignados !== null && creditosAsignados > 0 && porcentajeCreditos < 15;
 
+  return (
+    <SectionPage>
+      <SectionHeader
+        title="Dashboard"
+        subtitle={`Hola, ${firstName}. Así viene tu actividad de mensajería.`}
+        status={{
+          icon: (
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect x="2" y="2" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="9" y="2" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="2" y="9" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+              <rect x="9" y="9" width="5" height="5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+          ),
+          label: "Créditos",
+          value: `${creditosDisponibles.toLocaleString("es-AR")} disponibles`,
+          tone: bajosCreditos ? "warn" : "ok",
+        }}
+      />
+
+      <ActionBar>
+        <BtnPrimary onClick={onNewCampaign}>Nueva campaña</BtnPrimary>
+        <Segmented<DashboardPeriodo>
+          value={periodo}
+          onChange={setPeriodo}
+          options={[
+            { key: "7d", label: "7 días" },
+            { key: "30d", label: "30 días" },
+            { key: "ano", label: "Año" },
+          ]}
+        />
+      </ActionBar>
+
+      <SectionBody>
       {/* 4 cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
         <KpiCard
@@ -681,7 +681,8 @@ export default function Dashboard({
           )}
         </div>
       </div>
-    </div>
+      </SectionBody>
+    </SectionPage>
   );
 }
 
