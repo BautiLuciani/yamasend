@@ -293,22 +293,46 @@ export function CheckBox({
  * deseleccionar se sale de la selección (ver SelectionBar en cada lista), no
  * hay botón. Se pega al borde de abajo del área que scrollea.
  */
-export function SelectionBar({ children, texto }: { children: ReactNode; texto: string }) {
+export function SelectionBar({
+  children,
+  texto,
+  onClear,
+}: {
+  children: ReactNode;
+  texto: string;
+  /** Solo se muestra en celular (sin teclado no hay Escape): una ✕ chica, no un botón de texto. */
+  onClear?: () => void;
+}) {
   return (
     <div
-      className="sticky bottom-4 md:bottom-6 z-[9] mx-4 md:mx-[38px] mt-auto flex items-center gap-2 flex-nowrap bg-ys-dark text-[#eef1ef] rounded-xl py-1.5 pl-[18px] pr-1.5 shadow-[0_14px_34px_rgba(16,24,20,0.28)] overflow-x-auto"
+      // shrink-0: el contenedor scrollea en columna y, sin esto, la barra se
+      // aplasta a su padding cuando el contenido es más alto que la pantalla.
+      className="shrink-0 sticky bottom-4 md:bottom-6 z-[9] mx-4 md:mx-[38px] mt-auto flex items-center gap-2 flex-wrap md:flex-nowrap bg-ys-dark text-[#eef1ef] rounded-xl py-1.5 pl-[18px] pr-1.5 shadow-[0_14px_34px_rgba(16,24,20,0.28)]"
       style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
       role="toolbar"
       aria-label="Acciones sobre la selección"
     >
       <span className="text-sm font-extrabold whitespace-nowrap">{texto}</span>
-      <span className="flex-1" />
+      <span className="hidden md:block flex-1" />
+      {onClear && (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label="Quitar selección"
+          className="md:hidden ml-auto w-9 h-9 rounded-lg flex items-center justify-center text-[#9aa9a3] cursor-pointer hover:bg-[#1e2a24] hover:text-white"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </button>
+      )}
       {children}
     </div>
   );
 }
 
-const BAR_BTN = "h-9 px-3.5 rounded-lg text-[13px] whitespace-nowrap cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-default";
+const BAR_BTN =
+  "grow md:grow-0 h-9 px-3.5 rounded-lg text-[13px] whitespace-nowrap cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-default";
 
 export function BarBtn({
   children,

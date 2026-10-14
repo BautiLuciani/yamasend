@@ -2243,7 +2243,7 @@ export default function AppShell({
           </SectionBody>
 
           {sel.size > 0 && vistaContactos === "todos" && (
-            <SelectionBar texto={pluralizar(sel.size, "contacto", "contactos")}>
+            <SelectionBar texto={pluralizar(sel.size, "contacto", "contactos")} onClear={() => setSel(new Set())}>
               <BarBtn
                 onClick={() =>
                   user.permisos.importar_contactos
@@ -2253,9 +2253,11 @@ export default function AppShell({
               >
                 Excluir
               </BarBtn>
-              <BarBtn onClick={() => setAddToGroupOpen(true)}>Agregar a audiencia existente</BarBtn>
+              <BarBtn onClick={() => setAddToGroupOpen(true)}>
+                Agregar a audiencia<span className="hidden md:inline">&nbsp;existente</span>
+              </BarBtn>
               <BarBtn variante="primary" onClick={() => setNombrarAudienciaOpen(true)}>
-                Crear nueva audiencia
+                Crear <span className="hidden md:inline">nueva&nbsp;</span>audiencia
               </BarBtn>
             </SelectionBar>
           )}

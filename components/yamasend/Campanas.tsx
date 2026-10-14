@@ -346,6 +346,10 @@ export default function Campanas({
               ? `¿Eliminar ${pluralizar(seleccionadas.length, "campaña", "campañas")}?`
               : pluralizar(seleccionadas.length, "campaña", "campañas")
           }
+          onClear={() => {
+            setSel(new Set());
+            setConfirmando(false);
+          }}
         >
           {confirmando ? (
             <>

@@ -260,7 +260,7 @@ export default function Templates({
       </SectionBody>
 
       {seleccionados.length > 0 && (
-        <SelectionBar texto={pluralizar(seleccionados.length, "template", "templates")}>
+        <SelectionBar texto={pluralizar(seleccionados.length, "template", "templates")} onClear={() => setSel(new Set())}>
           {!unico && !(soloBorradores && puedeCrear) && (
             <span className="text-[13px] font-semibold text-[#9aa9a3] pr-3 whitespace-nowrap">
               Elegí uno solo para ver o duplicar

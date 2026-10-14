@@ -211,6 +211,10 @@ export default function Audiencias({
               ? `¿Eliminar ${pluralizar(seleccionadas.length, "audiencia", "audiencias")}?`
               : pluralizar(seleccionadas.length, "audiencia", "audiencias")
           }
+          onClear={() => {
+            setSel(new Set());
+            setConfirmando(false);
+          }}
         >
           {confirmando ? (
             <>
