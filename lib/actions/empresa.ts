@@ -1,5 +1,6 @@
 "use server";
 
+import { ycloudApiKey } from "@/lib/ycloud/clave";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/auth/permisos";
 import {
@@ -655,7 +656,8 @@ async function dispararAprobaciones(
   let fallidos = 0;
 
   for (const d of destinos) {
-    if (!d.ycloudApi || !d.wabaId) {
+    const claveYcloud = ycloudApiKey(d.ycloudApi);
+    if (!claveYcloud || !d.wabaId) {
       fallidos++;
       continue;
     }
@@ -665,7 +667,7 @@ async function dispararAprobaciones(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tenant_id: d.tenantId,
-          ycloud_api: d.ycloudApi,
+          ycloud_api: claveYcloud,
           waba_id: d.wabaId,
           nombre_meta: nombre.trim(),
           contenido: contenido.trim(),

@@ -1,5 +1,6 @@
 "use server";
 
+import { ycloudApiKey } from "@/lib/ycloud/clave";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { assertPermiso, getCurrentMembership } from "@/lib/auth/permisos";
@@ -5485,7 +5486,7 @@ async function ejecutarHerramientaAgente(
 
     // Sin WhatsApp Business la cuenta no puede mandarlos a Meta todavía.
     const { data: cfg } = await supabase.from("yamas_inmo_clientes").select("ycloud_api, wabaid").eq("tenant_id", tenantId).maybeSingle();
-    const puedeEnviarMeta = Boolean(cfg?.ycloud_api && cfg?.wabaid);
+    const puedeEnviarMeta = Boolean(ycloudApiKey(cfg?.ycloud_api) && cfg?.wabaid);
 
     const memoriaOut = {
       productosDetectados: { firma, grupos },

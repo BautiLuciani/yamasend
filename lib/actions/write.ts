@@ -1,5 +1,6 @@
 "use server";
 
+import { ycloudApiKey } from "@/lib/ycloud/clave";
 import { createClient } from "@/lib/supabase/server";
 import { assertPermiso } from "@/lib/auth/permisos";
 import type { Template } from "@/lib/types";
@@ -357,11 +358,11 @@ export async function saveCampaignAction(
     return { id: null, error: "No se pudo resolver el tenant del usuario." };
   }
 
-  if (!cliente.ycloud_api || !cliente.wabaid) {
+  if (!ycloudApiKey(cliente.ycloud_api) || !cliente.wabaid) {
     return {
       id: null,
       error:
-        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (ycloud_api / wabaid). Contactá a soporte antes de crear campañas.",
+        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (número y WABA). Contactá a soporte antes de crear campañas.",
     };
   }
 
@@ -534,11 +535,11 @@ export async function sendCampaignAction(
     return { ok: false, error: "No se pudo resolver el tenant del usuario." };
   }
 
-  if (!cliente.ycloud_api || !cliente.wabaid || !cliente.ventas_tel) {
+  if (!ycloudApiKey(cliente.ycloud_api) || !cliente.wabaid || !cliente.ventas_tel) {
     return {
       ok: false,
       error:
-        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (ycloud_api / wabaid / ventas_tel). Contactá a soporte.",
+        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (número, WABA y teléfono de ventas). Contactá a soporte.",
     };
   }
 
@@ -554,7 +555,7 @@ export async function sendCampaignAction(
       body: JSON.stringify({
         tenant_id: cliente.tenant_id,
         campaign_id: campaignId,
-        ycloud_api: cliente.ycloud_api,
+        ycloud_api: ycloudApiKey(cliente.ycloud_api),
         wabaid: cliente.wabaid,
         ventas_tel: cliente.ventas_tel,
         lista_id: listaId,
@@ -925,14 +926,14 @@ export async function sendTemplateToMetaAction(
     };
   }
 
-  if (!cliente.ycloud_api || !cliente.wabaid) {
+  if (!ycloudApiKey(cliente.ycloud_api) || !cliente.wabaid) {
     return {
       ok: false,
       templateId: null,
       status: null,
       mensaje: "",
       error:
-        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (ycloud_api / wabaid). Contactá a soporte antes de enviar templates a Meta.",
+        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (número y WABA). Contactá a soporte antes de enviar templates a Meta.",
     };
   }
 
@@ -942,7 +943,7 @@ export async function sendTemplateToMetaAction(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tenant_id: cliente.tenant_id,
-        ycloud_api: cliente.ycloud_api,
+        ycloud_api: ycloudApiKey(cliente.ycloud_api),
         waba_id: cliente.wabaid,
         nombre_meta: nombre.trim(),
         contenido: contenido.trim(),
