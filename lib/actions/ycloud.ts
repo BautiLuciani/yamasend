@@ -27,6 +27,8 @@ export interface ConexionYcloud {
   /** true si la administra una empresa (el empleado no la edita). */
   administradaPorEmpresa: boolean;
   puedeEditar: boolean;
+  /** Con qué cuenta se está entrando (para no pegar la clave en la equivocada). */
+  cuenta: { tenantId: string | null; email: string | null };
   error: string | null;
 }
 
@@ -40,6 +42,7 @@ export async function getConexionYcloudAction(): Promise<ConexionYcloud> {
     wabaid: null,
     administradaPorEmpresa: false,
     puedeEditar: false,
+    cuenta: { tenantId: null, email: null },
     error,
   });
 
@@ -54,7 +57,7 @@ export async function getConexionYcloudAction(): Promise<ConexionYcloud> {
 
   const { data, error } = await supabase
     .from("yamas_inmo_clientes")
-    .select("ycloud_api, wabaid, ventas_tel")
+    .select("tenant_id, ycloud_api, wabaid, ventas_tel")
     .eq("auth_user_id", user.id)
     .maybeSingle();
   if (error) return vacio("No se pudo leer la conexión de WhatsApp.");
@@ -68,6 +71,7 @@ export async function getConexionYcloudAction(): Promise<ConexionYcloud> {
     wabaid: (data?.wabaid as string | null) ?? null,
     administradaPorEmpresa: empresa,
     puedeEditar: !empresa,
+    cuenta: { tenantId: (data?.tenant_id as string | null) ?? null, email: user.email ?? null },
     error: null,
   };
 }

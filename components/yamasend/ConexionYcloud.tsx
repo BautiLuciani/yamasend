@@ -76,6 +76,17 @@ export default function ConexionYcloud() {
         </div>
       </div>
 
+      <div className="text-[12.5px] font-semibold text-ys-muted">
+        Estás entrando como <b className="text-ys-text">{estado.cuenta.email ?? "—"}</b>
+        {estado.cuenta.tenantId ? (
+          <>
+            {" "}
+            · cuenta <span className="font-mono text-ys-text">{estado.cuenta.tenantId}</span>
+          </>
+        ) : null}
+        . Verificá que sea la tuya antes de pegar la clave.
+      </div>
+
       {estado.error && (
         <div className="text-[12.5px] font-semibold text-ys-red-text bg-ys-red-bg rounded-[10px] px-3.5 py-2.5">{estado.error}</div>
       )}
