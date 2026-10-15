@@ -1,5 +1,6 @@
 "use client";
 
+import ConexionYcloud from "./ConexionYcloud";
 import { useEffect, useState } from "react";
 import type { AppUser, EmpresaUser } from "@/lib/types";
 import { useLang } from "./LangContext";
@@ -68,7 +69,7 @@ interface MyProfileModalProps {
   seccionInicial?: Section;
 }
 
-type Section = "personal" | "security" | "agency" | "creditos";
+type Section = "personal" | "security" | "agency" | "creditos" | "whatsapp";
 
 function NavItem({
   active,
@@ -619,6 +620,19 @@ export default function MyProfileModal({
               </svg>
             }
           />
+          {/* WhatsApp: dónde se pega la API key de YCloud. */}
+          {identidad.rol !== "empresa" && (
+            <NavItem
+              active={section === "whatsapp"}
+              onClick={() => handleSelectSection("whatsapp")}
+              label="WhatsApp"
+              icon={
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                  <path d="M2.5 13.5 3.4 10A5.7 5.7 0 1 1 6 12.6l-3.5.9Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+                </svg>
+              }
+            />
+          )}
           {/* Créditos: solo tiene sentido para empleado/individual, que gastan
               créditos directamente. La empresa carga y reparte créditos desde
               su sección de Empleados, no acá. */}
@@ -784,6 +798,8 @@ export default function MyProfileModal({
               </div>
             </>
           )}
+
+          {section === "whatsapp" && <ConexionYcloud />}
 
           {section === "agency" && (
             <>

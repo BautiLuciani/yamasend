@@ -622,7 +622,7 @@ export default function AppShell({
   // Sección con la que abrir Mi Perfil. "creditos" cuando se llega desde un
   // botón de comprar; undefined cuando se abre normal desde el menú.
   const [myProfileSeccion, setMyProfileSeccion] = useState<
-    "personal" | "security" | "agency" | "creditos" | undefined
+    "personal" | "security" | "agency" | "creditos" | "whatsapp" | undefined
   >(undefined);
 
   // Atajo compartido por el dashboard y el wizard: llevar a comprar créditos
@@ -1140,6 +1140,19 @@ export default function AppShell({
     }, 60_000);
     return () => clearInterval(id);
   }, [activeSection, sel.size, router]);
+
+  // Link directo a Mi perfil: /panel?mi_perfil=whatsapp (para pegar la API key
+  // de YCloud). Se abre una sola vez al entrar y se saca de la URL.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("mi_perfil");
+    if (p !== "whatsapp" && p !== "creditos" && p !== "agency") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- apertura por link, una sola vez
+    setMyProfileSeccion(p);
+    setMyProfileOpen(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("mi_perfil");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
 
   // Escape sale de la selección de Contactos: la barra flotante no tiene
   // botón "Deseleccionar".
