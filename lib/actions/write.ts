@@ -299,7 +299,11 @@ export async function deleteListAction(
 // template_language, ventana_24h, total } y dispara el envío masivo vía
 // YCloud, actualizando yamas_send_listas.status y yamas_inmo_clientesdeclientes
 // a medida que va enviando.
+// Se puede apuntar a otro workflow de envío sin tocar código (variable
+// YAMASEND_SEND_WEBHOOK_URL en Vercel): sirve para tener una copia propia con
+// su propia firma sin pisar el workflow que usan otros despliegues.
 const CAMPAIGN_SEND_WEBHOOK_URL =
+  process.env.YAMASEND_SEND_WEBHOOK_URL?.trim() ||
   "https://yamasai.app.n8n.cloud/webhook/9a625055-39fb-4b59-a991-5f9d19beb32f";
 
 /**
