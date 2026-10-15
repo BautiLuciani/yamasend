@@ -1,5 +1,6 @@
 "use client";
 
+import { getConexionYcloudAction } from "@/lib/actions/ycloud";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
@@ -475,6 +476,21 @@ export default function AppShell({
   // inicial, para no dejar pasar un "Analizar" antes de tener certeza.
   const [wahaConectada, setWahaConectada] = useState<boolean | null>(null);
 
+  // Cuentas conectadas por YCloud (coexistencia): no tienen sesión de WAHA, así
+  // que "vinculado" también se cumple si la cuenta tiene número, WABA y la
+  // clave de plataforma. Sin esto, esas cuentas aparecían "sin vincular".
+  const [ycloudLista, setYcloudLista] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    getConexionYcloudAction().then((c) => {
+      if (!cancelado) setYcloudLista(c.lista);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+  const whatsappVinculado: boolean | null = ycloudLista === true ? true : wahaConectada;
+
   useEffect(() => {
     isWahaConectadaAction().then(setWahaConectada);
   }, []);
@@ -591,7 +607,7 @@ export default function AppShell({
   const { avisos: avisosSidebar, marcarSecciones } = useAvisosSidebar({
     tenantId: user.tenantId,
     activeSection,
-    whatsappConectado: wahaConectada,
+    whatsappConectado: whatsappVinculado,
   });
   const avisoMenuMobile = Object.values(avisosSidebar).includes("atencion")
     ? "atencion"
@@ -2128,7 +2144,7 @@ export default function AppShell({
       {activeSection === "ia" && (
         <IA
           userName={user.contactoNombre}
-          whatsappVinculado={wahaConectada}
+          whatsappVinculado={whatsappVinculado}
           onVincular={() =>
             user.permisos.importar_contactos ? setQrOpen(true) : avisarSinPermiso("vincular WhatsApp")
           }
@@ -2183,10 +2199,10 @@ export default function AppShell({
               ),
               label: "WhatsApp",
               value:
-                wahaConectada === null ? "Verificando…" : wahaConectada ? "Vinculado" : "Vincular WhatsApp",
-              tone: wahaConectada === null ? "neutral" : wahaConectada ? "ok" : "off",
+                whatsappVinculado === null ? "Verificando…" : whatsappVinculado ? "Vinculado" : "Vincular WhatsApp",
+              tone: whatsappVinculado === null ? "neutral" : whatsappVinculado ? "ok" : "off",
               onClick:
-                wahaConectada === false
+                whatsappVinculado === false
                   ? () => (user.permisos.importar_contactos ? setQrOpen(true) : avisarSinPermiso("vincular WhatsApp"))
                   : undefined,
             }}
@@ -2216,7 +2232,7 @@ export default function AppShell({
           />
 
           <SectionBody>
-            <ActividadWhatsappCard whatsappVinculado={wahaConectada} version={actividadVersion} />
+            <ActividadWhatsappCard whatsappVinculado={whatsappVinculado} version={actividadVersion} />
 
             {vistaContactos === "excluidos" ? (
               <div className="bg-ys-card border border-ys-border rounded-2xl overflow-hidden">
