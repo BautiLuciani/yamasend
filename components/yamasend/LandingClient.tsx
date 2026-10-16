@@ -3,15 +3,24 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { Bricolage_Grotesque } from "next/font/google";
+
+const bricolage = Bricolage_Grotesque({ subsets: ["latin"], weight: ["800"], display: "swap" });
 
 interface LandingClientProps {
   isAuthenticated: boolean;
 }
 
+// Foto de personas (generada con IA) para el fondo del hero. Si es null, el
+// hero usa el degradado oscuro de la marca.
+const HERO_IMAGE: string | null = "/landing/persona-hero-3.jpg";
+const SERIF = bricolage.style.fontFamily;
+
 const NAV_LINKS = [
-  { href: "#funcionalidades", label: "Funcionalidades" },
+  { href: "#que-es", label: "Qué es" },
+  { href: "#funcionalidades", label: "Beneficios" },
   { href: "#como-funciona", label: "Cómo funciona" },
-  { href: "#ia", label: "IA" },
+  { href: "#ia", label: "Asistente" },
   { href: "#nosotros", label: "Nosotros" },
   { href: "#faq", label: "Preguntas frecuentes" },
 ];
@@ -53,51 +62,42 @@ const FAQS = [
 
 const BENEFITS = [
   {
-    title: "Ahorrá tiempo",
-    text: "Preparás la campaña una vez, elegís cuándo sale y dejás de copiar mensajes a mano.",
+    title: "Campañas en minutos",
+    text: "Pedile al Asistente lo que necesitás y recibís las campañas armadas, con su audiencia y su mensaje.",
     icon: (
       <svg width="19" height="19" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <circle cx="8" cy="8" r="5.5" stroke="#067647" strokeWidth="1.5" />
-        <path d="M8 5.2V8l2 1.4" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#067647" strokeWidth="1.4" strokeLinejoin="round" />
       </svg>
     ),
   },
   {
-    title: "Contactos ordenados",
-    text: "Importá tus contactos, armá grupos y sabé siempre a quién le estás escribiendo.",
+    title: "Audiencias en vivo",
+    text: "Cuando un contacto dice \"quiero comprar\", se etiqueta y pasa a caliente solo. Todo se actualiza solo o a mano.",
     icon: (
       <svg width="19" height="19" viewBox="0 0 16 16" fill="none" aria-hidden="true">
         <circle cx="5.2" cy="6" r="2.2" stroke="#067647" strokeWidth="1.5" />
         <circle cx="10.8" cy="6" r="2.2" stroke="#067647" strokeWidth="1.5" />
-        <path
-          d="M2 13c0-1.8 1.4-3 3.2-3s3.2 1.2 3.2 3M7.6 13c0-1.8 1.4-3 3.2-3s3.2 1.2 3.2 3"
-          stroke="#067647"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-        />
+        <path d="M2 13c0-1.8 1.4-3 3.2-3s3.2 1.2 3.2 3M7.6 13c0-1.8 1.4-3 3.2-3s3.2 1.2 3.2 3" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     ),
   },
   {
-    title: "IA que te acompaña",
-    text: "Pedile ayuda para redactar mensajes o para encontrar oportunidades entre tus conversaciones.",
+    title: "Mensajes aprobados por Meta",
+    text: "Cada mensaje llega aprobado por Meta antes de salir, para que tu número esté cuidado.",
     icon: (
       <svg width="19" height="19" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path
-          d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z"
-          stroke="#067647"
-          strokeWidth="1.4"
-          strokeLinejoin="round"
-        />
+        <path d="M8 1.8 3 3.6v4c0 3 2 5 5 6.6 3-1.6 5-3.6 5-6.6v-4L8 1.8Z" stroke="#067647" strokeWidth="1.5" strokeLinejoin="round" />
+        <path d="m5.8 8.2 1.7 1.7 3-3.2" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
   {
-    title: "Resultados a la vista",
-    text: "Mirá qué pasó con cada envío y usá esa información en la próxima comunicación.",
+    title: "Presupuesto bajo control",
+    text: "Le fijás un monto y el Asistente arma lo que alcanza. Sin sorpresas y sin repetirle a quien no contestó.",
     icon: (
       <svg width="19" height="19" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="M3 13V7M8 13V3.5M13 13V9.5" stroke="#067647" strokeWidth="1.6" strokeLinecap="round" />
+        <circle cx="8" cy="8" r="5.5" stroke="#067647" strokeWidth="1.5" />
+        <path d="M8 4.8v6.4M6.3 6.4c0-.8.7-1.3 1.7-1.3s1.7.5 1.7 1.2c0 1.7-3.4.9-3.4 2.6 0 .7.8 1.2 1.7 1.2s1.7-.5 1.7-1.3" stroke="#067647" strokeWidth="1.2" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -106,18 +106,18 @@ const BENEFITS = [
 const STEPS = [
   {
     n: "01",
-    title: "Conectá y organizá tus contactos",
-    text: "Vinculá tu WhatsApp, importá tu base y agrupá a tus contactos según cómo les querés hablar.",
+    title: "Contale al Asistente qué querés",
+    text: "Por ejemplo: \"Armame una campaña de $100.000 para mis clientes que no compraron esta semana alimento Royal Canin y arena sanitaria\".",
   },
   {
     n: "02",
-    title: "Creá el mensaje y elegí a quién",
-    text: "Armá tu template (o pedíselo a la IA), revisá cómo se ve y seleccioná el grupo que lo va a recibir.",
+    title: "Revisás lo que armó",
+    text: "Audiencias, mensajes y cuántos contactos entran. Los mensajes llegan aprobados por Meta.",
   },
   {
     n: "03",
-    title: "Programá y analizá",
-    text: "Enviá en el momento o programá la campaña, y después revisá cómo respondió cada grupo.",
+    title: "Confirmás y se envía",
+    text: "Enviás o programás con un click. Los resultados quedan a la vista para la próxima campaña.",
   },
 ];
 
@@ -138,11 +138,11 @@ const TOUR = [
   },
   {
     tag: "02 · CONTACTOS",
-    title: "Tu base de contactos, con contexto",
-    text: "Vinculá tu WhatsApp para importar contactos y ver el estado de cada conversación, sin salir de la plataforma.",
+    title: "Tu base de contactos, con etiquetas en vivo",
+    text: "Cuando alguien escribe \"quiero comprar\" un producto, se etiqueta con ese producto y pasa a caliente en el momento, sin que tengas que hacer nada.",
     bullets: [
-      "Búsqueda, filtros y orden por actividad",
-      "Análisis con IA para priorizar a quién escribirle",
+      "Etiquetas por producto que se crean y se actualizan solas, o a mano",
+      "Temperatura (caliente, tibio, frío) para priorizar a quién escribirle",
     ],
     img: "/landing/shot-contactos.png",
     alt: "Pantalla de Contactos de YamaSend con listado de contactos y su score",
@@ -151,7 +151,7 @@ const TOUR = [
     reverse: true,
   },
   {
-    tag: "03 · GRUPOS",
+    tag: "03 · AUDIENCIAS",
     title: "Agrupá para hablarle mejor a cada uno",
     text: "Armá segmentos como clientes frecuentes, consultas nuevas o reactivación, y reutilizalos en cada campaña.",
     bullets: [],
@@ -183,15 +183,6 @@ const TOUR = [
     h: 540,
     reverse: false,
   },
-];
-
-const WHY = [
-  { title: "Todo en un solo lugar", text: "Contactos, grupos, mensajes y campañas conviven en la misma plataforma." },
-  { title: "Experiencia intuitiva", text: "Pantallas claras, sin configuraciones interminables para empezar." },
-  { title: "Automatización sin vueltas", text: "Programá envíos y reutilizá mensajes sin armar flujos complejos." },
-  { title: "IA integrada al trabajo", text: "La IA vive dentro del flujo, no en una herramienta aparte." },
-  { title: "Desktop y celular", text: "La misma experiencia desde la computadora o desde el teléfono." },
-  { title: "Información clara", text: "Datos de tus campañas presentados de forma comprensible." },
 ];
 
 const FOR_WHOM = [
@@ -308,7 +299,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 className="flex items-center gap-2 text-sm font-bold rounded-[11px] py-[11px] px-[18px] shadow-[var(--shadow-cta)] transition-all hover:-translate-y-px"
                 style={{ color: "#fff", background: "#12B76A" }}
               >
-                Ir al Dashboard
+                Acceso a mi panel
               </Link>
             ) : (
               <>
@@ -394,7 +385,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 className="flex items-center justify-center text-[15px] font-bold rounded-xl py-[15px] px-[18px] transition-colors"
                 style={{ color: "#fff", background: "#12B76A" }}
               >
-                Ir al Dashboard
+                Acceso a mi panel
               </Link>
             ) : (
               <>
@@ -423,111 +414,177 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
       <main>
         {/* Hero */}
         <section
-          className="pt-[56px] pb-[56px] md:pt-[76px] md:pb-16"
-          style={{ background: "linear-gradient(180deg,#f7f9f8 0%,#ffffff 100%)" }}
+          className="min-h-[calc(100dvh-70px)] flex items-center py-[56px] md:py-16"
+          style={{
+            background: HERO_IMAGE
+              ? `linear-gradient(180deg,rgba(15,29,23,.82),rgba(22,33,27,.94)), url(${HERO_IMAGE}) center/cover`
+              : "radial-gradient(1200px 520px at 50% -10%, rgba(18,183,106,.22), transparent 60%), linear-gradient(180deg,#0f1d17 0%,#16211b 100%)",
+          }}
         >
-          <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col items-center text-center gap-[22px]">
-            <div
-              className="inline-flex items-center gap-[9px] bg-ys-green-bg border border-ys-green-border/60 rounded-full py-[7px] px-[15px]"
-              style={{ animation: "ys-fade-up .4s cubic-bezier(.4,0,.2,1) both", borderColor: "#d9ece3" }}
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#067647" strokeWidth="1.4" strokeLinejoin="round" />
-              </svg>
-              <span className="text-[12.5px] font-bold text-ys-green-text tracking-[.01em]">
-                Mensajería masiva por WhatsApp con IA
-              </span>
-            </div>
-
+          <div className="w-full max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col items-center text-center gap-[22px]">
             <h1
-              className="m-0 max-w-[830px] font-extrabold tracking-[-0.025em] text-[34px] leading-[1.14] md:text-[52px] md:leading-[1.08]"
-              style={{ animation: "ys-fade-up .45s cubic-bezier(.4,0,.2,1) .05s both", textWrap: "pretty" }}
+              className="m-0 max-w-[900px] font-extrabold tracking-[-0.03em] text-white text-[40px] leading-[1.06] md:text-[68px] md:leading-[1.02]"
+              style={{ animation: "ys-fade-up .45s cubic-bezier(.4,0,.2,1) .05s both", textWrap: "pretty", fontFamily: SERIF }}
             >
-              Llegá a más clientes por WhatsApp, sin perder el toque humano.
+              Convertí tus conversaciones en{" "}
+              <span className="text-ys-green">campañas listas para lanzar.</span>
             </h1>
 
             <p
-              className="m-0 max-w-[640px] text-base md:text-lg leading-[1.6] font-medium text-ys-muted"
+              className="m-0 max-w-[660px] text-base md:text-lg leading-[1.6] font-medium text-[#c3ccc7]"
               style={{ animation: "ys-fade-up .45s cubic-bezier(.4,0,.2,1) .1s both", textWrap: "pretty" }}
             >
-              Creá campañas, organizá tus contactos y aprovechá la inteligencia artificial para comunicarte mejor, todo desde un solo lugar.
+              YamaSend lee tus conversaciones, encuentra a las personas indicadas, redacta mensajes masivos aprobados por Meta y arma la campaña según el presupuesto que definas.
             </p>
 
-            <div
-              className="flex flex-col md:flex-row items-stretch md:items-center gap-3 mt-1 w-full md:w-auto"
-              style={{ animation: "ys-fade-up .45s cubic-bezier(.4,0,.2,1) .15s both" }}
-            >
-              <Link
-                href={registerHref}
-                className="flex items-center justify-center gap-[9px] text-[15px] font-bold rounded-xl py-[15px] px-6 shadow-[var(--shadow-cta)] transition-all hover:-translate-y-px"
-                style={{ color: "#fff", background: "#12B76A" }}
+            {!isAuthenticated && (
+              <div
+                className="flex flex-col md:flex-row items-stretch md:items-center gap-3 mt-1 w-full md:w-auto"
+                style={{ animation: "ys-fade-up .45s cubic-bezier(.4,0,.2,1) .15s both" }}
               >
-                {registerLabel}
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M3 8h9.5M9 4.5 12.5 8 9 11.5" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </Link>
-              <a
-                href="#como-funciona"
-                className="flex items-center justify-center gap-[9px] text-[15px] font-bold bg-white border border-ys-border-softest rounded-xl py-[15px] px-[22px] hover:bg-ys-border-softer transition-colors"
-                style={{ color: "#16211b" }}
-              >
-                Ver cómo funciona
-              </a>
-            </div>
+                <Link
+                  href={registerHref}
+                  className="flex items-center justify-center gap-[9px] text-[15px] font-bold rounded-xl py-[15px] px-6 shadow-[var(--shadow-cta)] transition-all hover:-translate-y-px"
+                  style={{ color: "#fff", background: "#12B76A" }}
+                >
+                  {registerLabel}
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M3 8h9.5M9 4.5 12.5 8 9 11.5" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </Link>
+                <a
+                  href="#como-funciona"
+                  className="flex items-center justify-center text-[15px] font-bold rounded-xl py-[15px] px-6 border border-white/25 text-white hover:bg-white/10 transition-colors"
+                >
+                  Ver cómo funciona
+                </a>
+              </div>
+            )}
 
             <div
-              className="flex items-center gap-2 text-[13px] font-semibold text-ys-dim"
+              className="flex items-center gap-2 text-[13px] font-semibold text-[#9aa9a3]"
             >
               <CheckIcon size={14} />
-              Creá tu cuenta y explorá la plataforma antes de enviar tu primera campaña.
+              En 5 minutos armás campañas para más de 1.000 contactos. Nada se envía sin tu confirmación.
             </div>
 
+          </div>
+        </section>
+
+        {/* Ejemplo del Asistente */}
+        <section id="ejemplo" className="py-14 md:py-20 bg-[#f7f9f8] border-b border-ys-border-softest scroll-mt-[71px]">
+          <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col items-center text-center gap-8">
+            <Reveal className="max-w-[640px] flex flex-col items-center gap-3">
+              <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">ASÍ SE ARMA UNA CAMPAÑA</div>
+              <h2
+                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
+                style={{ textWrap: "pretty", fontFamily: SERIF }}
+              >
+                Un pedido, tres campañas listas.
+              </h2>
+            </Reveal>
+            <Reveal className="w-full flex justify-center">
             <div
-              className="relative w-full max-w-[1010px] mt-[26px]"
+              className="relative w-full max-w-[760px] text-left"
               style={{ animation: "ys-fade-up .5s cubic-bezier(.4,0,.2,1) .2s both" }}
             >
               <div className="border border-ys-border-softest rounded-[18px] bg-white shadow-[0_24px_60px_rgba(16,24,20,0.12)] overflow-hidden">
-                <div className="flex items-center gap-[7px] py-[11px] px-3.5 border-b border-ys-border-soft bg-[#fbfcfb]">
-                  <span className="w-[9px] h-[9px] rounded-full bg-ys-border-softest block" />
-                  <span className="w-[9px] h-[9px] rounded-full bg-ys-border-softest block" />
-                  <span className="w-[9px] h-[9px] rounded-full bg-ys-border-softest block" />
-                  <span className="ml-3 font-mono text-[11px] text-ys-dimmer">app.yamasend · Dashboard</span>
+                <div className="flex items-center gap-2.5 py-3 px-4 border-b border-ys-border-soft bg-[#fbfcfb]">
+                  <span className="w-7 h-7 rounded-lg bg-ys-green-bg flex items-center justify-center">
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" fill="#12B76A" fillOpacity={0.25} strokeWidth="1.4" strokeLinejoin="round" />
+                    </svg>
+                  </span>
+                  <span className="text-[13.5px] font-extrabold">Asistente</span>
                 </div>
-                <div className="overflow-x-auto">
-                  <Image
-                    src="/landing/shot-dashboard.png"
-                    alt="Dashboard de YamaSend con métricas de envíos, tasa de entrega, leads calificados por IA y campañas recientes"
-                    width={909}
-                    height={540}
-                    className="w-full min-w-[820px] md:min-w-0 h-auto block"
-                  />
-                </div>
-              </div>
-
-              <div className="hidden md:flex absolute -left-[26px] top-[96px] bg-white border border-ys-border-softest rounded-[14px] shadow-[0_12px_28px_rgba(16,24,20,0.12)] py-3 px-[15px] items-center gap-[11px] text-left">
-                <div className="w-8 h-8 rounded-[9px] bg-ys-green-bg flex items-center justify-center">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path d="M2.5 6.5v3l7 3.5v-10l-7 3.5Z" stroke="#067647" strokeWidth="1.5" strokeLinejoin="round" />
-                    <path d="M12 6v4" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-[12.5px] font-extrabold">Campaña programada</div>
-                  <div className="font-mono text-[11px] text-ys-dim">mar 10:00 · 3.180 contactos</div>
-                </div>
-              </div>
-
-              <div className="hidden md:flex absolute right-[-24px] bottom-[70px] bg-ys-dark rounded-[14px] shadow-[0_14px_30px_rgba(16,24,20,0.24)] py-[13px] px-4 items-center gap-[11px] text-left">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.4" strokeLinejoin="round" />
-                </svg>
-                <div>
-                  <div className="text-[11px] font-extrabold text-ys-green tracking-[.08em]">INSIGHT DE IA</div>
-                  <div className="text-[12.5px] font-bold text-ys-border-softest">Sugerencias sobre tus contactos</div>
+                <div className="p-4 md:p-5 flex flex-col gap-3.5 bg-white">
+                  <div className="self-end max-w-[88%] bg-ys-green text-white rounded-2xl rounded-br-md py-3 px-4 text-[14px] leading-[1.5] font-semibold">
+                    Armame una campaña de $100.000 para mis clientes que no compraron esta semana alimento Royal Canin y arena sanitaria.
+                  </div>
+                  <div className="self-start max-w-[94%] bg-[#f2f4f3] rounded-2xl rounded-bl-md py-3 px-4 text-[14px] leading-[1.5] font-semibold text-[#3f4844]">
+                    Listo. Armé 3 campañas para 1.240 contactos. Los mensajes ya están aprobados por Meta y el presupuesto alcanza para todos.
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                    {[
+                      { t: "Alimento Royal Canin", n: "620 contactos" },
+                      { t: "Arena sanitaria", n: "410 contactos" },
+                      { t: "Compraron ambos", n: "210 contactos" },
+                    ].map((c) => (
+                      <div key={c.t} className="border border-ys-border-softest rounded-xl p-3 flex flex-col gap-1.5 bg-white">
+                        <div className="text-[13px] font-extrabold">{c.t}</div>
+                        <div className="font-mono text-[11.5px] text-ys-dim">{c.n}</div>
+                        <div className="inline-flex self-start items-center gap-1.5 text-[11.5px] font-extrabold text-ys-green-text bg-ys-green-bg rounded-full px-2.5 py-0.5">
+                          <CheckIcon size={11} />
+                          Aprobado por Meta
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
+              <div className="mt-2.5 text-center text-[12px] font-medium text-ys-dim">Ejemplo ilustrativo.</div>
             </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* Qué es */}
+        <section id="que-es" className="py-14 md:py-20 scroll-mt-[71px]">
+          <div className="max-w-[860px] mx-auto px-5 md:px-8 flex flex-col items-center text-center gap-8">
+            <Reveal className="flex flex-col items-center gap-3.5">
+              <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">QUÉ ES</div>
+              <h2
+                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
+                style={{ textWrap: "pretty", fontFamily: SERIF }}
+              >
+                El asistente que arma tus campañas de WhatsApp por vos.
+              </h2>
+              <p className="m-0 max-w-[640px] text-base leading-[1.65] font-medium text-ys-muted">
+                YamaSend entiende tu negocio: lee tus conversaciones, detecta quién compró y quién dejó de comprar, y arma campañas segmentadas con mensajes aprobados por Meta.
+              </p>
+              <div className="flex flex-col gap-2.5 mt-1 items-center">
+                {[
+                  "Audiencias que se arman solas y se mantienen al día en vivo, o las ajustás a mano.",
+                  "Mensajes aprobados por Meta en cada campaña.",
+                  "Le decís cuánto querés invertir y arma lo que entra.",
+                ].map((t) => (
+                  <div key={t} className="flex gap-2.5 items-start text-[14.5px] font-semibold text-[#3f4844] text-left">
+                    <span className="mt-0.5">
+                      <CheckIcon size={16} />
+                    </span>
+                    {t}
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+
+            <Reveal className="w-full">
+              <Image
+                src="/landing/persona-cliente.jpg"
+                alt="Cliente leyendo un mensaje de WhatsApp de su tienda"
+                width={1200}
+                height={805}
+                className="w-full h-auto rounded-2xl border border-ys-border-softest block"
+              />
+            </Reveal>
+
+            <Reveal className="w-full text-left border border-ys-border-softest rounded-2xl overflow-hidden bg-white">
+              <div className="grid grid-cols-2 bg-[#f7f9f8] border-b border-ys-border-softest text-[12.5px] font-extrabold tracking-[.06em]">
+                <div className="py-3 px-4 text-ys-dim">ANUNCIOS</div>
+                <div className="py-3 px-4 text-ys-green-text border-l border-ys-border-softest">WHATSAPP + YAMASEND</div>
+              </div>
+              {[
+                ["Pagás por impresiones, aunque nadie te conozca.", "Le escribís a tus propios clientes, que ya te compraron o te consultaron."],
+                ["Segmentás por intereses generales.", "Segmentás por lo que cada uno compró, preguntó o dejó de comprar."],
+                ["Los resultados tardan en leerse.", "Las respuestas llegan en la misma conversación, el mismo día."],
+              ].map(([a, b]) => (
+                <div key={a} className="grid grid-cols-2 border-b last:border-b-0 border-ys-border-softest text-[13.5px] leading-[1.5] font-medium">
+                  <div className="py-3.5 px-4 text-ys-muted">{a}</div>
+                  <div className="py-3.5 px-4 text-[#3f4844] border-l border-ys-border-softest">{b}</div>
+                </div>
+              ))}
+            </Reveal>
+
           </div>
         </section>
 
@@ -537,13 +594,13 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
             <Reveal className="max-w-[640px] flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">BENEFICIOS</div>
               <h2
-                className="m-0 font-extrabold tracking-[-0.02em] text-[26px] leading-[1.15] md:text-[34px]"
-                style={{ textWrap: "pretty" }}
+                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
+                style={{ textWrap: "pretty", fontFamily: SERIF }}
               >
-                Menos trabajo manual, más conversaciones que avanzan.
+                Campañas inteligentes, sin armarlas a mano.
               </h2>
               <p className="m-0 text-base leading-[1.6] font-medium text-ys-muted">
-                Todo lo que hoy hacés en planillas, notas y chats sueltos, ordenado en una sola plataforma.
+                Hablás con el Asistente y recibís campañas listas para aprobar.
               </p>
             </Reveal>
             <Reveal className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -572,10 +629,10 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
             <Reveal className="max-w-[640px] flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">CÓMO FUNCIONA</div>
               <h2
-                className="m-0 font-extrabold tracking-[-0.02em] text-[26px] leading-[1.15] md:text-[34px]"
-                style={{ textWrap: "pretty" }}
+                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
+                style={{ textWrap: "pretty", fontFamily: SERIF }}
               >
-                Tres pasos, de la lista de contactos al envío.
+                De tu pedido a la campaña, en tres pasos.
               </h2>
             </Reveal>
             <Reveal className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -601,8 +658,8 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
             <Reveal className="max-w-[660px] flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">LA PLATAFORMA</div>
               <h2
-                className="m-0 font-extrabold tracking-[-0.02em] text-[26px] leading-[1.15] md:text-[34px]"
-                style={{ textWrap: "pretty" }}
+                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
+                style={{ textWrap: "pretty", fontFamily: SERIF }}
               >
                 Un recorrido por YamaSend.
               </h2>
@@ -654,7 +711,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                     <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.4" strokeLinejoin="round" />
                   </svg>
-                  <span className="text-xs font-extrabold text-ys-green tracking-[.08em]">INTELIGENCIA ARTIFICIAL</span>
+                  <span className="text-xs font-extrabold text-ys-green tracking-[.08em]">ASISTENTE</span>
                 </div>
                 <h2
                   className="m-0 font-extrabold tracking-[-0.02em] text-[26px] leading-[1.15] md:text-[34px] text-white"
@@ -703,11 +760,20 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
             <Reveal className="max-w-[640px] flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">PARA QUIÉN ES</div>
               <h2
-                className="m-0 font-extrabold tracking-[-0.02em] text-[26px] leading-[1.15] md:text-[34px]"
-                style={{ textWrap: "pretty" }}
+                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
+                style={{ textWrap: "pretty", fontFamily: SERIF }}
               >
                 Pensado para equipos que ya trabajan por WhatsApp.
               </h2>
+            </Reveal>
+            <Reveal>
+              <Image
+                src="/landing/persona-equipo.jpg"
+                alt="Equipo de un comercio armando una campaña en la computadora"
+                width={1200}
+                height={805}
+                className="w-full max-h-[420px] object-cover object-center rounded-2xl border border-ys-border-softest block"
+              />
             </Reveal>
             <Reveal className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {FOR_WHOM.map((f) => (
@@ -720,42 +786,14 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
           </div>
         </section>
 
-        {/* Por qué YamaSend */}
-        <section className="py-16 md:py-[84px] bg-[#f7f9f8] border-t border-b border-ys-border-softest">
-          <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col gap-[34px]">
-            <Reveal className="max-w-[620px] flex flex-col gap-3">
-              <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">POR QUÉ YAMASEND</div>
-              <h2
-                className="m-0 font-extrabold tracking-[-0.02em] text-[26px] leading-[1.15] md:text-[34px]"
-                style={{ textWrap: "pretty" }}
-              >
-                Simple de usar, completo donde importa.
-              </h2>
-            </Reveal>
-            <Reveal className="grid grid-cols-1 md:grid-cols-3 gap-[14px]">
-              {WHY.map((w) => (
-                <div key={w.title} className="bg-white border border-ys-border-softest rounded-[14px] p-5 flex gap-3 items-start">
-                  <span className="mt-[3px]">
-                    <CheckIcon size={17} />
-                  </span>
-                  <div>
-                    <h3 className="m-0 mb-1 text-[15px] font-extrabold">{w.title}</h3>
-                    <p className="m-0 text-[13.5px] leading-[1.5] font-medium text-ys-muted">{w.text}</p>
-                  </div>
-                </div>
-              ))}
-            </Reveal>
-          </div>
-        </section>
-
         {/* Nosotros */}
         <section id="nosotros" className="py-14 md:py-20 scroll-mt-[71px]">
           <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col gap-[34px]">
             <Reveal className="max-w-[660px] flex flex-col gap-3">
               <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">NOSOTROS</div>
               <h2
-                className="m-0 font-extrabold tracking-[-0.02em] text-[26px] leading-[1.15] md:text-[34px]"
-                style={{ textWrap: "pretty" }}
+                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
+                style={{ textWrap: "pretty", fontFamily: SERIF }}
               >
                 Las personas detrás de YamaSend
               </h2>
@@ -873,15 +911,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 Creá tu cuenta, vinculá tu WhatsApp y armá tu primera campaña con la plataforma completa a la vista.
               </p>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-2 w-full sm:w-auto">
-                {isAuthenticated ? (
-                  <Link
-                    href="/panel"
-                    className="flex items-center justify-center gap-[9px] text-[15px] font-bold rounded-xl py-[15px] px-6 transition-all hover:-translate-y-px"
-                    style={{ color: "#0b1310", background: "#12B76A" }}
-                  >
-                    Ir al Dashboard
-                  </Link>
-                ) : (
+                {isAuthenticated ? null : (
                   <>
                     <Link
                       href={registerHref}
@@ -920,15 +950,15 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 className="h-8 w-auto object-contain block self-start"
               />
               <p className="m-0 text-[13.5px] leading-[1.6] font-medium text-ys-muted">
-                Plataforma de mensajería masiva por WhatsApp con inteligencia artificial para organizar contactos, campañas y resultados.
+                Campañas inteligentes por WhatsApp: audiencias en vivo y mensajes aprobados por Meta, armados por un asistente.
               </p>
             </div>
             <div className="flex flex-col gap-2.5">
               <div className="text-[12.5px] font-extrabold tracking-[.04em]">Producto</div>
               {[
-                { href: "#funcionalidades", label: "Funcionalidades" },
+                { href: "#funcionalidades", label: "Beneficios" },
                 { href: "#como-funciona", label: "Cómo funciona" },
-                { href: "#ia", label: "IA" },
+                { href: "#ia", label: "Asistente" },
                 { href: "#faq", label: "Preguntas frecuentes" },
               ].map((item) => (
                 <a
@@ -954,15 +984,17 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
               >
                 {loginLabel}
               </Link>
-              <Link
-                href={registerHref}
-                className="text-[13.5px] font-semibold transition-colors"
-                style={{ color: "#6b736e" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "#067647")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "#6b736e")}
-              >
-                {isAuthenticated ? "Ir al Dashboard" : "Crear cuenta"}
-              </Link>
+              {!isAuthenticated && (
+                <Link
+                  href={registerHref}
+                  className="text-[13.5px] font-semibold transition-colors"
+                  style={{ color: "#6b736e" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.color = "#067647")}
+                  onMouseLeave={(e) => (e.currentTarget.style.color = "#6b736e")}
+                >
+                  Crear cuenta
+                </Link>
+              )}
               <a
                 href="#nosotros"
                 className="text-[13.5px] font-semibold transition-colors"
