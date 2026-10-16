@@ -1,6 +1,8 @@
 "use server";
 
 import { ycloudApiKey } from "@/lib/ycloud/clave";
+import { buscarInactivosPorProducto, buscarReactivacion, parsearPesos, recomendarParaProducto } from "@/lib/ia/inactivos";
+import { getPreciosCreditos } from "@/lib/creditos/precio";
 import OpenAI from "openai";
 import { createClient } from "@/lib/supabase/server";
 import { assertPermiso, getCurrentMembership } from "@/lib/auth/permisos";
@@ -1841,20 +1843,20 @@ async function iniciarFlujoCrearCampana(): Promise<IAResponse> {
   const templates = await getTemplatesForTenant(tenantId);
   const templatesAprobados = templates.filter((t) => t.status === "verificado");
   if (templatesAprobados.length === 0) {
+    const enRevision = templates.filter((t) => t.status !== "verificado" && t.status !== "rechazado").length;
     return {
-      text: "Todavía no tenés ningún template aprobado por Meta, así que no puedo armar una campaña. Pedime que te cree un template, o esperá a que se apruebe uno que ya tengas en revisión.",
+      text:
+        enRevision > 0
+          ? `Tenés ${enRevision} template${enRevision === 1 ? "" : "s"} en revisión de Meta; la campaña se puede armar apenas se apruebe${enRevision === 1 ? "" : "n"} (suele tardar de minutos a unas horas). Mientras tanto ya podés dejar lista la audiencia: pedime que la cree.`
+          : "Todavía no tenés ningún template aprobado, así que no puedo armar la campaña. Pedime que te cree un template (le avisamos a Meta para que lo apruebe) y después armamos la campaña.",
       flowState: IA_FLOW_IDLE,
     };
   }
 
-  return {
-    text: "Dale, armemos una campaña. ¿Cómo querés que se llame?",
-    flowState: {
-      kind: "crear_campana",
-      step: "campana_esperando_nombre",
-      draft: {},
-    },
-  };
+  // El nombre ya no se pregunta primero: se genera uno (con la fecha) y se
+  // puede renombrar después desde Campañas. Un paso menos para el usuario.
+  const hoy = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+  return mostrarSelectorAudienciaCampana(`Campaña ${hoy}`, {});
 }
 
 async function handleCrearCampanaStep(
@@ -3278,6 +3280,107 @@ const HERRAMIENTAS_AGENTE: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "buscar_inactivos_por_producto",
+      description:
+        "Clientes que NO compran hace N días de uno o varios productos. Todo se infiere de los mensajes: 'habló del producto' = algún mensaje lo nombra; 'compró' = el dueño confirmó una compra o pago por WhatsApp. Usala para 'armame una campaña para clientes que no compran hace 15 días de productos A, B y C' o 'quiénes dejaron de comprar X'. Acepta VARIOS productos y los une (cualquiera de ellos). Deja el resultado como la última lista mostrada: enseguida podés llamar a crear_audiencia_con_estos_contactos con usar_ultima_lista.",
+      parameters: {
+        type: "object",
+        properties: {
+          productos: {
+            type: "array",
+            items: { type: "string" },
+            description: "Los productos tal como los dijo el usuario (uno o varios).",
+          },
+          dias_sin_comprar: {
+            type: "number",
+            description: "Días sin comprar. Por defecto 15 si el usuario no lo dijo.",
+          },
+        },
+        required: ["productos"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "crear_campanas_de_audiencias",
+      description:
+        "Después de armar_campana_multiple y crear_templates_por_producto: crea UNA CAMPAÑA (en borrador, sin enviar) por cada par audiencia + template YA APROBADO por Meta, reservando los créditos. Los pares cuyo template todavía no está aprobado quedan como pendientes: volvé a llamarla cuando el usuario diga que Meta los aprobó. No envía nada: el usuario revisa y envía cada campaña desde Campañas (o pidiéndotelo).",
+      parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "armar_campana_multiple",
+      description:
+        "Arma de una vez VARIAS audiencias (hasta 4) para una campaña con distintos mensajes, una por segmento, SIN que un contacto quede en dos (si entra en un segmento anterior, no se repite en los siguientes). Cada segmento es un grupo de productos y/o 'N días sin comprar'. Crea las audiencias directamente y deja la lista lista para que enseguida llames a crear_templates_por_producto (un template por audiencia, que el usuario manda a aprobar de una sola vez). Usala para 'armame una campaña con 4 mensajes para distintos grupos', 'una campaña por producto y por tipo de cliente'. No envía nada.",
+      parameters: {
+        type: "object",
+        properties: {
+          segmentos: {
+            type: "array",
+            minItems: 1,
+            maxItems: 4,
+            items: {
+              type: "object",
+              properties: {
+                nombre: { type: "string", description: "Nombre corto del segmento (ej. 'Alimento adulto')." },
+                productos: { type: "array", items: { type: "string" }, description: "Productos del segmento (cualquiera de ellos)." },
+                dias_sin_comprar: { type: "number", description: "Opcional: solo quienes no compran hace N días." },
+              },
+              required: ["nombre", "productos"],
+            },
+            description: "Segmentos en ORDEN DE PRIORIDAD: si un contacto cae en dos, queda en el primero.",
+          },
+        },
+        required: ["segmentos"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "recomendar_contactos_para_producto",
+      description:
+        "A quién recomendarle un producto (por ejemplo con un descuento). Rankea los clientes que lo nombraron o preguntaron su precio, más fuerte si es reciente, y excluye a quien ya lo compró hace poco o recibió una campaña hace pocos días. Usala para 'tengo el producto X al 50% de descuento, a quién me recomendás enviarlo'. Deja el resultado como la última lista mostrada.",
+      parameters: {
+        type: "object",
+        properties: {
+          producto: { type: "string", description: "El producto, tal como lo dijo el usuario." },
+          descuento: { type: "string", description: "Opcional: el descuento o la oferta ('50%')." },
+        },
+        required: ["producto"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "estimar_alcance_presupuesto",
+      description:
+        "Dado un presupuesto en PESOS, calcula cuántos mensajes (créditos) alcanza y arma la mejor audiencia de reactivación que entra en ese presupuesto (clientes que compraron antes y no compran hace N días, los de más compras primero). Usala para 'tengo $50.000, qué campaña de reactivación me sugerís' o 'cuánto alcanzo con $X'. Entiende '$ 50,000', '50.000', '50k', '50 lucas'. NUNCA muestra dólares ni costos de Meta. Deja la audiencia como la última lista mostrada.",
+      parameters: {
+        type: "object",
+        properties: {
+          monto: {
+            type: ["string", "number"],
+            description: "El presupuesto en pesos, tal cual lo dijo el usuario ('$ 50,000', '50k', 50000).",
+          },
+          dias_sin_comprar: { type: "number", description: "Días sin comprar. Por defecto 15." },
+          productos: {
+            type: "array",
+            items: { type: "string" },
+            description: "Opcional: limitar a clientes que hablaron de estos productos.",
+          },
+        },
+        required: ["monto"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "productos_clientes",
       description:
         "Agrupa en PRODUCTOS o CATEGORÍAS lo que los clientes piden en sus conversaciones de WhatsApp (ej. 'Alimento Royal Canin', 'Antipulgas', 'Camas y cuchas'), con cuántos y cuáles contactos pidieron cada uno. Usala para 'qué productos piden mis clientes', 'detectá los productos', 'qué audiencias por producto podría armar', o antes de armar audiencias o templates por producto. Para un ranking de marcas o términos sueltos más mencionados seguí usando motor_demanda.",
@@ -4506,6 +4609,11 @@ async function ejecutarHerramientaAgente(
             f.fuentes?.some((x) => x === "mensaje_semantico" || x === "conversacion") ?? false,
         })),
         total_encontrados: encontrados.length,
+        lista_recortada_al_tope: encontrados.length >= 100,
+        aviso_recorte:
+          encontrados.length >= 100
+            ? "La búsqueda trae como máximo 100 contactos: hay al menos esa cantidad, probablemente más. Decí 'al menos 100' y no presentes ese número como el total."
+            : undefined,
         mostrados: filas.length,
         recortados_por_presupuesto: recortadosPorPresupuesto,
         cupo_presupuesto: cupoPresupuesto,
@@ -5207,6 +5315,312 @@ async function ejecutarHerramientaAgente(
     };
   }
 
+  if (nombre === "buscar_inactivos_por_producto") {
+    const productos = Array.isArray(args.productos)
+      ? args.productos.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean)
+      : [];
+    if (productos.length === 0) {
+      return { datos: { error: "Falta decir de qué producto(s). Preguntale cuáles." } };
+    }
+    const dias = typeof args.dias_sin_comprar === "number" && args.dias_sin_comprar > 0 ? Math.round(args.dias_sin_comprar) : 15;
+    const r = await buscarInactivosPorProducto({ supabase, tenantId, productos, dias });
+    const total = r.contactos.length;
+    const notas: string[] = [];
+    if (r.sinComprasDetectadas) {
+      notas.push(
+        "No hay compras detectadas en los chats (se detectan cuando el dueño confirma un pago o pedido por WhatsApp). Por eso la lista incluye a todos los que hablaron de esos productos: aclaráselo.",
+      );
+    }
+    if (total === 0) {
+      return {
+        datos: {
+          total_contactos: 0,
+          hablaron_de_los_productos: r.mencionaron,
+          explicacion:
+            r.mencionaron === 0
+              ? "Nadie nombró esos productos en los chats. Decíselo y ofrecé revisar productos_clientes para ver cómo los piden."
+              : "Todos los que hablaron de esos productos compraron en ese período o ya recibieron una campaña hace poco.",
+          notas,
+        },
+      };
+    }
+    return {
+      datos: {
+        total_contactos: total,
+        dias_sin_comprar: dias,
+        productos,
+        hablaron_de_los_productos: r.mencionaron,
+        descartados_por_compra_reciente: r.conCompraReciente,
+        descartados_por_campana_reciente: r.conCampanaReciente,
+        notas,
+        ejemplos: r.contactos.slice(0, 5).map((c) => ({ nombre: c.nombre, productos: c.productos })),
+      },
+      tabla: {
+        titulo: `No compran hace ${dias} días: ${productos.join(", ")}`,
+        columnas: ["Contacto", "Teléfono", "Habló de"],
+        filas: r.contactos.slice(0, MAX_FILAS_TABLA).map((c) => [c.nombre ?? c.telefono, c.telefono, c.productos.join(", ")]),
+        totalDisponible: total,
+      },
+      listaContactos: armarLista(
+        `Sin comprar hace ${dias} días: ${productos.join(", ")}`,
+        `Sin comprar ${productos.join(" y ")}`.slice(0, 80),
+        "fuerte",
+        r.contactos,
+      ),
+    };
+  }
+
+  if (nombre === "crear_campanas_de_audiencias") {
+    const gate = await assertPermiso("crear_campanas");
+    if (!gate.ok) return { datos: { error: gate.error ?? "No tiene permiso para crear campañas. Decíselo." } };
+    const pares = memoria.audienciasProducto ?? [];
+    if (pares.length === 0) {
+      return { datos: { error: "No hay audiencias armadas en esta charla. Primero armá los segmentos con armar_campana_multiple." } };
+    }
+    const [listas, templates] = await Promise.all([getListsForTenant(tenantId), getTemplatesForTenant(tenantId)]);
+    const creadas: { campana: string; audiencia: string; template: string; contactos: number; id: string }[] = [];
+    const pendientes: { audiencia: string; motivo: string }[] = [];
+    for (const a of pares) {
+      const lista = listas.find((l) => l.id === a.audienciaId);
+      if (!lista) {
+        pendientes.push({ audiencia: a.nombre, motivo: "La audiencia ya no existe." });
+        continue;
+      }
+      const prefijo = `${a.slug}_`;
+      const delSegmento = templates.filter((t) => t.nombre.toLowerCase().startsWith(prefijo));
+      const aprobado = delSegmento.find((t) => t.status === "verificado");
+      if (!aprobado) {
+        const estado = delSegmento[0]?.status;
+        pendientes.push({
+          audiencia: a.nombre,
+          motivo:
+            estado === "rechazado"
+              ? "Meta rechazó el template: hay que ajustarlo y mandarlo de nuevo."
+              : delSegmento.length > 0
+                ? "El template todavía está en revisión de Meta."
+                : "Todavía no hay template para este segmento.",
+        });
+        continue;
+      }
+      const nombreCampana = `${a.nombre} · ${new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" })}`.slice(0, 120);
+      const r = await saveCampaignAction(nombreCampana, lista.id, aprobado.id, lista.contactosIds, null, false, "manual");
+      if (r.error || !r.id) {
+        pendientes.push({ audiencia: a.nombre, motivo: r.error ?? "No se pudo crear la campaña." });
+        continue;
+      }
+      creadas.push({ campana: nombreCampana, audiencia: a.nombre, template: aprobado.nombre, contactos: lista.contactosIds.length, id: r.id });
+    }
+    return {
+      datos: {
+        campanas_creadas: creadas.length,
+        creadas,
+        pendientes,
+        siguiente_paso:
+          creadas.length > 0
+            ? "Quedaron en borrador, sin enviar. Decile que las revise y las envíe desde Campañas (o que te pida enviarlas). Recordale que a quien recibió marketing hace menos de 10 días sin contestar se lo saltea solo."
+            : "Ninguna campaña se pudo crear todavía. Explicá el motivo de cada una y cuándo volver a intentar.",
+      },
+      tabla: {
+        titulo: "Campañas armadas",
+        columnas: ["Audiencia", "Template", "Contactos"],
+        filas: creadas.map((c) => [c.audiencia, c.template, String(c.contactos)]),
+        totalDisponible: creadas.length,
+      },
+    };
+  }
+
+  if (nombre === "armar_campana_multiple") {
+    const gate = await assertPermiso("crear_audiencias");
+    if (!gate.ok) return { datos: { error: gate.error ?? "No tiene permiso para crear audiencias. Decíselo." } };
+    const segmentos = Array.isArray(args.segmentos)
+      ? (args.segmentos as Record<string, unknown>[])
+          .map((sg) => ({
+            nombre: typeof sg.nombre === "string" ? sg.nombre.trim() : "",
+            productos: Array.isArray(sg.productos)
+              ? sg.productos.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean)
+              : [],
+            dias: typeof sg.dias_sin_comprar === "number" && sg.dias_sin_comprar > 0 ? Math.round(sg.dias_sin_comprar) : 0,
+          }))
+          .filter((sg) => sg.nombre && sg.productos.length > 0)
+          .slice(0, 4)
+      : [];
+    if (segmentos.length === 0) {
+      return { datos: { error: "Faltan los segmentos (nombre y productos de cada uno). Preguntale cómo quiere dividirlos." } };
+    }
+
+    const asignados = new Set<string>();
+    const creadas: { producto: string; slug: string; audienciaId: string; nombre: string; total: number }[] = [];
+    const resumen: { segmento: string; contactos: number; repetidos_sacados: number; nota?: string }[] = [];
+    let sinCompras = false;
+
+    for (const sg of segmentos) {
+      // dias = 0: sin filtro de compra (todos los que hablaron del producto).
+      const r = await buscarInactivosPorProducto({ supabase, tenantId, productos: sg.productos, dias: sg.dias });
+      sinCompras = sinCompras || r.sinComprasDetectadas;
+      const base = r.contactos;
+      const unicos = base.filter((c) => !asignados.has(c.telefono));
+      const repetidos = base.length - unicos.length;
+      if (unicos.length === 0) {
+        resumen.push({ segmento: sg.nombre, contactos: 0, repetidos_sacados: repetidos, nota: "Sin contactos (o ya estaban en un segmento anterior)." });
+        continue;
+      }
+      const resueltos = await resolverContactosParaAudiencia(supabase, tenantId, unicos.map((c) => c.telefono));
+      const a = await crearAudienciaIA(supabase, tenantId, {
+        nombre: sg.nombre,
+        resueltos,
+        descripcion: `Creada por la IA desde el chat: campaña múltiple, segmento "${sg.nombre}".`.slice(0, 300),
+      });
+      if (!a.ok || !a.id) {
+        resumen.push({ segmento: sg.nombre, contactos: 0, repetidos_sacados: repetidos, nota: `No se pudo crear: ${a.error ?? "error"}` });
+        continue;
+      }
+      for (const c of unicos) asignados.add(c.telefono);
+      const slug = sg.nombre.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 40) || "segmento";
+      creadas.push({ producto: sg.nombre, slug, audienciaId: a.id, nombre: a.nombre, total: a.total });
+      resumen.push({ segmento: sg.nombre, contactos: a.total, repetidos_sacados: repetidos });
+    }
+
+    if (creadas.length === 0) {
+      return {
+        datos: {
+          ok: false,
+          segmentos: resumen,
+          notas: sinCompras
+            ? ["No hay compras detectadas en los chats, y nadie nombró esos productos. Decíselo con claridad."]
+            : ["No quedaron contactos en ningún segmento. Decíselo y ofrecé ajustar productos o días."],
+        },
+      };
+    }
+
+    return {
+      datos: {
+        ok: true,
+        audiencias_creadas: creadas.length,
+        segmentos: resumen,
+        total_contactos_distintos: asignados.size,
+        siguiente_paso:
+          "Ahora llamá a crear_templates_por_producto (sin 'productos') para generar un template por audiencia; el usuario los manda a aprobar de una vez. Después, cuando Meta los apruebe, se arma una campaña por cada par audiencia + template. Los contactos que ya recibieron marketing hace menos de 10 días sin contestar se saltean solos al enviar.",
+        notas: sinCompras ? ["No hay compras detectadas: los segmentos incluyen a todos los que hablaron de esos productos."] : [],
+      },
+      tabla: {
+        titulo: "Campaña múltiple: audiencias por segmento",
+        columnas: ["Segmento", "Contactos", "Repetidos sacados"],
+        filas: resumen.map((r) => [r.segmento, String(r.contactos), String(r.repetidos_sacados)]),
+        totalDisponible: resumen.length,
+      },
+      memoria: { audienciasProducto: creadas },
+    };
+  }
+
+  if (nombre === "recomendar_contactos_para_producto") {
+    const producto = typeof args.producto === "string" ? args.producto.trim() : "";
+    if (!producto) return { datos: { error: "Falta el producto. Preguntale cuál es." } };
+    const descuento = typeof args.descuento === "string" ? args.descuento.trim() : "";
+    const r = await recomendarParaProducto({ supabase, tenantId, producto });
+    if (r.contactos.length === 0) {
+      return {
+        datos: {
+          total_contactos: 0,
+          hablaron_del_producto: r.mencionaron,
+          ya_lo_compraron: r.yaCompraron,
+          con_campana_reciente: r.conCampanaReciente,
+          explicacion:
+            r.mencionaron === 0
+              ? "Nadie nombró ese producto en los chats. Decíselo y ofrecé buscar por perfil con buscar_contactos."
+              : "Todos los que hablaron de ese producto ya lo compraron o recibieron una campaña hace poco.",
+        },
+      };
+    }
+    return {
+      datos: {
+        producto,
+        descuento: descuento || null,
+        total_contactos: r.contactos.length,
+        ya_lo_compraron: r.yaCompraron,
+        con_campana_reciente: r.conCampanaReciente,
+        top: r.contactos.slice(0, 5).map((c) => ({ nombre: c.nombre, motivo: c.motivo })),
+        sugerencia_template: descuento ? `Indicaciones del template: ${producto} con ${descuento} de descuento` : null,
+      },
+      tabla: {
+        titulo: `A quién recomendarle: ${producto}`,
+        columnas: ["Contacto", "Teléfono", "Motivo"],
+        filas: r.contactos.slice(0, MAX_FILAS_TABLA).map((c) => [c.nombre ?? c.telefono, c.telefono, c.motivo]),
+        totalDisponible: r.contactos.length,
+      },
+      listaContactos: armarLista(`Interesados en ${producto}`, `Interesados en ${producto}`.slice(0, 80), "fuerte", r.contactos),
+    };
+  }
+
+  if (nombre === "estimar_alcance_presupuesto") {
+    const monto = parsearPesos(args.monto);
+    if (!monto) {
+      return { datos: { error: "No pude entender el monto. Pedile que lo escriba como número en pesos (ej. 50000)." } };
+    }
+    const precios = await getPreciosCreditos();
+    if (!precios.ok || !precios.precios || precios.precios.precioUnitarioArs <= 0) {
+      return { datos: { error: precios.error ?? "No pude calcular el precio de los créditos ahora. Probá de nuevo en un momento." } };
+    }
+    const unit = precios.precios.precioUnitarioArs;
+    // Mejor pack que entra en el presupuesto (el de más créditos); si ninguno,
+    // se estima con el precio unitario.
+    const entran = precios.precios.packs.filter((p) => p.precioArs <= monto).sort((a, b) => b.creditos - a.creditos);
+    const pack = entran[0] ?? null;
+    const restante = pack ? monto - pack.precioArs : monto;
+    const creditos = pack
+      ? pack.creditos + Math.floor(restante / (pack.precioUnitarioArs || unit))
+      : Math.floor(monto / unit);
+    if (creditos < 1) {
+      return { datos: { error: "Con ese monto no alcanza ni para un mensaje." } };
+    }
+
+    const dias = typeof args.dias_sin_comprar === "number" && args.dias_sin_comprar > 0 ? Math.round(args.dias_sin_comprar) : 15;
+    const productos = Array.isArray(args.productos)
+      ? args.productos.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean)
+      : [];
+
+    let candidatos: { telefono: string; nombre: string | null }[] = [];
+    let sinCompras = false;
+    if (productos.length > 0) {
+      const r = await buscarInactivosPorProducto({ supabase, tenantId, productos, dias });
+      candidatos = r.contactos;
+      sinCompras = r.sinComprasDetectadas;
+    } else {
+      const r = await buscarReactivacion({ supabase, tenantId, dias });
+      candidatos = r.contactos;
+      sinCompras = r.sinComprasDetectadas;
+    }
+
+    const entranN = Math.min(creditos, candidatos.length);
+    const elegidos = candidatos.slice(0, entranN);
+    const pesos = (n: number) => `$ ${Math.round(n).toLocaleString("es-AR")}`;
+    return {
+      datos: {
+        presupuesto: pesos(monto),
+        mensajes_que_alcanza: creditos,
+        pack_sugerido: pack ? { nombre: pack.nombre, creditos: pack.creditos, precio: pesos(pack.precioArs) } : null,
+        precio_por_credito: pesos(unit),
+        contactos_para_reactivar: candidatos.length,
+        entran_en_el_presupuesto: entranN,
+        quedan_afuera: Math.max(0, candidatos.length - entranN),
+        dias_sin_comprar: dias,
+        notas: sinCompras
+          ? [
+              "No hay compras detectadas en los chats (se detectan cuando el dueño confirma un pago o pedido por WhatsApp), así que no se puede armar una lista de reactivación fiable. Decíselo y ofrecé alternativas: productos_clientes o buscar_contactos.",
+            ]
+          : [],
+      },
+      tabla: elegidos.length
+        ? {
+            titulo: `Reactivación con ${pesos(monto)}: ${entranN} contactos`,
+            columnas: ["Contacto", "Teléfono"],
+            filas: elegidos.slice(0, MAX_FILAS_TABLA).map((c) => [c.nombre ?? c.telefono, c.telefono]),
+            totalDisponible: entranN,
+          }
+        : undefined,
+      listaContactos: armarLista(`Reactivación con ${pesos(monto)}`, `Reactivación ${dias} días`, "fuerte", elegidos),
+    };
+  }
+
   if (nombre === "productos_clientes") {
     let agrupacion: Awaited<ReturnType<typeof agruparProductosClientes>>;
     try {
@@ -5662,7 +6076,13 @@ BUSCAR CONTACTOS POR INTERÉS Y PRESUPUESTO
 - Si NINGÚN resultado tiene respaldado_por_mensaje en true, no presentes la lista como si hubieran hablado del tema: decí con franqueza que no encontraste a nadie que lo haya mencionado, y ofrecé los que podrían encajar por perfil como una segunda opción.
 - Nunca hables de embeddings, vectores ni "búsqueda semántica". En criollo: "por lo que venía hablando".
 - La plataforma cobra en CRÉDITOS: 1 crédito = 1 mensaje. Si el usuario da un presupuesto en cantidad de mensajes o créditos, pasalo en presupuesto_mensajes.
-- Nunca hables de dólares, ni del costo real que nos cobra Meta por mensaje: eso es información interna, el usuario solo debe pensar en créditos. Si el presupuesto viene en pesos, en dólares o en cualquier otra moneda, NO lo conviertas ni lo estimes vos. Decile con franqueza que la plataforma trabaja en créditos (1 crédito = 1 mensaje) y preguntale a cuántos créditos equivale su presupuesto, y con esa respuesta hacé la búsqueda.
+- Nunca hables de dólares, ni del costo real que nos cobra Meta por mensaje: eso es información interna, el usuario solo debe pensar en créditos. Si el presupuesto viene en PESOS, NO lo conviertas vos ni le preguntes a cuántos créditos equivale: usá estimar_alcance_presupuesto, que lo calcula con el precio real. Si viene en dólares u otra moneda, decile con franqueza que la plataforma cobra en pesos y créditos y pedile el monto en pesos.
+- "Tengo $X, qué campaña de reactivación me sugerís" → estimar_alcance_presupuesto (monto tal cual lo dijo). Contale cuántos mensajes alcanza, cuántos clientes entran y proponé armar la audiencia y la campaña con esa lista (usar_ultima_lista). Nunca hables de dólares.
+- "Clientes que no compran hace N días de productos A, B y C" → buscar_inactivos_por_producto con TODOS los productos juntos en una sola llamada (productos: [A, B, C]) y dias_sin_comprar: N (15 si no lo dijo). Después crear_audiencia_con_estos_contactos con usar_ultima_lista y, si quiere, el template/campaña. No consultes producto por producto: se pisa la lista.
+- "Una campaña con varios mensajes / 4 templates para distintas audiencias" → armar_campana_multiple (hasta 4 segmentos en orden de prioridad, sin contactos repetidos) y enseguida crear_templates_por_producto para que el usuario los mande a aprobar juntos. Cuando el usuario diga que Meta aprobó los templates (o pregunte cómo viene), llamá a crear_campanas_de_audiencias: crea una campaña en borrador por cada par audiencia + template aprobado y te dice cuáles siguen pendientes. Nunca las envíes sin que el usuario lo confirme.
+- Tope de marketing: a quien recibió un mensaje de marketing hace menos de 10 días y no contestó NO se le envía otro (Meta lo limita); en Contactos aparece en gris. Si preguntan por qué faltan contactos en una audiencia, explicá esto.
+- "Tengo el producto X con N% de descuento, a quién se lo recomendás" → recomendar_contactos_para_producto (producto y descuento). Explicá el motivo de los primeros, cuántos quedaron afuera por haberlo comprado ya o por campaña reciente, y ofrecé crear la audiencia y un template con indicaciones "N% de descuento".
+- YamaSend no tiene registro de ventas: "compró" se detecta cuando el dueño confirma un pago o pedido por WhatsApp. Si no hay compras detectadas, decilo con claridad en vez de inventar.
 - Cuando recortaste por presupuesto, aclaralo: cuántos entran y cuántos quedaron afuera.
 
 QUÉ HERRAMIENTA USAR (elegí la que responde exactamente lo que preguntan)

@@ -23,7 +23,9 @@ export interface Contact {
   etapa: string;
   mensajes: number;
   ultimo: string; // dd/mm
-  bloqueado: boolean; // recibió marketing en últimas 24h
+  bloqueado: boolean; // recibió marketing hace <10 días y no contestó (tope de frecuencia)
+  /** dd/mm desde cuando se le puede volver a escribir (solo si bloqueado). */
+  bloqueadoHasta?: string;
   en24h: boolean; // último mensaje en últimas 24h (ventana gratuita)
   enListaAI: boolean;
   // Campos del análisis de IA (yamas_send_leads) — opcionales porque un

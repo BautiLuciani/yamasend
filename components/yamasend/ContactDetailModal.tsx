@@ -354,6 +354,21 @@ export default function ContactDetailModal({
               {(contact.etiquetas?.length ?? 0) === 0 && (
                 <span className="text-[12px] font-medium text-ys-dim">Sin etiquetas</span>
               )}
+              {onExcluirMotor && (
+                <button
+                  type="button"
+                  disabled={excluyendo}
+                  title="No es un cliente (otra sucursal, proveedor, tu equipo). No recibe campañas ni entra en audiencias; lo podés volver a incluir desde Excluidos."
+                  onClick={async () => {
+                    setExcluyendo(true);
+                    await onExcluirMotor(contact);
+                    setExcluyendo(false);
+                  }}
+                  className="inline-flex items-center h-6 px-2 rounded-full border border-ys-border text-[11.5px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {excluyendo ? "Excluyendo…" : "Excluir"}
+                </button>
+              )}
             </div>
             {onEtiquetar && (
               <form
@@ -439,29 +454,6 @@ export default function ContactDetailModal({
             Tu ajuste queda guardado y se prioriza sobre el cálculo de la IA. Click de nuevo en la misma opción para volver a usar el valor automático.
           </p>
         </div>
-
-        {/* Excluir del motor: para números que no son clientes */}
-        {onExcluirMotor && (
-          <div className="border-t border-ys-border-soft pt-4 flex items-center gap-3">
-            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div className="text-[12.5px] font-extrabold text-ys-text">¿No es un cliente?</div>
-              <p className="text-[11.5px] text-ys-dim font-medium leading-[1.5]">
-                Excluilo del motor si es otra sucursal, un proveedor o alguien de tu equipo. Lo podés volver a incluir cuando quieras.
-              </p>
-            </div>
-            <button
-              disabled={excluyendo}
-              onClick={async () => {
-                setExcluyendo(true);
-                await onExcluirMotor(contact);
-                setExcluyendo(false);
-              }}
-              className="flex-none text-[12.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-wait"
-            >
-              {excluyendo ? "Excluyendo..." : "Excluir del motor"}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

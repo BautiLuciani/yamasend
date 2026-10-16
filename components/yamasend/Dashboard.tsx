@@ -115,7 +115,7 @@ const ACTIVITY_STYLES: Record<
   campana_duplicada: { bg: "bg-ys-el2", stroke: "#5d6560" },
   campana_eliminada: { bg: "bg-ys-warn-bg", stroke: "#b42318" },
   campana_completada: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
-  ia_analisis: { bg: "bg-ys-dark", stroke: "#3ddb8f" },
+  ia_analisis: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
   whatsapp_conectado: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
   whatsapp_desconectado: { bg: "bg-ys-warn-bg", stroke: "#b42318" },
   creditos_comprados: { bg: "bg-ys-green-bg", stroke: "#12B76A" },
@@ -451,10 +451,9 @@ export default function Dashboard({
           deltaNegativo={!statsLoading && formatDelta(stats?.mensajesLeidosDeltaPct ?? null).negativo}
         />
         <KpiCard
-          dark
           icon={
             <svg width="18" height="18" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
-              <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#3ddb8f" strokeWidth="1.4" strokeLinejoin="round" />
+              <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.4" strokeLinejoin="round" />
             </svg>
           }
           value={statsLoading ? "…" : (stats?.leadsCalificados ?? 0).toLocaleString("es-AR")}
@@ -591,16 +590,16 @@ export default function Dashboard({
           )}
         </div>
 
-        <div className="bg-ys-dark rounded-2xl px-[22px] py-5 flex flex-col gap-3">
+        <div className="bg-ys-green-bg border border-ys-green-border rounded-2xl px-[22px] py-5 flex flex-col gap-3">
           <div className="flex items-center gap-2">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
               <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
-            <div className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-ys-green">
-              Insight de IA
+            <div className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-ys-green-text">
+              Insight del Asistente
             </div>
           </div>
-          <div className="text-[14.5px] leading-[1.55] text-ys-border-softest font-semibold">
+          <div className="text-[14.5px] leading-[1.55] text-ys-text font-semibold">
             {insightLoading
               ? "Analizando tus campañas…"
               : (insight ?? "Todavía no hay suficientes datos para generar un insight. Mandá algunas campañas y volvé a mirar acá.")}
@@ -608,7 +607,7 @@ export default function Dashboard({
           <button
             disabled
             title="Disponible cuando se implemente Campañas"
-            className="self-start mt-0.5 text-[12.5px] font-extrabold text-[#0b1310] bg-ys-green rounded-[9px] px-3.5 py-2.5 opacity-70 cursor-not-allowed"
+            className="self-start mt-0.5 text-[12.5px] font-extrabold text-white bg-ys-green rounded-[9px] px-3.5 py-2.5 opacity-70 cursor-not-allowed"
           >
             Programar próxima campaña
           </button>
@@ -692,19 +691,17 @@ function KpiCard({
   label,
   delta,
   deltaNegativo = false,
-  dark = false,
 }: {
   icon: React.ReactNode;
   value: string;
   label: string;
   delta: string;
   deltaNegativo?: boolean;
-  dark?: boolean;
 }) {
   return (
     <div className="bg-white border border-ys-border rounded-2xl px-4 md:px-5 py-[18px] flex flex-col gap-3 transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-card)]">
       <div className="flex items-center gap-[13px]">
-        <div className={`w-10 h-10 flex-none rounded-[13px] flex items-center justify-center ${dark ? "bg-ys-dark" : "bg-ys-green-bg"}`}>
+        <div className={`w-10 h-10 flex-none rounded-[13px] flex items-center justify-center bg-ys-green-bg`}>
           {icon}
         </div>
         <div className="flex flex-col gap-0.5 min-w-0">

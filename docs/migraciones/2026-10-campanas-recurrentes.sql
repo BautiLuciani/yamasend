@@ -1,5 +1,5 @@
 -- =====================================================================
--- Campañas recurrentes (oct 2026) — NO APLICADA TODAVÍA
+-- Campañas recurrentes (oct 2026) — APLICADA el 2026-10-15
 --
 -- Una "serie" (yamas_send_campanas_recurrentes) describe cuándo se repite una
 -- campaña: todos los lunes a las 11, cada 15 días, el 1 de cada mes. Cada

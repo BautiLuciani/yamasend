@@ -62,7 +62,6 @@ import ConfiguracionModal from "./ConfiguracionModal";
 import LogoutModal from "./LogoutModal";
 import ContactosBarra, { type OrdenKey, type ScoreFiltro } from "./ContactosBarra";
 import NombrarAudienciaModal from "./NombrarAudienciaModal";
-import ActividadWhatsappCard from "./ActividadWhatsappCard";
 import {
   BarBtn,
   SectionBody,
@@ -604,7 +603,7 @@ export default function AppShell({
 
   // Avisos (puntitos) del sidebar: "pasó algo en esta sección". Ver
   // useAvisosSidebar para qué secciones tienen aviso y por qué.
-  const { avisos: avisosSidebar, marcarSecciones } = useAvisosSidebar({
+  const { avisos: avisosSidebar, conteos: conteosSidebar, marcarSecciones } = useAvisosSidebar({
     tenantId: user.tenantId,
     activeSection,
     whatsappConectado: whatsappVinculado,
@@ -616,8 +615,9 @@ export default function AppShell({
       : null;
 
   function setActiveSection(section: AppSection) {
-    // La sección que se deja y la que se abre quedan como vistas.
-    marcarSecciones([activeSection, section]);
+    // Al entrar a una sección, sus novedades quedan como vistas. La que se
+    // deja NO se marca: si pasó algo mientras estabas ahí, el globo sigue.
+    marcarSecciones([section]);
     setActiveSectionState(section);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -907,6 +907,26 @@ export default function AppShell({
   };
 
   const [messages, setMessages] = useState<ChatMessage[]>([IA_MENSAJE_BIENVENIDA]);
+
+  // Globo del menú: cuántos mensajes generó el Asistente mientras estabas en
+  // otra sección. Se apaga al entrar a Asistente.
+  const [iaNoLeidos, setIaNoLeidos] = useState(0);
+  const iaBotPrevios = useRef(0);
+  useEffect(() => {
+    const bots = messages.filter((m) => m.type === "bot" && m.id !== "welcome").length;
+    const nuevos = bots - iaBotPrevios.current;
+    iaBotPrevios.current = bots;
+    if (nuevos > 0 && activeSection !== "ia") {
+      const t = setTimeout(() => setIaNoLeidos((n) => n + nuevos), 0);
+      return () => clearTimeout(t);
+    }
+  }, [messages, activeSection]);
+  useEffect(() => {
+    if (activeSection === "ia") {
+      const t = setTimeout(() => setIaNoLeidos(0), 0);
+      return () => clearTimeout(t);
+    }
+  }, [activeSection]);
   const [iaFlowState, setIaFlowState] = useState<IAFlowState>(IA_FLOW_IDLE);
   const [iaSending, setIaSending] = useState(false);
   const [iaConversacionId, setIaConversacionId] = useState<string | null>(null);
@@ -1183,7 +1203,7 @@ export default function AppShell({
   const [excluyendo, setExcluyendo] = useState(false);
   // Se incrementa al cambiar la lista para que la card de actividad (que
   // tampoco cuenta a los excluidos) se refresque en el acto.
-  const [actividadVersion, setActividadVersion] = useState(0);
+  const [, setActividadVersion] = useState(0);
 
   const recargarExcluidos = useCallback(async () => {
     try {
@@ -1225,11 +1245,11 @@ export default function AppShell({
     try {
       res = await setExclusionMotorAction(telefonos, true);
     } catch {
-      notificar("No se pudo excluir del motor. Revisá tu conexión y probá de nuevo.", "error");
+      notificar("No se pudo excluir el contacto. Revisá tu conexión y probá de nuevo.", "error");
       return false;
     }
     if (!res.ok) {
-      notificar(res.error ?? "No se pudo excluir del motor.", "error");
+      notificar(res.error ?? "No se pudo excluir el contacto.", "error");
       return false;
     }
     await recargarExcluidos();
@@ -1237,8 +1257,8 @@ export default function AppShell({
     const n = telefonos.length;
     notificar(
       n === 1
-        ? "Listo, el motor ya no tiene en cuenta ese contacto. Lo ves en la pestaña “Excluidos”."
-        : `Listo, el motor ya no tiene en cuenta esos ${n} contactos. Los ves en la pestaña “Excluidos”.`,
+        ? "Listo, ese contacto ya no recibe campañas ni entra en tus audiencias. Lo ves en la pestaña “Excluidos”."
+        : `Listo, esos ${n} contactos ya no reciben campañas ni entran en tus audiencias. Los ves en la pestaña “Excluidos”.`,
     );
     return true;
   }
@@ -1276,7 +1296,7 @@ export default function AppShell({
     }
     await recargarExcluidos();
     setActividadVersion((v) => v + 1);
-    notificar("Listo, el motor vuelve a tener en cuenta ese contacto.");
+    notificar("Listo, ese contacto vuelve a recibir campañas.");
   }
 
   // ── filtrado combinado, replicando la lógica del original ──
@@ -1528,6 +1548,11 @@ export default function AppShell({
     if (!result.ok) {
       setStatus("rejected");
       addMsg(`No se pudo enviar el template a Meta: ${result.error}`);
+      // El mensaje de arriba va al chat del Asistente, que acá no se ve: se
+      // avisa también con un aviso visible y se refresca la lista (el intento
+      // fallido queda guardado con estado "Error").
+      notificar(`No se pudo enviar el template a Meta: ${result.error}`, "error");
+      router.refresh();
       return;
     }
 
@@ -1548,6 +1573,7 @@ export default function AppShell({
     }
 
     addMsg(result.mensaje);
+    notificar("Template enviado a Meta. Está esperando aprobación; te avisamos cuando cambie.");
     setStatus("ready");
     setIsCreatingNew(false);
     setTplId(null);
@@ -1957,6 +1983,7 @@ export default function AppShell({
         onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
         avisos={avisosSidebar}
+        conteos={{ ...conteosSidebar, ia: iaNoLeidos }}
       />
 
       <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} aviso={avisoMenuMobile} />
@@ -1972,6 +1999,7 @@ export default function AppShell({
         onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
         avisos={avisosSidebar}
+        conteos={{ ...conteosSidebar, ia: iaNoLeidos }}
       />
 
       <ProfileDrawer
@@ -2232,8 +2260,6 @@ export default function AppShell({
           />
 
           <SectionBody>
-            <ActividadWhatsappCard whatsappVinculado={whatsappVinculado} version={actividadVersion} />
-
             {vistaContactos === "excluidos" ? (
               <div className="bg-ys-card border border-ys-border rounded-2xl overflow-hidden">
                 <ContactosExcluidosLista

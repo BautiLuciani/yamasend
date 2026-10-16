@@ -186,13 +186,13 @@ const LOGO_SRC = "/brand/logo-sidebar.png";
 
 export default function IAAyudaPdfDocument() {
   return (
-    <Document title="YamaSend IA — Guía del asistente">
+    <Document title="YamaSend — Guía del Asistente">
       <Page size="A4" style={styles.page} wrap>
         <View style={styles.headerRow}>
           {/* eslint-disable-next-line jsx-a11y/alt-text -- Image de @react-pdf/renderer, no <img> HTML; no expone prop alt */}
           <Image src={LOGO_SRC} style={styles.logo} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitulo}>YamaSend IA</Text>
+            <Text style={styles.headerTitulo}>Asistente</Text>
             <Text style={styles.headerSubtitulo}>
               Todo lo que le podés pedir a tu asistente
             </Text>

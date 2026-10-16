@@ -421,7 +421,7 @@ export default function Perfil({ tieneOrganizacion }: { tieneOrganizacion: boole
   return (
     <SectionPage>
       <SectionHeader
-        title="Perfil"
+        title="Mi Negocio"
         subtitle="Todo lo que la IA sabe de tu negocio."
         status={{
           icon: (

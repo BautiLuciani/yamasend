@@ -258,6 +258,7 @@ export default function ContactsTable({
           return (
             <div
               key={c.id}
+              title={bloq ? `Recibió una campaña y no contestó. Se le puede volver a escribir desde el ${c.bloqueadoHasta ?? "—"} o apenas responda.` : undefined}
               onClick={() => onOpenDetail(c)}
               className={`flex items-center gap-3 px-4 py-3 border-b border-ys-border-softer cursor-pointer transition-colors active:bg-[#f7fbf9] ${
                 isSel ? "bg-ys-green-bg" : ""
@@ -307,6 +308,7 @@ export default function ContactsTable({
           return (
             <div
               key={c.id}
+              title={bloq ? `Recibió una campaña y no contestó. Se le puede volver a escribir desde el ${c.bloqueadoHasta ?? "—"} o apenas responda.` : undefined}
               onClick={() => onOpenDetail(c)}
               className={`grid ${GRID} items-center px-6 py-[13px] border-b border-ys-border-softer cursor-pointer transition-colors hover:bg-[#f7fbf9] ${
                 isSel ? "bg-ys-green-bg" : ""

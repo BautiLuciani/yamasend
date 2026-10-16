@@ -62,26 +62,17 @@ interface IAProps {
   sending?: boolean;
 }
 
-// Variantes del mensaje de bienvenida — se elige una al azar por sesión de
-// chat (no en cada render) para que la pantalla inicial no se sienta
-// siempre igual, sin perder la claridad de qué puede hacer el asistente.
-const BIENVENIDAS = [
-  {
-    titulo: "¿Qué querés saber sobre tu negocio?",
-    texto: "Puedo analizar tus contactos, audiencias, templates y campañas para ayudarte a tomar mejores decisiones.",
-  },
-  {
-    titulo: "¿En qué te ayudo hoy?",
-    texto: "Puedo armar una audiencia, un template o una campaña entera por vos, solo pedímelo en lenguaje natural.",
-  },
-  {
-    titulo: "Hagamos algo juntos",
-    texto: "Puedo importar tus contactos, buscar quién habló de un tema puntual, y crear audiencias, templates y campañas hablando conmigo.",
-  },
+// Un solo globo de sugerencia que va rotando. El primero abre la ayuda; el
+// resto se envía como pedido al Asistente.
+const SUGERENCIAS_IA = [
+  { texto: "Qué te puedo pedir", ayuda: true },
+  { texto: "Armame una campaña para clientes que no compran hace 15 días de los productos A, B y C", ayuda: false },
+  { texto: "Tengo $50.000, ¿qué campaña de reactivación me sugerís?", ayuda: false },
+  { texto: "Tengo el producto X con 50% de descuento, ¿a quién me recomendás enviarlo?", ayuda: false },
 ];
+const ROTACION_MS = 6000;
 
 export default function IA({
-  userName,
   whatsappVinculado,
   onVincular,
   messages,
@@ -122,6 +113,14 @@ export default function IA({
   const [value, setValue] = useState("");
   const [historialOpen, setHistorialOpen] = useState(false);
   const [ayudaAbierta, setAyudaAbierta] = useState(false);
+  const [sugIdx, setSugIdx] = useState(0);
+  const [sugPausada, setSugPausada] = useState(false);
+
+  useEffect(() => {
+    if (sugPausada) return;
+    const t = setInterval(() => setSugIdx((i) => (i + 1) % SUGERENCIAS_IA.length), ROTACION_MS);
+    return () => clearInterval(t);
+  }, [sugPausada]);
   const [historialConversaciones, setHistorialConversaciones] = useState<
     IAConversacionResumen[]
   >([]);
@@ -130,13 +129,7 @@ export default function IA({
     null,
   );
   const [borrando, setBorrando] = useState(false);
-  // Inicializador lazy: se elige una sola vez al montar el componente, no
-  // en cada render — así el mensaje no "salta" mientras el usuario lo lee.
-  const [bienvenida] = useState(
-    () => BIENVENIDAS[Math.floor(Math.random() * BIENVENIDAS.length)],
-  );
   const scrollRef = useRef<HTMLDivElement>(null);
-  const firstName = userName.split(" ")[0] || userName;
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -196,7 +189,7 @@ export default function IA({
     <>
     <div className="flex-1 min-w-0 bg-ys-bg flex flex-col h-full pt-[58px] md:pt-0">
       <SectionHeader
-        title="IA"
+        title="Asistente"
         subtitle="Analizá tu negocio conversando con YamaSend."
         status={{
           icon: (
@@ -332,13 +325,7 @@ export default function IA({
                 </svg>
               </div>
               <div className="text-2xl font-extrabold tracking-[-0.025em] text-ys-text">
-                Hola, {firstName} 👋
-              </div>
-              <div className="text-[17px] font-bold text-[#3f4844]">
-                {bienvenida.titulo}
-              </div>
-              <div className="text-sm text-ys-muted font-medium max-w-[480px] leading-[1.55]">
-                {bienvenida.texto}
+                ¿Qué campaña inteligente enviamos?
               </div>
             </div>
           )}
@@ -378,7 +365,7 @@ export default function IA({
                     </svg>
                   </div>
                   <div className="text-xs font-extrabold tracking-[0.04em] text-ys-green-text">
-                    YamaSend IA
+                    Asistente
                   </div>
                 </div>
                 <div
@@ -436,7 +423,7 @@ export default function IA({
                   </svg>
                 </div>
                 <div className="text-xs font-extrabold tracking-[0.04em] text-ys-green-text">
-                  YamaSend IA
+                  Asistente
                 </div>
               </div>
               <div className="flex items-center gap-2.5">
@@ -453,26 +440,28 @@ export default function IA({
 
       <div className="flex-none px-4 md:px-[38px] py-3.5 md:py-[26px] bg-ys-bg">
         <div className="w-full max-w-[760px] mx-auto flex flex-col gap-3">
-          {/* Pantalla inicial: solo "Qué le puedo pedir" (oct 2026). Las
-              sugerencias de ejemplo se sacaron porque cargaban demasiado la
-              pantalla; las mismas ideas están dentro de esa ayuda. */}
-          {!hayConversacion && (
-            <div className="flex flex-col gap-2">
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  onClick={() => setAyudaAbierta(true)}
-                  className="flex items-center gap-1.5 bg-ys-green-bg border border-ys-green-border rounded-full px-3.5 py-2 text-[12.5px] font-semibold text-ys-green-text cursor-pointer transition-all hover:-translate-y-px"
-                >
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="flex-none">
-                    <circle cx="8" cy="8" r="6.25" stroke="currentColor" strokeWidth="1.5" />
-                    <path d="M6.3 6.1a1.75 1.75 0 1 1 2.3 1.66c-.4.14-.6.5-.6.92v.32" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    <circle cx="8" cy="11.4" r="0.75" fill="currentColor" />
-                  </svg>
-                  Qué le puedo pedir
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Un solo globo de sugerencia, siempre visible, que va cambiando. */}
+          <div className="flex">
+            <button
+              key={sugIdx}
+              disabled={sending}
+              onClick={() => {
+                const sg = SUGERENCIAS_IA[sugIdx];
+                if (sg.ayuda) setAyudaAbierta(true);
+                else onSend(sg.texto);
+              }}
+              onMouseEnter={() => setSugPausada(true)}
+              onMouseLeave={() => setSugPausada(false)}
+              className={`max-w-full text-left rounded-full px-3.5 py-2 text-[12.5px] font-semibold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed border ${
+                SUGERENCIAS_IA[sugIdx].ayuda
+                  ? "bg-ys-green-bg border-ys-green-border text-ys-green-text"
+                  : "bg-white border-ys-border text-[#3f4844] hover:border-ys-green-border"
+              }`}
+              style={{ animation: "ys-fade-up .25s cubic-bezier(.4,0,.2,1) both" }}
+            >
+              {SUGERENCIAS_IA[sugIdx].texto}
+            </button>
+          </div>
 
           {recorder.estado === "idle" ? (
             <div className="flex items-end gap-2.5 bg-white border border-ys-border rounded-2xl pl-4 pr-2.5 py-2.5 transition-colors focus-within:!border-ys-green">

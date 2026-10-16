@@ -1,5 +1,12 @@
 -- =====================================================================
--- Etiquetas en vivo por producto (oct 2026) — NO APLICADA TODAVÍA
+-- Etiquetas en vivo por producto (oct 2026) — APLICADA el 2026-10-15 (migración
+-- etiquetas_en_vivo_intencion_2026_10, con la regla de intención de abajo).
+--
+-- AMPLIACIÓN aplicada: el trigger también detecta "quiero comprar X"
+-- (yamas_send_intencion_compra): crea la etiqueta X y pasa al contacto a
+-- temperatura 'caliente' (score_interes >= 80). Solo mensajes entrantes de las
+-- últimas 24 h. Deshacer: drop trigger trg_etiquetar_mensaje on
+-- public.yamas_send_mensajes_historico; select cron.unschedule('yamas-send-etiquetas-auto').
 --
 -- Hoy una etiqueta de producto ("eukanuba", "royal canin") se aplica a los
 -- contactos que ya hablaron del tema en el momento en que alguien acepta la

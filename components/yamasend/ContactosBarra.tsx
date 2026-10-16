@@ -90,7 +90,17 @@ export default function ContactosBarra({
   const [revisando, setRevisando] = useState<{ etiqueta: string; descripcion: string } | null>(null);
 
   async function recargar() {
-    setResumen(await getEtiquetasAction());
+    try {
+      setResumen(await getEtiquetasAction());
+    } catch {
+      setResumen({ error: "No se pudieron cargar las etiquetas. Probá de nuevo." } as EtiquetasResumen);
+    }
+  }
+
+  // Si todavía no cargó (o falló), el clic vuelve a pedirlas en vez de no hacer nada.
+  function abrirEtiquetas() {
+    setModalAbierto(true);
+    if (!resumen || resumen.error) void recargar();
   }
 
   // Al entrar a Contactos se sincronizan los clientes (los que compraron pero
@@ -134,7 +144,7 @@ export default function ContactosBarra({
   return (
     <>
       <ActionBar>
-        <BtnPrimary onClick={() => setModalAbierto(true)} title="Crear, renombrar y revisar las etiquetas sugeridas">
+        <BtnPrimary onClick={abrirEtiquetas} title="Crear, renombrar y revisar las etiquetas sugeridas">
           Etiquetas
         </BtnPrimary>
         <SearchBox value={busqueda} onChange={onBusqueda} placeholder="Buscar contacto..." />
@@ -233,6 +243,11 @@ export default function ContactosBarra({
           }}
           onClose={() => setModalAbierto(false)}
         />
+      )}
+      {modalAbierto && !resumen && (
+        <div className="fixed bottom-6 right-6 z-[120] bg-ys-card border border-ys-border text-ys-muted text-[13px] font-semibold rounded-xl px-4 py-3 shadow-lg">
+          Cargando etiquetas…
+        </div>
       )}
       {modalAbierto && resumen?.error && (
         <div className="fixed bottom-6 right-6 z-[120] bg-ys-red-bg text-ys-red-text text-[13px] font-semibold rounded-xl px-4 py-3" onClick={() => setModalAbierto(false)}>

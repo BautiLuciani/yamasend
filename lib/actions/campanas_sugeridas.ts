@@ -1,5 +1,6 @@
 "use server";
 
+import { bloqueadoPorMarketing, cargarEntrantesRecientes } from "@/lib/campanas/frecuencia";
 import { createClient } from "@/lib/supabase/server";
 import { assertPermiso, getCurrentMembership } from "@/lib/auth/permisos";
 import { getDatosNegocioAction } from "@/lib/actions/profile";
@@ -32,6 +33,7 @@ export type CampanaSugeridaVista = Omit<CampanaSugerida, "leadIds">;
 interface FilaComprador {
   lead_id: string;
   nombre: string | null;
+  telefono?: string | null;
   compras: number;
   ultima_compra: string;
   ultima_campana_enviada_at: string | null;
@@ -43,11 +45,12 @@ async function calcular(
 ): Promise<{ sugeridas: CampanaSugerida[]; error: string | null }> {
   const supabase = await createClient();
 
+  const entrantes = await cargarEntrantesRecientes(supabase, tenantId);
   const [rpc, leadsRes, negocio] = await Promise.all([
     supabase.rpc("yamas_send_compradores_detectados"),
     supabase
       .from("yamas_send_leads")
-      .select("id, nombre, producto_servicio, necesidad, keywords_detectados, ultima_campana_enviada_at")
+      .select("id, nombre, telefono, lid, producto_servicio, necesidad, keywords_detectados, ultima_campana_enviada_at")
       .eq("tenant_id", tenantId)
       .eq("activo", true)
       .limit(MAX_LEADS),
@@ -64,7 +67,13 @@ async function calcular(
     nombre: r.nombre,
     compras: r.compras,
     ultimaCompra: r.ultima_compra,
-    ultimaCampanaEnviadaAt: r.ultima_campana_enviada_at,
+    // Solo cuenta la campaña reciente si el contacto no contestó después.
+    ultimaCampanaEnviadaAt: bloqueadoPorMarketing(
+      { telefono: r.telefono ?? null, ultimaCampanaEnviadaAt: r.ultima_campana_enviada_at },
+      entrantes,
+    )
+      ? r.ultima_campana_enviada_at
+      : null,
   }));
 
   const leads: LeadParaProducto[] = (leadsRes.data ?? []).map((l) => ({
@@ -73,7 +82,12 @@ async function calcular(
     productoServicio: l.producto_servicio,
     necesidad: l.necesidad,
     keywords: Array.isArray(l.keywords_detectados) ? (l.keywords_detectados as string[]) : [],
-    ultimaCampanaEnviadaAt: l.ultima_campana_enviada_at,
+    ultimaCampanaEnviadaAt: bloqueadoPorMarketing(
+      { telefono: l.telefono ?? null, lid: l.lid ?? null, ultimaCampanaEnviadaAt: l.ultima_campana_enviada_at },
+      entrantes,
+    )
+      ? l.ultima_campana_enviada_at
+      : null,
   }));
 
   return {

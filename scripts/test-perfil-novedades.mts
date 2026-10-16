@@ -27,7 +27,7 @@ const inferido = {
   ],
 };
 
-let n = calcularNovedades(datos, inferido, []);
+const n = calcularNovedades(datos, inferido, []);
 const tipos = n.map((x) => x.tipo).sort();
 assert.deepEqual(tipos, ["campo", "precio", "producto_nuevo", "zona"], `tipos: ${tipos}`);
 const campo = n.find((x) => x.tipo === "campo")!;

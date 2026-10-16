@@ -20,8 +20,8 @@ import type { Producto } from "@/lib/types";
  */
 
 export const DIAS_INACTIVIDAD = 14;
-/** No se sugiere a quien ya recibió una campaña en estos días: evita saturar. */
-export const DIAS_SIN_CAMPANA = 7;
+/** No se sugiere a quien recibió una campaña en estos días y no contestó (ver lib/campanas/frecuencia.ts). */
+export const DIAS_SIN_CAMPANA = 10;
 export const MIN_COMPRAS_MEJORES = 2;
 export const FRACCION_MEJORES = 0.2;
 const MIN_MEJORES = 5;

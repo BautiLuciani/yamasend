@@ -53,7 +53,7 @@ function StatusBadge({ status }: { status: Template["status"] }) {
   if (status === "enviado")
     return (
       <span className="inline-flex items-center gap-1.5 flex-none text-xs font-extrabold text-ys-warn-text bg-ys-warn-bg rounded-full px-[11px] py-1">
-        En revisión
+        Esperando aprobación
       </span>
     );
   if (status === "borrador")
@@ -185,7 +185,7 @@ export default function Templates({
               options={[
                 { key: "todos", label: "Todos" },
                 { key: "verificado", label: "Aprobados" },
-                { key: "enviado", label: "En revisión" },
+                { key: "enviado", label: "En espera" },
                 { key: "rechazado", label: "Rechazados" },
                 { key: "borrador", label: "Borradores" },
               ]}

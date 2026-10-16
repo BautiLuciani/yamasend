@@ -771,16 +771,16 @@ export default function CampaignWizardModal({
                 </div>
               </div>
 
-              <div className="bg-ys-dark rounded-2xl px-5 py-[18px] flex flex-col gap-2.5">
+              <div className="bg-ys-green-bg border border-ys-green-border rounded-2xl px-5 py-[18px] flex flex-col gap-2.5">
                 <div className="flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
                     <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
                   </svg>
-                  <div className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-ys-green">
-                    Insight de IA
+                  <div className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-ys-green-text">
+                    Insight del Asistente
                   </div>
                 </div>
-                <div className="text-sm leading-[1.55] text-ys-border-softest font-semibold">
+                <div className="text-sm leading-[1.55] text-ys-text font-semibold">
                   {insightCargando
                     ? "Analizando tus campañas anteriores..."
                     : insight ??
