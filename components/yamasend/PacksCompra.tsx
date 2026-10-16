@@ -92,11 +92,11 @@ export default function PacksCompra({
             <div className="flex flex-col gap-0.5">
               <div className="flex items-baseline gap-1.5 flex-wrap">
                 <div className="font-mono text-[20px] font-medium tracking-[-0.03em] text-ys-text">
-                  ${pesos(pack.precioArs)}
+                  ${numero(pack.precioArs)}
                 </div>
                 {pack.descuentoPct > 0 && (
                   <div className="font-mono text-[12px] text-ys-dimmer line-through">
-                    ${pesos(pack.precioSinDescuentoArs)}
+                    ${numero(pack.precioSinDescuentoArs)}
                   </div>
                 )}
               </div>

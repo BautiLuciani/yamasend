@@ -63,7 +63,7 @@ const TIPOS: {
     features: [
       "Importás tus contactos",
       "Creás audiencias, templates y campañas",
-      "Asistente de IA sobre tus conversaciones",
+      "Asistente sobre tus conversaciones",
     ],
     nota: "Conectás tu WhatsApp con un click, después de crear la cuenta.",
     icon: (

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchNovedades } from "@/lib/novedades/cliente";
+import { contarContactosNuevosAction } from "@/lib/actions/novedades_conteo";
 import type {
   AppSection,
   EstadoCampanaAviso,
@@ -150,11 +151,14 @@ export function useAvisosSidebar({
   whatsappConectado: boolean | null;
 }): {
   avisos: AvisosSidebar;
+  /** Cuántas novedades hay por sección (para el globo con contador). */
+  conteos: Partial<Record<AppSection, number>>;
   /** Llamar al navegar, con la sección que se deja y la que se abre. */
   marcarSecciones: (secciones: AppSection[]) => void;
 } {
   const [novedades, setNovedades] = useState<Novedades | null>(null);
   const [vistas, setVistas] = useState<Vistas | null>(null);
+  const [contactosNuevos, setContactosNuevos] = useState(0);
 
   // Refs para leer el valor vigente desde callbacks async (poll, navegación).
   const activeRef = useRef(activeSection);
@@ -183,8 +187,11 @@ export function useAvisosSidebar({
           campanas: n.campanasEstados,
           whatsappVisto: false,
         };
-      // La sección abierta se va marcando como vista en cada consulta.
-      base = marcar(base, activeRef.current, n);
+      // Solo la primera vez se toma la sección abierta como ya vista. Después
+      // NO se avanza con cada consulta: si algo pasa mientras mirás esa
+      // sección (ej. Meta aprueba un template estando en Templates), el globo
+      // se enciende igual. Se apaga al volver a entrar a la sección.
+      if (!prev) base = marcar(base, activeRef.current, n);
       if (whatsappRef.current === true && !base.whatsappVisto) {
         base = { ...base, whatsappVisto: true };
       }
@@ -251,15 +258,36 @@ export function useAvisosSidebar({
     [tenantId],
   );
 
-  if (!novedades || !vistas) return { avisos: {}, marcarSecciones };
+  // Cuántos contactos aparecieron desde la última visita a Contactos.
+  const contactosNuevoAt = novedades?.contactosNuevoAt ?? null;
+  const contactosVisto = vistas?.contactos ?? null;
+  useEffect(() => {
+    if (!contactosNuevoAt || !contactosVisto || !despues(contactosNuevoAt, contactosVisto)) {
+      const t = setTimeout(() => setContactosNuevos(0), 0);
+      return () => clearTimeout(t);
+    }
+    let cancelado = false;
+    contarContactosNuevosAction(contactosVisto)
+      .then((n) => {
+        if (!cancelado) setContactosNuevos(n);
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [contactosNuevoAt, contactosVisto]);
+
+  if (!novedades || !vistas) return { avisos: {}, conteos: {}, marcarSecciones };
 
   const avisos: AvisosSidebar = {};
 
   // Templates: alguno pasó a aprobado/rechazado desde la última visita.
   let tplNovedad = false;
   let tplRechazo = false;
+  let tplCambios = 0;
   for (const [id, estado] of Object.entries(novedades.templatesEstados)) {
     if (estado === "pendiente" || vistas.templates[id] === estado) continue;
+    tplCambios++;
     if (estado === "rechazado") tplRechazo = true;
     else tplNovedad = true;
   }
@@ -269,8 +297,10 @@ export function useAvisosSidebar({
   // Campañas programadas / del motor: alguna terminó desde la última visita.
   let campNovedad = false;
   let campError = false;
+  let campCambios = 0;
   for (const [id, estado] of Object.entries(novedades.campanasEstados)) {
     if (estado === "pendiente" || vistas.campanas[id] === estado) continue;
+    campCambios++;
     if (estado === "error") campError = true;
     else campNovedad = true;
   }
@@ -287,7 +317,11 @@ export function useAvisosSidebar({
 
   if (despues(novedades.dashboardRespuestaAt, vistas.dashboard)) avisos.dashboard = "novedad";
 
-  // La sección abierta nunca muestra aviso.
-  delete avisos[activeSection];
-  return { avisos, marcarSecciones };
+  // Contadores: solo donde hay un aviso encendido y la cantidad es conocida.
+  const conteos: Partial<Record<AppSection, number>> = {};
+  if (avisos.templates && tplCambios > 0) conteos.templates = tplCambios;
+  if (avisos.campanas && campCambios > 0) conteos.campanas = campCambios;
+  if (avisos.contactos === "novedad" && contactosNuevos > 0) conteos.contactos = contactosNuevos;
+
+  return { avisos, conteos, marcarSecciones };
 }

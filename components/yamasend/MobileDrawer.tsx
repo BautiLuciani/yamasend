@@ -21,9 +21,10 @@ interface MobileDrawerProps {
   hiddenSections?: AppSection[];
   /** Avisos (puntitos) por sección. Ver useAvisosSidebar. */
   avisos?: AvisosSidebar;
+  conteos?: Partial<Record<AppSection, number>>;
 }
 
-const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
+const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" | "nav_groups" | "nav_templates" | "nav_campaigns" | "nav_profile" | "nav_ai"; icon: (color: string) => React.ReactNode }[] = [
   {
     key: "ia",
     labelKey: "nav_ai",
@@ -87,6 +88,17 @@ const NAV_ITEMS: { key: AppSection; labelKey: "nav_dashboard" | "nav_contacts" |
       </svg>
     ),
   },
+  {
+    key: "perfil",
+    labelKey: "nav_profile",
+    icon: (c) => (
+      <svg width="17" height="17" viewBox="0 0 16 16" fill="none">
+        <rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke={c} strokeWidth="1.5" />
+        <circle cx="8" cy="6.6" r="1.7" stroke={c} strokeWidth="1.4" />
+        <path d="M4.9 12c.4-1.4 1.6-2.2 3.1-2.2s2.7.8 3.1 2.2" stroke={c} strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    ),
+  },
 ];
 
 export default function MobileDrawer({
@@ -101,6 +113,7 @@ export default function MobileDrawer({
   onOpenSettings,
   hiddenSections = [],
   avisos = {},
+  conteos = {},
 }: MobileDrawerProps) {
   const { t } = useLang();
   const initials = userName
@@ -154,6 +167,7 @@ export default function MobileDrawer({
                 variant="mobile"
                 label={t("nav_ai")}
                 isActive={active === "ia"}
+                conteo={conteos.ia ?? 0}
                 onClick={() => {
                   onNavigate("ia");
                   onClose();
@@ -181,7 +195,7 @@ export default function MobileDrawer({
               >
                 {item.icon(isActive ? "#12B76A" : "currentColor")}
                 <span className="flex-1 min-w-0 truncate">{t(item.labelKey)}</span>
-                {avisos[item.key] && <AvisoDot tipo={avisos[item.key]!} className="mr-1" />}
+                {avisos[item.key] && <AvisoDot tipo={avisos[item.key]!} cantidad={conteos[item.key]} className="mr-1" />}
               </button>
             );
           })}

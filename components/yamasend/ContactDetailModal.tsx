@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import type { Contact, ScoreTemp } from "@/lib/types";
+import { normalizarEtiqueta } from "@/lib/etiquetas/etiquetas";
+import EtiquetaChip from "./EtiquetaChip";
 
 interface ContactDetailModalProps {
   contact: Contact | null;
@@ -10,6 +12,11 @@ interface ContactDetailModalProps {
     contactId: string,
     temperatura: "caliente" | "tibio" | "frio" | null,
   ) => Promise<void>;
+  /** Etiquetas: si no se pasan, la sección se muestra solo de lectura. */
+  onEtiquetar?: (contactId: string, etiqueta: string) => Promise<void>;
+  onQuitarEtiqueta?: (contactId: string, etiqueta: string) => Promise<void>;
+  /** Etiquetas que ya existen en la cuenta, para elegir en vez de escribir. */
+  etiquetasExistentes?: string[];
   /**
    * Excluye este contacto del Motor (ej: es otra sucursal, no un cliente).
    * Si no se pasa, la sección no se muestra.
@@ -98,10 +105,15 @@ export default function ContactDetailModal({
   contact,
   onClose,
   onSetTemperaturaManual,
+  onEtiquetar,
+  onQuitarEtiqueta,
+  etiquetasExistentes = [],
   onExcluirMotor,
   onRenombrar,
 }: ContactDetailModalProps) {
   const [savingOverride, setSavingOverride] = useState(false);
+  const [nuevaEtiqueta, setNuevaEtiqueta] = useState("");
+  const [guardandoEtiqueta, setGuardandoEtiqueta] = useState(false);
   const [excluyendo, setExcluyendo] = useState(false);
   // Edición del nombre. Se guarda el id del contacto que se está editando
   // (no un booleano) para que, si se cierra y se abre otro contacto, no
@@ -321,6 +333,83 @@ export default function ContactDetailModal({
           </Field>
         )}
 
+        {((contact.etiquetas?.length ?? 0) > 0 || onEtiquetar) && (
+          <Field label="Etiquetas">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {(contact.etiquetas ?? []).map((e) => (
+                <EtiquetaChip
+                  key={e}
+                  nombre={e}
+                  onQuitar={
+                    onQuitarEtiqueta
+                      ? async () => {
+                          setGuardandoEtiqueta(true);
+                          await onQuitarEtiqueta(contact.id, e);
+                          setGuardandoEtiqueta(false);
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+              {(contact.etiquetas?.length ?? 0) === 0 && (
+                <span className="text-[12px] font-medium text-ys-dim">Sin etiquetas</span>
+              )}
+              {onExcluirMotor && (
+                <button
+                  type="button"
+                  disabled={excluyendo}
+                  title="No es un cliente (otra sucursal, proveedor, tu equipo). No recibe campañas ni entra en audiencias; lo podés volver a incluir desde Excluidos."
+                  onClick={async () => {
+                    setExcluyendo(true);
+                    await onExcluirMotor(contact);
+                    setExcluyendo(false);
+                  }}
+                  className="inline-flex items-center h-6 px-2 rounded-full border border-ys-border text-[11.5px] font-bold text-[#3f4844] cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-wait"
+                >
+                  {excluyendo ? "Excluyendo…" : "Excluir"}
+                </button>
+              )}
+            </div>
+            {onEtiquetar && (
+              <form
+                className="flex gap-2 mt-1"
+                onSubmit={async (ev) => {
+                  ev.preventDefault();
+                  const n = normalizarEtiqueta(nuevaEtiqueta);
+                  if (!n || guardandoEtiqueta) return;
+                  setGuardandoEtiqueta(true);
+                  await onEtiquetar(contact.id, n);
+                  setGuardandoEtiqueta(false);
+                  setNuevaEtiqueta("");
+                }}
+              >
+                <input
+                  value={nuevaEtiqueta}
+                  onChange={(ev) => setNuevaEtiqueta(ev.target.value)}
+                  list="etiquetas-existentes"
+                  maxLength={30}
+                  placeholder="Agregar etiqueta"
+                  className="flex-1 min-w-0 border border-ys-border rounded-[10px] px-3 py-2 text-[13px] font-medium text-ys-text outline-none focus:border-ys-green"
+                />
+                <datalist id="etiquetas-existentes">
+                  {etiquetasExistentes
+                    .filter((e) => !(contact.etiquetas ?? []).includes(e))
+                    .map((e) => (
+                      <option key={e} value={e} />
+                    ))}
+                </datalist>
+                <button
+                  type="submit"
+                  disabled={guardandoEtiqueta || !normalizarEtiqueta(nuevaEtiqueta)}
+                  className="text-[12.5px] font-bold text-white bg-ys-green rounded-[10px] px-3.5 py-2 cursor-pointer hover:bg-ys-green-hover disabled:opacity-60 disabled:cursor-default"
+                >
+                  Agregar
+                </button>
+              </form>
+            )}
+          </Field>
+        )}
+
         <div className="grid grid-cols-2 gap-3.5">
           <Field label="Mensajes analizados">
             <span className="text-[13px] font-semibold text-ys-text">{contact.mensajes}</span>
@@ -365,29 +454,6 @@ export default function ContactDetailModal({
             Tu ajuste queda guardado y se prioriza sobre el cálculo de la IA. Click de nuevo en la misma opción para volver a usar el valor automático.
           </p>
         </div>
-
-        {/* Excluir del motor: para números que no son clientes */}
-        {onExcluirMotor && (
-          <div className="border-t border-ys-border-soft pt-4 flex items-center gap-3">
-            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <div className="text-[12.5px] font-extrabold text-ys-text">¿No es un cliente?</div>
-              <p className="text-[11.5px] text-ys-dim font-medium leading-[1.5]">
-                Excluilo del motor si es otra sucursal, un proveedor o alguien de tu equipo. Lo podés volver a incluir cuando quieras.
-              </p>
-            </div>
-            <button
-              disabled={excluyendo}
-              onClick={async () => {
-                setExcluyendo(true);
-                await onExcluirMotor(contact);
-                setExcluyendo(false);
-              }}
-              className="flex-none text-[12.5px] font-bold text-[#3f4844] border border-ys-border rounded-[10px] px-3 py-2 cursor-pointer transition-colors hover:bg-[#f7f9f8] disabled:opacity-50 disabled:cursor-wait"
-            >
-              {excluyendo ? "Excluyendo..." : "Excluir del motor"}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

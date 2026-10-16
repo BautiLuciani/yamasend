@@ -44,7 +44,7 @@ const PERMISO_LABEL: Record<PermisoKey, string> = {
   crear_campanas: "Campañas",
   enviar_campanas: "Enviar campañas",
   comprar_creditos: "Comprar créditos",
-  usar_ia: "Asistente IA",
+  usar_ia: "Asistente",
   ver_motor: "Revisar Motor",
 };
 

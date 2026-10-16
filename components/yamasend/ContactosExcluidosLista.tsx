@@ -56,7 +56,7 @@ export default function ContactosExcluidosLista({
         <div className="text-[14px] font-extrabold text-ys-text">No hay contactos excluidos</div>
         <p className="text-[12.5px] text-ys-dim font-medium max-w-[380px] leading-[1.55]">
           Si tenés números que no son clientes (otras sucursales, proveedores, tu equipo),
-          seleccionalos en la lista y elegí &ldquo;Excluir del motor&rdquo;.
+          seleccionalos en la lista y elegí &ldquo;Excluir&rdquo;.
         </p>
       </div>
     );

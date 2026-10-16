@@ -44,7 +44,7 @@ export default function ExcluirMotorModal({
           </div>
           <div className="flex flex-col gap-1 min-w-0">
             <h3 id="excluir-motor-titulo" className="text-[17px] font-extrabold tracking-[-0.015em] text-ys-text">
-              Excluir {cantidad} contacto{plural ? "s" : ""} del motor
+              Excluir {cantidad} contacto{plural ? "s" : ""} 
             </h3>
             <p className="text-[13px] text-ys-muted font-medium leading-[1.55]">
               Usalo para números que no son clientes, como otras sucursales, proveedores o tu equipo.
@@ -55,7 +55,7 @@ export default function ExcluirMotorModal({
         <ul className="flex flex-col gap-2 text-[12.5px] text-[#3f4844] font-medium leading-[1.5]">
           <li className="flex gap-2">
             <span className="text-ys-green-text font-bold">•</span>
-            <span>El motor deja de tener{plural ? "los" : "lo"} en cuenta para recomendaciones y campañas sugeridas.</span>
+            <span>Dejan de recibir campañas y de aparecer en tus audiencias y recomendaciones.</span>
           </li>
           <li className="flex gap-2">
             <span className="text-ys-green-text font-bold">•</span>
@@ -80,7 +80,7 @@ export default function ExcluirMotorModal({
             disabled={guardando}
             className="ml-auto text-[13.5px] font-bold text-ys-card bg-ys-dark rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:-translate-y-px disabled:opacity-60 disabled:cursor-wait disabled:transform-none"
           >
-            {guardando ? "Excluyendo..." : `Excluir del motor`}
+            {guardando ? "Excluyendo…" : "Excluir"}
           </button>
         </div>
       </div>

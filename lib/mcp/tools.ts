@@ -1,3 +1,4 @@
+import { ycloudApiKey } from "@/lib/ycloud/clave";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
@@ -194,7 +195,7 @@ async function estadoWhatsapp(): Promise<{ listo: boolean; numero: string | null
     .maybeSingle();
 
   return {
-    listo: Boolean(data?.ycloud_api && data?.wabaid && data?.ventas_tel),
+    listo: Boolean(ycloudApiKey(data?.ycloud_api) && data?.wabaid && data?.ventas_tel),
     numero: data?.ventas_tel ?? null,
   };
 }
