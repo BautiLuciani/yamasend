@@ -454,7 +454,8 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 </Link>
                 <a
                   href="#como-funciona"
-                  className="flex items-center justify-center text-[15px] font-bold rounded-xl py-[15px] px-6 border border-white/25 text-white hover:bg-white/10 transition-colors"
+                  className="flex items-center justify-center text-[15px] font-bold rounded-xl py-[15px] px-6 border border-white/25 hover:bg-white/10 transition-colors"
+                  style={{ color: "#fff" }}
                 >
                   Ver cómo funciona
                 </a>
