@@ -500,7 +500,7 @@ export async function resolverInvitacionAction(
 // de exportarla desde write.ts porque los dos son archivos "use server" y
 // cruzarlos solo por un string obliga a Next a resolver ese módulo entero.
 const TEMPLATE_APROBAR_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/2ec4468d-e12b-448b-94c8-5f8eb253be9b";
+  "https://n8n.yamasai.tech/webhook/2ec4468d-e12b-448b-94c8-5f8eb253be9b";
 
 export interface EmpresaTemplateCopia {
   templateId: string;

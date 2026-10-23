@@ -22,7 +22,7 @@ import type {
 // segundo plano y deja el resultado en yamas_send_perfil_negocio. El tenant_id
 // sale siempre de la sesión en el servidor, nunca del cliente.
 const PERFIL_NEGOCIO_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/yamasend-perfil-negocio";
+  "https://n8n.yamasai.tech/webhook/yamasend-perfil-negocio";
 
 function esEstado(v: unknown): v is PerfilNegocioEstado {
   return v === "generando" || v === "listo" || v === "error";

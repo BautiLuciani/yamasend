@@ -305,7 +305,7 @@ export async function deleteListAction(
 // su propia firma sin pisar el workflow que usan otros despliegues.
 const CAMPAIGN_SEND_WEBHOOK_URL =
   process.env.YAMASEND_SEND_WEBHOOK_URL?.trim() ||
-  "https://yamasai.app.n8n.cloud/webhook/9a625055-39fb-4b59-a991-5f9d19beb32f";
+  "https://n8n.yamasai.tech/webhook/9a625055-39fb-4b59-a991-5f9d19beb32f";
 
 /**
  * Guarda una campaña asociada a una lista y un template ya existentes.
@@ -844,7 +844,7 @@ export async function saveTemplateDraftAction(
 // asíncrona, vía el segundo webhook del mismo workflow (Webhook YCloud
 // Templates) cuando YCloud dispara el evento whatsapp.template.reviewed.
 const TEMPLATE_APROBAR_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/2ec4468d-e12b-448b-94c8-5f8eb253be9b";
+  "https://n8n.yamasai.tech/webhook/2ec4468d-e12b-448b-94c8-5f8eb253be9b";
 
 /**
  * Meta solo acepta nombres de template en minúsculas, números y guion bajo
@@ -1023,7 +1023,7 @@ export async function sendTemplateToMetaAction(
 // cada carga de pantalla. Reutilizado por el modal de Nueva Campaña y,
 // eventualmente, por el Dashboard.
 const CAMPAIGN_INSIGHT_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/yamasend-insight-campanas";
+  "https://n8n.yamasai.tech/webhook/yamasend-insight-campanas";
 
 export interface RefreshTemplatesResult {
   templates: Template[] | null;

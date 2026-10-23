@@ -171,7 +171,7 @@ function filtrarContactos(
 }
 
 const WAHA_QR_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
+  "https://n8n.yamasai.tech/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
 
 // Intervalo de polling del QR, adaptativo según hace cuánto está abierto el modal.
 //

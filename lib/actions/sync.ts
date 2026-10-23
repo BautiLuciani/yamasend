@@ -13,7 +13,7 @@ import { CATEGORIA_TEMPLATE_UNICA } from "@/lib/templates/config";
 // problema de preflight CORS acá — ese es un tema exclusivo de fetch desde el
 // cliente (ver WAHA_QR_WEBHOOK_URL en AppShell.tsx, que sí corre en el browser).
 const SYNC_ANALIZAR_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/yamasend-sync-analizar";
+  "https://n8n.yamasai.tech/webhook/yamasend-sync-analizar";
 
 /**
  * Dispara la sincronización + análisis de IA de los contactos de WhatsApp
@@ -158,7 +158,7 @@ export async function syncAndAnalyzeAction(
 // mensaje de template redactado por un AI Agent (OpenAI) siguiendo las
 // reglas de Meta para templates de WhatsApp.
 const TEMPLATE_IA_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/yamasend-template-ia";
+  "https://n8n.yamasai.tech/webhook/yamasend-template-ia";
 
 export interface GenerarTemplateIAResult {
   sugerencia: string | null;
