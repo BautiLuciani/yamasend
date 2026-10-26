@@ -107,7 +107,7 @@ const STEPS = [
   {
     n: "01",
     title: "Contale al Asistente qué querés",
-    text: "Por ejemplo: \"Armame una campaña de USD 100 para mis clientes que no compraron esta semana alimento Royal Canin y arena sanitaria\".",
+    text: "Por ejemplo: \"Armame una campaña de $100.000 para mis clientes que no compraron esta semana alimento Royal Canin y arena sanitaria\".",
   },
   {
     n: "02",
@@ -182,36 +182,6 @@ const TOUR = [
     w: 924,
     h: 540,
     reverse: false,
-  },
-];
-
-// Textos de ejemplo: reemplazar por testimonios reales de clientes (con su
-// autorización) antes de mostrarlos como tales.
-const TESTIMONIOS = [
-  {
-    rubro: "Mayorista de limpieza",
-    dato: "Más de 2.000 contactos",
-    texto: "Antes armaba las listas a mano cada semana. Ahora le pido al Asistente los clientes que no repusieron y la campaña sale lista.",
-  },
-  {
-    rubro: "Pet shop",
-    dato: "Venta de alimento y accesorios",
-    texto: "Cuando alguien escribe que quiere comprar alimento, queda etiquetado y lo retomo yo. No se me pierde ninguna consulta.",
-  },
-  {
-    rubro: "Centro de belleza",
-    dato: "Turnos y tratamientos",
-    texto: "Les recordamos a las clientas que hace tiempo no vienen, con mensajes aprobados por Meta. Volvieron varias en la primera semana.",
-  },
-  {
-    rubro: "Ferretería",
-    dato: "Venta mostrador y a obras",
-    texto: "Le fijo un presupuesto y me arma la campaña para los clientes que compraron pintura. Sé cuánto gasto antes de enviar.",
-  },
-  {
-    rubro: "Gimnasio",
-    dato: "Socios y planes",
-    texto: "Veo en vivo quién pregunta por los planes y le escribo en el momento. Se acabó el seguimiento en planillas.",
   },
 ];
 
@@ -482,6 +452,13 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                     <path d="M3 8h9.5M9 4.5 12.5 8 9 11.5" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </Link>
+                <a
+                  href="#como-funciona"
+                  className="flex items-center justify-center text-[15px] font-bold rounded-xl py-[15px] px-6 border border-white/25 hover:bg-white/10 transition-colors"
+                  style={{ color: "#fff" }}
+                >
+                  Ver cómo funciona
+                </a>
               </div>
             )}
 
@@ -523,7 +500,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
                 </div>
                 <div className="p-4 md:p-5 flex flex-col gap-3.5 bg-white">
                   <div className="self-end max-w-[88%] bg-ys-green text-white rounded-2xl rounded-br-md py-3 px-4 text-[14px] leading-[1.5] font-semibold">
-                    Armame una campaña de USD 100 para mis clientes que no compraron esta semana alimento Royal Canin y arena sanitaria.
+                    Armame una campaña de $100.000 para mis clientes que no compraron esta semana alimento Royal Canin y arena sanitaria.
                   </div>
                   <div className="self-start max-w-[94%] bg-[#f2f4f3] rounded-2xl rounded-bl-md py-3 px-4 text-[14px] leading-[1.5] font-semibold text-[#3f4844]">
                     Listo. Armé 3 campañas para 1.240 contactos. Los mensajes ya están aprobados por Meta y el presupuesto alcanza para todos.
@@ -609,32 +586,6 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
               ))}
             </Reveal>
 
-            <Reveal className="w-full text-left border border-ys-border-softest rounded-2xl bg-white p-5 md:p-6 flex flex-col gap-5">
-              <div>
-                <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">CONVERSIÓN</div>
-                <h3 className="m-0 mt-1 text-xl font-extrabold">Un mensaje de WhatsApp llega y se lee. Un anuncio compite por atención.</h3>
-              </div>
-              {[
-                { label: "Mensajes de WhatsApp leídos", valor: "93–98%", ancho: 96, color: "#12B76A" },
-                { label: "Clic en mensajes de WhatsApp (CTR)", valor: "15–25%", ancho: 20, color: "#12B76A" },
-                { label: "Clic en anuncios de Facebook (CTR)", valor: "≈ 1,6%", ancho: 1.6, color: "#9aa19c" },
-              ].map((r) => (
-                <div key={r.label} className="flex flex-col gap-1.5">
-                  <div className="flex items-baseline justify-between gap-3 text-[13.5px] font-semibold">
-                    <span className="text-[#3f4844]">{r.label}</span>
-                    <span className="font-mono font-bold" style={{ color: r.color === "#12B76A" ? "#067647" : "#6b736e" }}>
-                      {r.valor}
-                    </span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-ys-border-softer overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: `${r.ancho}%`, background: r.color }} />
-                  </div>
-                </div>
-              ))}
-              <p className="m-0 text-[12px] leading-[1.5] font-medium text-ys-dim">
-                Referencias del sector, no promesas: WhatsApp según benchmarks publicados por proveedores de mensajería; Facebook Ads según WordStream 2024 (CTR promedio de campañas de tráfico, 1,57%). Los resultados dependen de tu rubro y tu base de contactos.
-              </p>
-            </Reveal>
           </div>
         </section>
 
@@ -836,35 +787,6 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
           </div>
         </section>
 
-        {/* Testimonios */}
-        <section id="testimonios" className="py-16 md:py-[84px] bg-[#f7f9f8] border-t border-b border-ys-border-softest">
-          <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col gap-[34px]">
-            <Reveal className="max-w-[640px] flex flex-col gap-3">
-              <div className="text-[12.5px] font-extrabold text-ys-green-text tracking-[.1em]">TESTIMONIOS</div>
-              <h2
-                className="m-0 font-extrabold tracking-[-0.025em] text-[28px] leading-[1.15] md:text-[40px]"
-                style={{ textWrap: "pretty", fontFamily: SERIF }}
-              >
-                Negocios que ya hablan con sus clientes de otra manera.
-              </h2>
-            </Reveal>
-            <Reveal className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {TESTIMONIOS.map((t) => (
-                <figure key={t.rubro} className="m-0 bg-white border border-ys-border-softest rounded-2xl p-6 flex flex-col gap-4">
-                  <span className="self-start text-[11px] font-extrabold tracking-[.08em] text-ys-dim bg-ys-border-softer rounded-full px-2.5 py-1">
-                    TESTIMONIO DE EJEMPLO
-                  </span>
-                  <blockquote className="m-0 text-[15px] leading-[1.6] font-medium text-[#3f4844]">“{t.texto}”</blockquote>
-                  <figcaption className="mt-auto">
-                    <div className="text-[14px] font-extrabold">{t.rubro}</div>
-                    <div className="text-[12.5px] font-semibold text-ys-dim">{t.dato}</div>
-                  </figcaption>
-                </figure>
-              ))}
-            </Reveal>
-          </div>
-        </section>
-
         {/* Nosotros */}
         <section id="nosotros" className="py-14 md:py-20 scroll-mt-[71px]">
           <div className="max-w-[1180px] mx-auto px-5 md:px-8 flex flex-col gap-[34px]">
@@ -1035,7 +957,7 @@ export default function LandingClient({ isAuthenticated }: LandingClientProps) {
             <div className="flex flex-col gap-2.5">
               <div className="text-[12.5px] font-extrabold tracking-[.04em]">Producto</div>
               {[
-                { href: "#funcionalidades", label: "Funcionalidades" },
+                { href: "#funcionalidades", label: "Beneficios" },
                 { href: "#como-funciona", label: "Cómo funciona" },
                 { href: "#ia", label: "Asistente" },
                 { href: "#faq", label: "Preguntas frecuentes" },
