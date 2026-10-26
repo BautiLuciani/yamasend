@@ -32,8 +32,8 @@ cloud); queda para cuando los tenants conecten por Embedded Signup.
 
 ## Orden de implementación
 
-1. Aplicar SQL bloque 7 (dos tablas). → **OK pendiente** (DDL).
-2. Activar `eWkUiOKjciRs1yOE` y correrlo a mano una vez; revisar la tabla con los 3 tenants actuales. Manda mail solo si hay AMARILLO/ROJO.
+1. ✅ 26/10: SQL bloque 7 aplicado (migración `yamas_send_calidad_linea_salud_y_wa_verificados`).
+2. ✅ 26/10: `eWkUiOKjciRs1yOE` activo (versión `76f7e8f3…` + filtro `TEST%`). Primera corrida: YamaSend prospección (5491125239189) **AMARILLO** por 2× error 131049 en los últimos 52 mensajes (92 % entregados, 61 % leídos); tenant 5491138564646 VERDE; el fixture `TEST_MOTOR_8B` daba ROJO por API key inválida → se excluyen los `TEST%`. Las dos líneas comparten la cuenta YCloud "YamasAI" (mismo saldo USD 20,87 → AMARILLO en cuanto baje de 20).
 3. Envío PATO `lhxVD0sz5oZ56Cky`: en `0_resolver_servidor` sumar `LEFT JOIN yamas_send_linea_salud s ON s.tenant_id = claim.tenant_id` y `autorizado := … AND COALESCE(s.semaforo,'VERDE') <> 'ROJO'`; devolver `s.semaforo, s.motivos` para el 403. Antes del resolver, HTTP a `yamasend-salud-lineas` con `{tenant_id}` si `checked_at < now() - 6h` (o siempre: son 4 GET).
 4. Verificación WA Lookup en el envío (paso 1): nodos Code + HTTP (credencial `WA Lookup`, `aliWALookup00001`) + Postgres upsert, entre `otbener_contactos` y el loop. Cuenta compartida con Alianza (7:00–7:40): si devuelve `42901`, esperar 35 s y reintentar; si sigue, la campaña no sale (filtro estricto).
 5. Primer mensaje confirmado + rechequeo cada 20 (pasos 4b y 5).
