@@ -68,7 +68,7 @@ export default function QrImportModal({
         >
           {status === "loading" && "Generando QR..."}
           {status === "waiting" && "Escaneá con tu WhatsApp → Vincular dispositivo"}
-          {status === "connected" && "¡Conectado!"}
+          {status === "connected" && "¡Conectado! Ya empezamos a analizar tus conversaciones."}
           {status === "error" && "Error al obtener QR. Reintentando..."}
         </div>
 
