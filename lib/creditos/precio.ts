@@ -36,6 +36,21 @@ const VARIACION_MAX = 0.5;
 /** Piso absoluto de plausibilidad, para el caso de que no haya valor previo. */
 const COTIZACION_MINIMA_PLAUSIBLE = 100;
 
+/**
+ * Los packs se muestran y se cobran redondeados para arriba de a $500
+ * ($1.000, $1.500, $2.000…). Siempre es >= al monto de la orden en la base,
+ * así que el cobro nunca queda por debajo de lo registrado.
+ */
+// Verificado: yamas_send_acreditar_orden solo rechaza pagos por DEBAJO del 99 %
+// de la orden (monto_insuficiente), así que cobrar de más por redondeo es seguro.
+const REDONDEAR_PACKS = true;
+
+export function redondearPrecioPack(n: number): number {
+  if (!REDONDEAR_PACKS) return n;
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.ceil(n / 500) * 500;
+}
+
 export interface PackPrecio {
   codigo: string;
   nombre: string;
@@ -203,17 +218,20 @@ export async function getPreciosCreditos(): Promise<PreciosResult> {
       cotizacion: Number(r.cotizacion ?? 0),
       cotizacionObtenidaAt: r.cotizacion_obtenida_at ?? null,
       habilitado: Boolean(r.habilitado),
-      packs: (r.packs ?? []).map((p) => ({
+      packs: (r.packs ?? []).map((p) => {
+        const precioArs = redondearPrecioPack(Number(p.precio_ars ?? 0));
+        return {
         codigo: p.codigo,
         nombre: p.nombre,
         descripcion: p.descripcion,
         creditos: p.creditos,
         destacado: p.destacado,
         descuentoPct: Number(p.descuento_pct ?? 0),
-        precioArs: Number(p.precio_ars ?? 0),
-        precioSinDescuentoArs: Number(p.precio_sin_descuento_ars ?? 0),
-        precioUnitarioArs: Number(p.precio_unitario_ars ?? 0),
-      })),
+        precioArs,
+        precioSinDescuentoArs: redondearPrecioPack(Number(p.precio_sin_descuento_ars ?? 0)),
+        precioUnitarioArs: p.creditos > 0 ? precioArs / p.creditos : Number(p.precio_unitario_ars ?? 0),
+        };
+      }),
     },
   };
 }

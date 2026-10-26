@@ -23,7 +23,9 @@ export interface Contact {
   etapa: string;
   mensajes: number;
   ultimo: string; // dd/mm
-  bloqueado: boolean; // recibió marketing en últimas 24h
+  bloqueado: boolean; // recibió marketing hace <10 días y no contestó (tope de frecuencia)
+  /** dd/mm desde cuando se le puede volver a escribir (solo si bloqueado). */
+  bloqueadoHasta?: string;
   en24h: boolean; // último mensaje en últimas 24h (ventana gratuita)
   enListaAI: boolean;
   // Campos del análisis de IA (yamas_send_leads) — opcionales porque un
@@ -36,6 +38,8 @@ export interface Contact {
   keywords?: string[];
   diasInactivo?: number | null;
   consultaUsada?: string | null;
+  /** Etiquetas acumulables (cliente, producto, nuevo...). Ver lib/etiquetas/etiquetas.ts. */
+  etiquetas?: string[];
 }
 
 export type PlanKey = "starter" | "pro" | "uso";
@@ -743,6 +747,7 @@ export type AppSection =
   | "grupos"
   | "templates"
   | "campanas"
+  | "perfil"
   | "ia";
 
 export type StatusState =
@@ -848,6 +853,96 @@ export interface SugerenciaHorario {
   totalAnalizados: number;
 }
 
+// ---------------------------------------------------------------------------
+// Perfil inteligente del negocio
+//
+// Propuesta que infiere la IA (workflow n8n "Perfil del negocio (IA)") a partir
+// de las conversaciones de WhatsApp. Vive en yamas_send_perfil_negocio y NO
+// toca "Datos de la empresa" hasta que el usuario la aplica campo por campo.
+// ---------------------------------------------------------------------------
+
+export type CampoPerfil =
+  | "nombre_empresa"
+  | "rubro"
+  | "descripcion_negocio"
+  | "publico_objetivo"
+  | "zona_cobertura"
+  | "diferenciales"
+  | "tono_comunicacion"
+  | "productos";
+
+export interface PerfilCampoInferido {
+  valor: string;
+  /** 0 a 1: cuánto respaldo tiene en las conversaciones. */
+  confianza: number;
+  /** Citas cortas de los mensajes en los que se apoya. */
+  evidencia: string[];
+  /** Solo en zona_cobertura: lugares puntuales detectados. */
+  ubicaciones?: string[];
+}
+
+export interface PerfilProductoInferido {
+  nombre: string;
+  precio: string;
+  descripcion: string;
+  confianza: number;
+  evidencia: string[];
+}
+
+export interface PerfilNegocioInferido {
+  nombre_empresa?: PerfilCampoInferido;
+  rubro?: PerfilCampoInferido;
+  descripcion_negocio?: PerfilCampoInferido;
+  publico_objetivo?: PerfilCampoInferido;
+  zona_cobertura?: PerfilCampoInferido;
+  diferenciales?: PerfilCampoInferido;
+  tono_comunicacion?: PerfilCampoInferido;
+  productos?: PerfilProductoInferido[];
+}
+
+export type PerfilNegocioEstado = "generando" | "listo" | "error";
+export type DecisionPerfil = "aplicado" | "descartado";
+
+export interface PerfilNegocio {
+  estado: PerfilNegocioEstado;
+  perfil: PerfilNegocioInferido;
+  decisiones: Partial<Record<CampoPerfil, DecisionPerfil>>;
+  /** Claves de novedades que el usuario ignoró (ver lib/perfil/novedades.ts). */
+  ignorados: string[];
+  generadoAt: string | null;
+  mensajesAnalizados: number;
+  /** "sin_conversaciones" o un mensaje legible cuando estado === "error". */
+  error: string | null;
+}
+
+/**
+ * Cambios que el asistente propone sobre "Datos de la empresa". Nunca se
+ * aplican solos: el usuario los revisa y confirma con un botón.
+ */
+export interface PropuestaPerfil {
+  nombreEmpresa?: string;
+  rubro?: string;
+  descripcionNegocio?: string;
+  publicoObjetivo?: string;
+  tonoComunicacion?: string;
+  zonaCobertura?: string;
+  diferenciales?: string;
+  reglasEvitar?: string;
+  /** Alta o actualización por nombre: si existe se pisan precio/descripcion. */
+  productosUpsert?: Producto[];
+  /** Nombres de productos a quitar. */
+  productosQuitar?: string[];
+}
+
+export interface PerfilChatMensaje {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  propuesta?: PropuestaPerfil;
+  /** La propuesta ya se aplicó (o se descartó) y no debe mostrar botones. */
+  propuestaEstado?: "aplicada" | "descartada";
+}
+
 /* ───────────── Actividad de WhatsApp (card de Contactos) ───────────── */
 
 /** Métricas de un período, calculadas sobre el historial de mensajes. */
@@ -898,4 +993,38 @@ export interface Novedades {
   dashboardRespuestaAt: string | null;
   /** Hubo conexión de WhatsApp y ya no está conectada (no cuenta vínculos sin terminar). */
   whatsappDesvinculado: boolean;
+}
+
+/* ───────────── Campañas recurrentes ───────────── */
+
+export type FrecuenciaRecurrencia = "semanal" | "cada_n_dias" | "mensual";
+
+/** Cuándo se repite una campaña. La hora es la de Argentina ("HH:MM"). */
+export interface RecurrenciaConfig {
+  frecuencia: FrecuenciaRecurrencia;
+  /** 1 = lunes … 7 = domingo. Solo para "semanal". */
+  diasSemana: number[];
+  /** Solo para "cada_n_dias". */
+  intervaloDias: number | null;
+  /** 1 a 28. Solo para "mensual". */
+  diaMes: number | null;
+  hora: string;
+  /** null = no termina nunca. */
+  maxOcurrencias: number | null;
+}
+
+/** Una serie de campañas que se repite (yamas_send_campanas_recurrentes). */
+export interface CampanaRecurrente extends RecurrenciaConfig {
+  id: string;
+  nombre: string;
+  listaId: string;
+  templateId: string;
+  listaNombre: string | null;
+  templateNombre: string | null;
+  activa: boolean;
+  proximaEjecucion: string | null;
+  ultimaEjecucion: string | null;
+  ocurrencias: number;
+  /** Por qué falló la última ocurrencia (sin saldo, template no aprobado…). */
+  ultimoError: string | null;
 }

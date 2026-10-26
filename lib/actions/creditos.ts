@@ -1,5 +1,6 @@
 "use server";
 
+import { redondearPrecioPack } from "@/lib/creditos/precio";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/auth/permisos";
 import { getPreciosCreditos, type PreciosCreditos } from "@/lib/creditos/precio";
@@ -149,7 +150,7 @@ export async function iniciarCompraCreditosAction(
     ordenId: r.orden_id,
     packNombre: r.pack_nombre ?? "Créditos",
     creditos: r.creditos ?? 0,
-    montoArs: r.monto_ars ?? 0,
+    montoArs: redondearPrecioPack(r.monto_ars ?? 0),
   });
 
   if (!preferencia.ok) {

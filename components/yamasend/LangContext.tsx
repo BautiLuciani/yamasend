@@ -15,7 +15,8 @@ const i18n = {
     nav_groups: "Audiencias",
     nav_templates: "Templates",
     nav_campaigns: "Campañas",
-    nav_ai: "IA",
+    nav_profile: "Mi Negocio",
+    nav_ai: "Asistente",
     nav_logout: "Cerrar sesión",
 
     // ── Modal de logout ──
@@ -179,7 +180,7 @@ const i18n = {
     campaigns_status_cancelado: "Cancelado",
 
     // ── IA ──
-    ia_title: "Asistente IA",
+    ia_title: "Asistente",
     ia_placeholder: "Escribí tu mensaje…",
     ia_send: "Enviar",
   },
@@ -189,7 +190,8 @@ const i18n = {
     nav_groups: "Audiences",
     nav_templates: "Templates",
     nav_campaigns: "Campaigns",
-    nav_ai: "AI",
+    nav_profile: "My Business",
+    nav_ai: "Assistant",
     nav_logout: "Log out",
 
     logout_title: "Log out?",

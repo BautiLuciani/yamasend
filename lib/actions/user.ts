@@ -1,3 +1,4 @@
+import { bloqueadoPorMarketing, cargarEntrantesRecientes } from "@/lib/campanas/frecuencia";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/auth/permisos";
 import type { AppUser, Contact, EmpresaUser, PlanKey } from "@/lib/types";
@@ -133,7 +134,7 @@ export async function getContactsForTenant(
   const { data: rows, error } = await supabase
     .from("yamas_send_leads")
     .select(
-      "id, telefono, nombre, temperatura, temperatura_manual, temperatura_efectiva, score_interes, interes_nivel, producto_servicio, necesidad, resumen, sentimiento, urgencia, keywords_detectados, conversaciones_count, ultimo_mensaje_at, dias_inactivo, consulta_usada, activo",
+      "id, telefono, nombre, temperatura, temperatura_manual, temperatura_efectiva, score_interes, interes_nivel, producto_servicio, necesidad, resumen, sentimiento, urgencia, keywords_detectados, conversaciones_count, ultimo_mensaje_at, dias_inactivo, consulta_usada, activo, etiquetas, lid, ultima_campana_enviada_at",
     )
     .eq("tenant_id", tenantId)
     .eq("activo", true)
@@ -144,6 +145,15 @@ export async function getContactsForTenant(
 
   const ahora = Date.now();
   const hace24hMs = ahora - 24 * 60 * 60 * 1000;
+
+  // Tope de marketing: recibió una campaña hace menos de 10 días y no contestó.
+  // Si no se puede calcular, nadie queda bloqueado (mejor mostrar que ocultar).
+  let entrantes: Awaited<ReturnType<typeof cargarEntrantesRecientes>> | null = null;
+  try {
+    entrantes = await cargarEntrantesRecientes(supabase, tenantId, ahora);
+  } catch {
+    entrantes = null;
+  }
 
   const esScoreValido = (v: string | null): v is "caliente" | "tibio" | "frio" =>
     v === "caliente" || v === "tibio" || v === "frio";
@@ -173,7 +183,19 @@ export async function getContactsForTenant(
       etapa: r.interes_nivel ?? "contacto",
       mensajes: r.conversaciones_count ?? 0,
       ultimo: ultimoFormateado,
-      bloqueado: false,
+      bloqueado: entrantes
+        ? bloqueadoPorMarketing(
+            { telefono: r.telefono, lid: (r as { lid?: string | null }).lid ?? null, ultimaCampanaEnviadaAt: (r as { ultima_campana_enviada_at?: string | null }).ultima_campana_enviada_at ?? null },
+            entrantes,
+            ahora,
+          )
+        : false,
+      bloqueadoHasta: (() => {
+        const u = (r as { ultima_campana_enviada_at?: string | null }).ultima_campana_enviada_at;
+        if (!u || !entrantes) return undefined;
+        const hasta = new Date(new Date(u).getTime() + 10 * 24 * 60 * 60 * 1000);
+        return `${String(hasta.getDate()).padStart(2, "0")}/${String(hasta.getMonth() + 1).padStart(2, "0")}`;
+      })(),
       en24h,
       enListaAI: false,
       necesidad: r.necesidad ?? undefined,
@@ -184,6 +206,7 @@ export async function getContactsForTenant(
       keywords: r.keywords_detectados ?? [],
       diasInactivo: r.dias_inactivo,
       consultaUsada: r.consulta_usada,
+      etiquetas: r.etiquetas ?? [],
     };
   });
 }

@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ContactList, SugerenciaHorario, Template } from "@/lib/types";
+import type { ContactList, RecurrenciaConfig, SugerenciaHorario, Template } from "@/lib/types";
+import {
+  DIAS_SEMANA,
+  RECURRENCIA_POR_DEFECTO,
+  describirRecurrencia,
+  validarRecurrencia,
+} from "@/lib/campanas/recurrencia";
 
 type Paso = 1 | 2 | 3 | 4;
 
@@ -35,8 +41,10 @@ interface CampaignWizardModalProps {
     listaId: string;
     templateId: string;
     contactosIds: string[];
-    momento: "ahora" | "programar";
+    momento: "ahora" | "programar" | "repetir";
     fechaProgramada: string | null;
+    /** Solo con momento "repetir": cuándo se repite. */
+    recurrencia: RecurrenciaConfig | null;
   }) => Promise<{ error: string | null }>;
   /**
    * Valores iniciales para precargar el wizard, usado por "Duplicar
@@ -78,7 +86,8 @@ export default function CampaignWizardModal({
   const [listaId, setListaId] = useState<string | null>(initial?.listaId ?? null);
   const [templateId, setTemplateId] = useState<string | null>(initial?.templateId ?? null);
   const [nombre, setNombre] = useState(initial?.nombre ?? "");
-  const [momento, setMomento] = useState<"ahora" | "programar">("ahora");
+  const [momento, setMomento] = useState<"ahora" | "programar" | "repetir">("ahora");
+  const [recurrencia, setRecurrencia] = useState<RecurrenciaConfig>(RECURRENCIA_POR_DEFECTO);
   const [fechaProgramada, setFechaProgramada] = useState(defaultFechaProgramada());
   const [buscarAudiencia, setBuscarAudiencia] = useState("");
   const [buscarTpl, setBuscarTpl] = useState("");
@@ -150,6 +159,7 @@ export default function CampaignWizardModal({
     setTemplateId(initial?.templateId ?? null);
     setNombre(initial?.nombre ?? "");
     setMomento("ahora");
+    setRecurrencia(RECURRENCIA_POR_DEFECTO);
     setFechaProgramada(defaultFechaProgramada());
     setBuscarAudiencia("");
     setBuscarTpl("");
@@ -206,6 +216,7 @@ export default function CampaignWizardModal({
         momento === "programar" && fechaProgramada
           ? new Date(fechaProgramada).toISOString()
           : null,
+      recurrencia: momento === "repetir" ? recurrencia : null,
     });
     setEnviando(false);
     if (result.error) {
@@ -232,10 +243,19 @@ export default function CampaignWizardModal({
             </svg>
           </div>
           <div className="text-xl font-extrabold tracking-[-0.02em] text-ys-text">
-            ¡Campaña enviada!
+            {momento === "repetir" ? "¡Repetición programada!" : "¡Campaña enviada!"}
           </div>
           <div className="text-sm text-ys-muted font-medium text-center max-w-[360px]">
-            &ldquo;{nombre}&rdquo; se está enviando a {destinatarios} contacto{destinatarios === 1 ? "" : "s"} de {lista?.nombre}.
+            {momento === "repetir" ? (
+              <>
+                &ldquo;{nombre}&rdquo; se va a enviar a {lista?.nombre}: {describirRecurrencia(recurrencia).toLowerCase()}.
+                Podés pausarla o eliminarla desde Campañas.
+              </>
+            ) : (
+              <>
+                &ldquo;{nombre}&rdquo; se está enviando a {destinatarios} contacto{destinatarios === 1 ? "" : "s"} de {lista?.nombre}.
+              </>
+            )}
           </div>
           <button
             onClick={() => {
@@ -477,7 +497,7 @@ export default function CampaignWizardModal({
 
               <div className="flex flex-col gap-2.5">
                 <div className="text-[13px] font-extrabold text-ys-text">Momento del envío</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <button
                     onClick={() => setMomento("ahora")}
                     className={`border-[1.5px] rounded-[14px] px-4 py-3.5 flex items-center gap-3 cursor-pointer transition-colors text-left ${
@@ -517,6 +537,28 @@ export default function CampaignWizardModal({
                       <div className="text-[11.5px] text-ys-dim font-semibold">Elegí fecha y hora</div>
                     </div>
                     {momento === "programar" && (
+                      <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
+                        <circle cx="8" cy="8" r="7" fill="#12B76A" />
+                        <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setMomento("repetir")}
+                    className={`border-[1.5px] rounded-[14px] px-4 py-3.5 flex items-center gap-3 cursor-pointer transition-colors text-left ${
+                      momento === "repetir" ? "border-ys-green bg-ys-green-bg" : "border-ys-border"
+                    }`}
+                  >
+                    <div className="w-[34px] h-[34px] flex-none rounded-[11px] bg-ys-green-bg flex items-center justify-center">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 7.5V6.5A2.5 2.5 0 0 1 5.5 4H13M13 4l-2-2M13 4l-2 2M13 8.5v1A2.5 2.5 0 0 1 10.5 12H3M3 12l2 2M3 12l2-2" stroke="#067647" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-0.5">
+                      <div className="text-[13.5px] font-bold text-ys-text">Repetir</div>
+                      <div className="text-[11.5px] text-ys-dim font-semibold">Todas las semanas, cada N días…</div>
+                    </div>
+                    {momento === "repetir" && (
                       <svg width="18" height="18" viewBox="0 0 16 16" fill="none">
                         <circle cx="8" cy="8" r="7" fill="#12B76A" />
                         <path d="m4.6 8.3 2.3 2.2L11.4 6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -575,23 +617,170 @@ export default function CampaignWizardModal({
                   </div>
                 )}
 
+                {momento === "repetir" && (
+                  <div className="flex flex-col gap-3 border border-ys-border rounded-[14px] px-4 py-4">
+                    <div className="flex flex-col gap-[7px]">
+                      <div className="text-[13px] font-extrabold text-ys-text">Cada cuánto</div>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {(
+                          [
+                            { key: "semanal", label: "Días de la semana" },
+                            { key: "cada_n_dias", label: "Cada N días" },
+                            { key: "mensual", label: "Una vez al mes" },
+                          ] as const
+                        ).map((f) => (
+                          <button
+                            key={f.key}
+                            type="button"
+                            aria-pressed={recurrencia.frecuencia === f.key}
+                            onClick={() => setRecurrencia((r) => ({ ...r, frecuencia: f.key }))}
+                            className={`px-3.5 h-10 rounded-[10px] text-[13px] cursor-pointer transition-colors border ${
+                              recurrencia.frecuencia === f.key
+                                ? "border-ys-green bg-ys-green-bg font-extrabold text-ys-green-text"
+                                : "border-ys-border font-bold text-ys-muted hover:text-ys-text"
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {recurrencia.frecuencia === "semanal" && (
+                      <div className="flex flex-col gap-[7px]">
+                        <div className="text-[13px] font-extrabold text-ys-text">Qué días</div>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {DIAS_SEMANA.map((d) => {
+                            const on = recurrencia.diasSemana.includes(d.n);
+                            return (
+                              <button
+                                key={d.n}
+                                type="button"
+                                aria-pressed={on}
+                                aria-label={d.largo}
+                                title={d.largo}
+                                onClick={() =>
+                                  setRecurrencia((r) => ({
+                                    ...r,
+                                    diasSemana: on ? r.diasSemana.filter((x) => x !== d.n) : [...r.diasSemana, d.n],
+                                  }))
+                                }
+                                className={`w-10 h-10 rounded-[10px] text-[13px] cursor-pointer transition-colors border ${
+                                  on
+                                    ? "border-ys-green bg-ys-green text-[#04210f] font-extrabold"
+                                    : "border-ys-border font-bold text-ys-muted hover:text-ys-text"
+                                }`}
+                              >
+                                {d.corto}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {recurrencia.frecuencia === "cada_n_dias" && (
+                      <label className="flex items-center gap-2.5 text-[13px] font-bold text-ys-text">
+                        Cada
+                        <input
+                          type="number"
+                          min={1}
+                          max={90}
+                          value={recurrencia.intervaloDias ?? ""}
+                          onChange={(e) =>
+                            setRecurrencia((r) => ({ ...r, intervaloDias: e.target.value ? Number(e.target.value) : null }))
+                          }
+                          className="w-[88px] border border-ys-border rounded-[10px] px-3 py-2.5 text-[13.5px] font-semibold outline-none focus:border-ys-green"
+                        />
+                        días
+                      </label>
+                    )}
+
+                    {recurrencia.frecuencia === "mensual" && (
+                      <label className="flex items-center gap-2.5 text-[13px] font-bold text-ys-text">
+                        El día
+                        <input
+                          type="number"
+                          min={1}
+                          max={28}
+                          value={recurrencia.diaMes ?? ""}
+                          onChange={(e) =>
+                            setRecurrencia((r) => ({ ...r, diaMes: e.target.value ? Number(e.target.value) : null }))
+                          }
+                          className="w-[88px] border border-ys-border rounded-[10px] px-3 py-2.5 text-[13.5px] font-semibold outline-none focus:border-ys-green"
+                        />
+                        de cada mes (1 a 28)
+                      </label>
+                    )}
+
+                    <div className="flex items-center gap-4 flex-wrap">
+                      <label className="flex items-center gap-2.5 text-[13px] font-bold text-ys-text">
+                        A las
+                        <input
+                          type="time"
+                          value={recurrencia.hora}
+                          onChange={(e) => setRecurrencia((r) => ({ ...r, hora: e.target.value }))}
+                          className="border border-ys-border rounded-[10px] px-3 py-2.5 text-[13.5px] font-semibold outline-none focus:border-ys-green"
+                        />
+                        <span className="text-[12px] font-semibold text-ys-dim">hora de Argentina</span>
+                      </label>
+                    </div>
+
+                    <label className="flex items-center gap-2.5 text-[13px] font-bold text-ys-text flex-wrap">
+                      Termina
+                      <select
+                        value={recurrencia.maxOcurrencias === null ? "nunca" : "veces"}
+                        onChange={(e) =>
+                          setRecurrencia((r) => ({ ...r, maxOcurrencias: e.target.value === "nunca" ? null : 4 }))
+                        }
+                        className="border border-ys-border rounded-[10px] px-3 py-2.5 text-[13.5px] font-semibold outline-none focus:border-ys-green bg-white"
+                      >
+                        <option value="nunca">Nunca (hasta que la pause)</option>
+                        <option value="veces">Después de…</option>
+                      </select>
+                      {recurrencia.maxOcurrencias !== null && (
+                        <>
+                          <input
+                            type="number"
+                            min={1}
+                            max={365}
+                            value={recurrencia.maxOcurrencias}
+                            onChange={(e) =>
+                              setRecurrencia((r) => ({ ...r, maxOcurrencias: e.target.value ? Number(e.target.value) : 1 }))
+                            }
+                            className="w-[80px] border border-ys-border rounded-[10px] px-3 py-2.5 text-[13.5px] font-semibold outline-none focus:border-ys-green"
+                          />
+                          envíos
+                        </>
+                      )}
+                    </label>
+
+                    <div className="text-[12.5px] leading-[1.5] font-semibold text-ys-green-text bg-ys-green-bg rounded-[10px] px-3.5 py-2.5">
+                      {validarRecurrencia(recurrencia) ?? `${describirRecurrencia(recurrencia)}.`} Cada envío usa los contactos que la
+                      audiencia tenga ese día y reserva sus créditos con anticipación.
+                    </div>
+                  </div>
+                )}
+
                 <div className="text-[12.5px] text-ys-muted font-medium">
-                  {momento === "programar"
-                    ? "La campaña se enviará automáticamente en la fecha y hora elegidas."
-                    : "La campaña comenzará a enviarse después de confirmar."}
+                  {momento === "repetir"
+                    ? "La campaña se repite sola hasta que la pauses o la elimines."
+                    : momento === "programar"
+                      ? "La campaña se enviará automáticamente en la fecha y hora elegidas."
+                      : "La campaña comenzará a enviarse después de confirmar."}
                 </div>
               </div>
 
-              <div className="bg-ys-dark rounded-2xl px-5 py-[18px] flex flex-col gap-2.5">
+              <div className="bg-ys-green-bg border border-ys-green-border rounded-2xl px-5 py-[18px] flex flex-col gap-2.5">
                 <div className="flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style={{ animation: "ys-spark 3.2s ease-in-out infinite" }}>
                     <path d="m8 2 1.6 3.6L13 7l-3.4 1.4L8 12 6.4 8.4 3 7l3.4-1.4L8 2Z" stroke="#12B76A" strokeWidth="1.5" strokeLinejoin="round" />
                   </svg>
-                  <div className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-ys-green">
-                    Insight de IA
+                  <div className="text-[11px] font-extrabold tracking-[0.12em] uppercase text-ys-green-text">
+                    Insight del Asistente
                   </div>
                 </div>
-                <div className="text-sm leading-[1.55] text-ys-border-softest font-semibold">
+                <div className="text-sm leading-[1.55] text-ys-text font-semibold">
                   {insightCargando
                     ? "Analizando tus campañas anteriores..."
                     : insight ??
@@ -603,7 +792,11 @@ export default function CampaignWizardModal({
               onBack={() => setPaso(2)}
               backLabel="Atrás"
               onNext={() => setPaso(4)}
-              nextDisabled={!nombre.trim() || (momento === "programar" && !fechaProgramada)}
+              nextDisabled={
+                !nombre.trim() ||
+                (momento === "programar" && !fechaProgramada) ||
+                (momento === "repetir" && validarRecurrencia(recurrencia) !== null)
+              }
             />
           </>
         )}
@@ -637,7 +830,9 @@ export default function CampaignWizardModal({
                   <div className="text-[13.5px] font-bold text-ys-text">
                     {momento === "ahora"
                       ? "Ahora"
-                      : fechaProgramada
+                      : momento === "repetir"
+                        ? describirRecurrencia(recurrencia)
+                        : fechaProgramada
                         ? new Date(fechaProgramada).toLocaleString("es-AR", {
                             day: "2-digit",
                             month: "2-digit",
@@ -724,7 +919,11 @@ export default function CampaignWizardModal({
             {confirmando ? (
               <div className="border-t border-ys-border-soft px-6 md:px-7 py-4 flex flex-col gap-3">
                 <div className="text-[13.5px] font-semibold text-ys-text">
-                  ¿Enviar esta campaña ahora a {destinatarios} contactos?
+                  {momento === "repetir"
+                    ? `¿Programar esta campaña? ${describirRecurrencia(recurrencia)}, a ${destinatarios} contactos.`
+                    : momento === "programar"
+                      ? `¿Programar esta campaña para ${destinatarios} contactos?`
+                      : `¿Enviar esta campaña ahora a ${destinatarios} contactos?`}
                 </div>
                 <div className="flex justify-end gap-2.5">
                   <button
@@ -739,7 +938,7 @@ export default function CampaignWizardModal({
                     disabled={enviando}
                     className="text-[13.5px] font-bold text-white bg-ys-green rounded-[10px] px-[18px] py-2.5 cursor-pointer transition-all hover:bg-ys-green-hover disabled:opacity-60"
                   >
-                    {enviando ? "Enviando..." : "Sí, enviar"}
+                    {enviando ? (momento === "ahora" ? "Enviando..." : "Guardando...") : momento === "ahora" ? "Sí, enviar" : "Sí, programar"}
                   </button>
                 </div>
               </div>
@@ -753,7 +952,7 @@ export default function CampaignWizardModal({
                 // El gate autoritativo sigue siendo la reserva en Postgres:
                 // esto es la advertencia temprana, no la barrera.
                 nextDisabled={sinCreditos}
-                nextLabel={sinCreditos ? "Créditos insuficientes" : "Enviar campaña"}
+                nextLabel={sinCreditos ? "Créditos insuficientes" : momento === "ahora" ? "Enviar campaña" : "Programar campaña"}
               />
             )}
           </>

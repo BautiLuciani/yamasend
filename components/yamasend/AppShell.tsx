@@ -1,9 +1,11 @@
 "use client";
 
+import { getConexionYcloudAction } from "@/lib/actions/ycloud";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type {
   AppSection,
+  CampanaRecurrente,
   AppUser,
   Campaign,
   CampaignStatus,
@@ -40,11 +42,34 @@ import { getSugerenciaHorarioAction } from "@/lib/actions/horarios";
 const IA_CONVERSACION_ABIERTA_KEY = "ys-ia-conversacion-abierta";
 import CampaignDetailModal from "./CampaignDetailModal";
 import IA from "./IA";
+import Perfil from "./Perfil";
+import CampanasSugeridas from "./CampanasSugeridas";
+import CampanasRecurrentes from "./CampanasRecurrentes";
+import {
+  crearRecurrenteAction,
+  eliminarRecurrenteAction,
+  getRecurrentesAction,
+  pausarRecurrenteAction,
+} from "@/lib/actions/recurrentes";
+import { describirRecurrencia } from "@/lib/campanas/recurrencia";
+import EtiquetarSeleccionModal from "./EtiquetarSeleccionModal";
+import { etiquetarContactosAction, quitarEtiquetasAction } from "@/lib/actions/etiquetas";
+import { contarEtiquetas, mostrarEtiqueta, normalizarEtiquetas } from "@/lib/etiquetas/etiquetas";
+import type { CrearAudienciaSugeridaResult } from "@/lib/actions/campanas_sugeridas";
 import ProfileDrawer from "./ProfileDrawer";
 import MyProfileModal from "./MyProfileModal";
 import ConfiguracionModal from "./ConfiguracionModal";
 import LogoutModal from "./LogoutModal";
-import KpiRow from "./KpiRow";
+import ContactosBarra, { type OrdenKey, type ScoreFiltro } from "./ContactosBarra";
+import NombrarAudienciaModal from "./NombrarAudienciaModal";
+import {
+  BarBtn,
+  SectionBody,
+  SectionHeader,
+  SectionPage,
+  SelectionBar,
+  pluralizar,
+} from "./SectionChrome";
 import ContactsTable from "./ContactsTable";
 import ContactsPagination from "./ContactsPagination";
 import QrImportModal from "./QrImportModal";
@@ -52,7 +77,7 @@ import SyncConfigModal from "./SyncConfigModal";
 import WahaRequiredModal from "./WahaRequiredModal";
 import ContactDetailModal from "./ContactDetailModal";
 import ExcluirMotorModal from "./ExcluirMotorModal";
-import ContactosExcluidosLista, { VistaContactosTabs } from "./ContactosExcluidosLista";
+import ContactosExcluidosLista from "./ContactosExcluidosLista";
 import {
   deshacerAudienciasIAAction,
   enviarTemplatesProductoAction,
@@ -119,6 +144,32 @@ import { createClient } from "@/lib/supabase/client";
 // URL del workflow de n8n que genera/consulta la sesión de WhatsApp (WAHA).
 // Devuelve una imagen PNG (QR para escanear) o un JSON { status: "WORKING", ... }
 // si la sesión ya está conectada.
+/**
+ * Contactos que pasan los filtros de la barra. El score elige entre sí
+ * (caliente O tibio) y las etiquetas se acumulan (tiene que tener TODAS).
+ */
+function filtrarContactos(
+  contacts: Contact[],
+  f: { filt: Set<KpiFilterKey>; tagFilt: string[]; q: string; modo24h: boolean },
+): Contact[] {
+  const q = f.q.trim().toLowerCase();
+  const scores = (["caliente", "tibio", "frio"] as const).filter((s) => f.filt.has(s));
+  return contacts.filter((c) => {
+    if (c.bloqueado && !f.modo24h) return false;
+    if (f.filt.has("24h") && !c.en24h) return false;
+    if (f.filt.has("cliente") && c.etapa !== "cerrado") return false;
+    if (f.filt.has("ai") && !c.enListaAI) return false;
+    if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio")) return false;
+    if (f.tagFilt.length > 0 && !f.tagFilt.every((t) => (c.etiquetas ?? []).includes(t))) return false;
+    if (q) {
+      const nombre = (c.nombre || "").toLowerCase();
+      const tel = (c.tel || "").toLowerCase();
+      if (!nombre.includes(q) && !tel.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
 const WAHA_QR_WEBHOOK_URL =
   "https://yamasai.app.n8n.cloud/webhook/95d3bbe5-0888-46aa-a28e-b7372ec4f605";
 
@@ -424,6 +475,21 @@ export default function AppShell({
   // inicial, para no dejar pasar un "Analizar" antes de tener certeza.
   const [wahaConectada, setWahaConectada] = useState<boolean | null>(null);
 
+  // Cuentas conectadas por YCloud (coexistencia): no tienen sesión de WAHA, así
+  // que "vinculado" también se cumple si la cuenta tiene número, WABA y la
+  // clave de plataforma. Sin esto, esas cuentas aparecían "sin vincular".
+  const [ycloudLista, setYcloudLista] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelado = false;
+    getConexionYcloudAction().then((c) => {
+      if (!cancelado) setYcloudLista(c.lista);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+  const whatsappVinculado: boolean | null = ycloudLista === true ? true : wahaConectada;
+
   useEffect(() => {
     isWahaConectadaAction().then(setWahaConectada);
   }, []);
@@ -457,12 +523,57 @@ export default function AppShell({
     };
   }, [realtimeClient, user.tenantId]);
 
+  // Chequeo real contra WAHA para el botón fijo "Vincular WhatsApp": el webhook
+  // del QR contesta JSON con status WORKING si la sesión está viva y la imagen
+  // del QR si no. La base y Realtime pueden quedar atrasadas (la sesión se
+  // cae desde el celular), así que se vuelve a preguntar al abrir, al volver a
+  // la pestaña y cada tanto. Si el chequeo falla, se queda con el último estado.
+  const verificarWaha = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch(WAHA_QR_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: session.access_token,
+      });
+      if (!res.ok) return;
+      if ((res.headers.get("content-type") || "").includes("application/json")) {
+        const data = await res.json();
+        if (data.status === "WORKING") setWahaConectada(true);
+        return;
+      }
+      setWahaConectada(false);
+    } catch {
+      // sin cambios
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user.permisos.importar_contactos) return;
+    const inicial = setTimeout(verificarWaha, 0);
+    const alVolver = () => {
+      if (document.visibilityState === "visible") verificarWaha();
+    };
+    document.addEventListener("visibilitychange", alVolver);
+    const id = setInterval(alVolver, 120_000);
+    return () => {
+      document.removeEventListener("visibilitychange", alVolver);
+      clearInterval(id);
+      clearTimeout(inicial);
+    };
+  }, [verificarWaha, user.permisos.importar_contactos]);
+
   const VALID_SECTIONS: AppSection[] = [
     "dashboard",
     "contactos",
     "grupos",
     "templates",
     "campanas",
+    "perfil",
     "ia",
   ];
 
@@ -492,10 +603,10 @@ export default function AppShell({
 
   // Avisos (puntitos) del sidebar: "pasó algo en esta sección". Ver
   // useAvisosSidebar para qué secciones tienen aviso y por qué.
-  const { avisos: avisosSidebar, marcarSecciones } = useAvisosSidebar({
+  const { avisos: avisosSidebar, conteos: conteosSidebar, marcarSecciones } = useAvisosSidebar({
     tenantId: user.tenantId,
     activeSection,
-    whatsappConectado: wahaConectada,
+    whatsappConectado: whatsappVinculado,
   });
   const avisoMenuMobile = Object.values(avisosSidebar).includes("atencion")
     ? "atencion"
@@ -504,8 +615,9 @@ export default function AppShell({
       : null;
 
   function setActiveSection(section: AppSection) {
-    // La sección que se deja y la que se abre quedan como vistas.
-    marcarSecciones([activeSection, section]);
+    // Al entrar a una sección, sus novedades quedan como vistas. La que se
+    // deja NO se marca: si pasó algo mientras estabas ahí, el globo sigue.
+    marcarSecciones([section]);
     setActiveSectionState(section);
     if (typeof window !== "undefined") {
       const url = new URL(window.location.href);
@@ -526,7 +638,7 @@ export default function AppShell({
   // Sección con la que abrir Mi Perfil. "creditos" cuando se llega desde un
   // botón de comprar; undefined cuando se abre normal desde el menú.
   const [myProfileSeccion, setMyProfileSeccion] = useState<
-    "personal" | "security" | "agency" | "creditos" | undefined
+    "personal" | "security" | "agency" | "creditos" | "whatsapp" | undefined
   >(undefined);
 
   // Atajo compartido por el dashboard y el wizard: llevar a comprar créditos
@@ -540,6 +652,9 @@ export default function AppShell({
   const [filt, setFilt] = useState<Set<KpiFilterKey>>(new Set());
   const [modo24h, setModo24h] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
+  const [tagFilt, setTagFilt] = useState<string[]>([]);
+  const [ordenKey, setOrdenKey] = useState<OrdenKey | null>(null);
+  const [ordenDir, setOrdenDir] = useState<"asc" | "desc">("asc");
   const [contactPage, setContactPage] = useState(1);
   const CONTACTS_PER_PAGE = 15;
 
@@ -575,6 +690,13 @@ export default function AppShell({
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [detailTemplate, setDetailTemplate] = useState<Template | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [etiquetarSelOpen, setEtiquetarSelOpen] = useState(false);
+  const [nombrarAudienciaOpen, setNombrarAudienciaOpen] = useState(false);
+  // Audiencias recién armadas por las campañas sugeridas. La prop `lists` viene
+  // del Server Component y tarda un refresh en incluirlas; mientras tanto el
+  // asistente de campañas las necesita ya, así que se suman acá (sin duplicar).
+  const [listasExtra, setListasExtra] = useState<ContactList[]>([]);
+  const listasVisibles = [...lists, ...listasExtra.filter((e) => !lists.some((l) => l.id === e.id))];
   const [detailCampaignId, setDetailCampaignId] = useState<string | null>(null);
   const [wizardInitial, setWizardInitial] = useState<{
     nombre: string;
@@ -785,6 +907,26 @@ export default function AppShell({
   };
 
   const [messages, setMessages] = useState<ChatMessage[]>([IA_MENSAJE_BIENVENIDA]);
+
+  // Globo del menú: cuántos mensajes generó el Asistente mientras estabas en
+  // otra sección. Se apaga al entrar a Asistente.
+  const [iaNoLeidos, setIaNoLeidos] = useState(0);
+  const iaBotPrevios = useRef(0);
+  useEffect(() => {
+    const bots = messages.filter((m) => m.type === "bot" && m.id !== "welcome").length;
+    const nuevos = bots - iaBotPrevios.current;
+    iaBotPrevios.current = bots;
+    if (nuevos > 0 && activeSection !== "ia") {
+      const t = setTimeout(() => setIaNoLeidos((n) => n + nuevos), 0);
+      return () => clearTimeout(t);
+    }
+  }, [messages, activeSection]);
+  useEffect(() => {
+    if (activeSection === "ia") {
+      const t = setTimeout(() => setIaNoLeidos(0), 0);
+      return () => clearTimeout(t);
+    }
+  }, [activeSection]);
   const [iaFlowState, setIaFlowState] = useState<IAFlowState>(IA_FLOW_IDLE);
   const [iaSending, setIaSending] = useState(false);
   const [iaConversacionId, setIaConversacionId] = useState<string | null>(null);
@@ -1008,10 +1150,60 @@ export default function AppShell({
   const [excluidosCargando, setExcluidosCargando] = useState(true);
   const [vistaContactos, setVistaContactos] = useState<"todos" | "excluidos">("todos");
   const [excluirModalOpen, setExcluirModalOpen] = useState(false);
+
+  // Series de campañas que se repiten. Se leen al entrar a Campañas y después
+  // de cada cambio; si la migración todavía no está aplicada, queda vacío.
+  const [recurrentes, setRecurrentes] = useState<CampanaRecurrente[]>([]);
+  const recargarRecurrentes = useCallback(async () => {
+    const r = await getRecurrentesAction();
+    if (r.disponible) setRecurrentes(r.recurrentes);
+  }, []);
+
+  useEffect(() => {
+    if (activeSection !== "campanas") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- carga al entrar a la sección
+    void recargarRecurrentes();
+  }, [activeSection, recargarRecurrentes]);
+
+  // Etiquetas en vivo: un contacto que escribe recién queda etiquetado en la base
+  // en el acto; acá se vuelve a leer la lista mientras Contactos está a la vista
+  // para que se vea sin recargar. Solo con la pestaña visible y sin selección
+  // en curso (refrescar no debería pisar lo que la persona está armando).
+  useEffect(() => {
+    if (activeSection !== "contactos" || sel.size > 0) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 60_000);
+    return () => clearInterval(id);
+  }, [activeSection, sel.size, router]);
+
+  // Link directo a Mi perfil: /panel?mi_perfil=whatsapp (para pegar la API key
+  // de YCloud). Se abre una sola vez al entrar y se saca de la URL.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("mi_perfil");
+    if (p !== "whatsapp" && p !== "creditos" && p !== "agency") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- apertura por link, una sola vez
+    setMyProfileSeccion(p);
+    setMyProfileOpen(true);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("mi_perfil");
+    window.history.replaceState(null, "", url.toString());
+  }, []);
+
+  // Escape sale de la selección de Contactos: la barra flotante no tiene
+  // botón "Deseleccionar".
+  useEffect(() => {
+    if (activeSection !== "contactos" || sel.size === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSel(new Set());
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [activeSection, sel.size]);
   const [excluyendo, setExcluyendo] = useState(false);
   // Se incrementa al cambiar la lista para que la card de actividad (que
   // tampoco cuenta a los excluidos) se refresque en el acto.
-  const [actividadVersion, setActividadVersion] = useState(0);
+  const [, setActividadVersion] = useState(0);
 
   const recargarExcluidos = useCallback(async () => {
     try {
@@ -1053,11 +1245,11 @@ export default function AppShell({
     try {
       res = await setExclusionMotorAction(telefonos, true);
     } catch {
-      notificar("No se pudo excluir del motor. Revisá tu conexión y probá de nuevo.", "error");
+      notificar("No se pudo excluir el contacto. Revisá tu conexión y probá de nuevo.", "error");
       return false;
     }
     if (!res.ok) {
-      notificar(res.error ?? "No se pudo excluir del motor.", "error");
+      notificar(res.error ?? "No se pudo excluir el contacto.", "error");
       return false;
     }
     await recargarExcluidos();
@@ -1065,8 +1257,8 @@ export default function AppShell({
     const n = telefonos.length;
     notificar(
       n === 1
-        ? "Listo, el motor ya no tiene en cuenta ese contacto. Lo ves en la pestaña “Excluidos”."
-        : `Listo, el motor ya no tiene en cuenta esos ${n} contactos. Los ves en la pestaña “Excluidos”.`,
+        ? "Listo, ese contacto ya no recibe campañas ni entra en tus audiencias. Lo ves en la pestaña “Excluidos”."
+        : `Listo, esos ${n} contactos ya no reciben campañas ni entran en tus audiencias. Los ves en la pestaña “Excluidos”.`,
     );
     return true;
   }
@@ -1104,30 +1296,43 @@ export default function AppShell({
     }
     await recargarExcluidos();
     setActividadVersion((v) => v + 1);
-    notificar("Listo, el motor vuelve a tener en cuenta ese contacto.");
+    notificar("Listo, ese contacto vuelve a recibir campañas.");
   }
 
   // ── filtrado combinado, replicando la lógica del original ──
   const visibleContacts = useMemo(() => {
-    const q = contactSearch.trim().toLowerCase();
-    return contactsActivos.filter((c) => {
-      if (c.bloqueado && !modo24h) return false;
-      if (filt.has("24h") && !c.en24h) return false;
-      if (filt.has("cliente") && c.etapa !== "cerrado") return false;
-      if (filt.has("ai") && !c.enListaAI) return false;
-      const scores = (["caliente", "tibio", "frio"] as const).filter((s) =>
-        filt.has(s),
-      );
-      if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
-        return false;
-      if (q) {
-        const nombre = (c.nombre || "").toLowerCase();
-        const tel = (c.tel || "").toLowerCase();
-        if (!nombre.includes(q) && !tel.includes(q)) return false;
+    const filtradas = filtrarContactos(contactsActivos, { filt, tagFilt, q: contactSearch, modo24h });
+    if (!ordenKey) return filtradas;
+
+    const dir = ordenDir === "asc" ? 1 : -1;
+    const clave = (c: Contact): string | number | null => {
+      switch (ordenKey) {
+        case "nombre":
+          return (c.nombre || "").trim().toLowerCase() || null;
+        case "tel":
+          return c.tel || null;
+        case "etiquetas":
+          return (c.etiquetas ?? []).join(" ") || null;
+        case "score":
+          return c.score === "caliente" ? 0 : c.score === "tibio" ? 1 : c.score === "frio" ? 2 : null;
+        case "mensajes":
+          return c.mensajes;
+        // Ascendente = el mensaje más viejo primero.
+        case "ultimo":
+          return typeof c.diasInactivo === "number" ? -c.diasInactivo : null;
       }
-      return true;
+    };
+    // Lo que no tiene valor va siempre al final, sea cual sea el sentido.
+    return [...filtradas].sort((x, y) => {
+      const a = clave(x);
+      const b = clave(y);
+      if (a === null && b === null) return 0;
+      if (a === null) return 1;
+      if (b === null) return -1;
+      if (typeof a === "number" && typeof b === "number") return (a - b) * dir;
+      return String(a).localeCompare(String(b), "es") * dir;
     });
-  }, [contactsActivos, filt, modo24h, contactSearch]);
+  }, [contactsActivos, filt, modo24h, contactSearch, tagFilt, ordenKey, ordenDir]);
 
   const contactTotalPages = Math.max(
     1,
@@ -1139,86 +1344,66 @@ export default function AppShell({
     return visibleContacts.slice(start, start + CONTACTS_PER_PAGE);
   }, [visibleContacts, contactPageSafe]);
 
-  const counts = useMemo(
-    () => ({
-      total: contactsActivos.filter((c) => !c.bloqueado).length,
-      clientes: contactsActivos.filter((c) => !c.bloqueado && c.etapa === "cliente")
-        .length,
-      ai: contactsActivos.filter((c) => c.enListaAI).length,
-      h24: contactsActivos.filter((c) => c.en24h).length,
-      caliente: contactsActivos.filter((c) => !c.bloqueado && c.score === "caliente")
-        .length,
-      tibio: contactsActivos.filter((c) => !c.bloqueado && c.score === "tibio")
-        .length,
-      frio: contactsActivos.filter((c) => !c.bloqueado && c.score === "frio").length,
-    }),
-    [contactsActivos],
-  );
-
-  function recomputeSelFromFilters(nextFilt: Set<KpiFilterKey>, next24h: boolean) {
-    const next = new Set<string>();
-    contactsActivos.forEach((c) => {
-      if (c.bloqueado && !next24h) return;
-      if (nextFilt.has("24h") && !c.en24h) return;
-      if (nextFilt.has("cliente") && c.etapa !== "cerrado") return;
-      if (nextFilt.has("ai") && !c.enListaAI) return;
-      const scores = (["caliente", "tibio", "frio"] as const).filter((s) =>
-        nextFilt.has(s),
-      );
-      if (scores.length > 0 && !scores.includes(c.score as "caliente" | "tibio" | "frio"))
-        return;
-      next.add(c.id);
-    });
-    setSel(next);
+  // Lo que queda filtrado queda seleccionado: esa selección es la que después se
+  // vuelve audiencia. Sin filtros no se selecciona nada solo.
+  function seleccionarFiltrados(next: { filt: Set<KpiFilterKey>; tagFilt: string[]; q: string }) {
+    const hay = next.filt.size > 0 || next.tagFilt.length > 0 || next.q.trim() !== "";
+    setSel(hay ? new Set(filtrarContactos(contactsActivos, { ...next, modo24h }).map((c) => c.id)) : new Set());
   }
 
   function handleContactSearchChange(value: string) {
     setContactSearch(value);
     setContactPage(1);
+    seleccionarFiltrados({ filt, tagFilt, q: value });
   }
 
-  function handleSelectTotal() {
+  function handleToggleScore(key: ScoreFiltro) {
+    const next = new Set(filt);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setFilt(next);
+    setContactPage(1);
+    seleccionarFiltrados({ filt: next, tagFilt, q: contactSearch });
+  }
+
+  function handleToggleTag(tag: string) {
+    const next = tagFilt.includes(tag) ? tagFilt.filter((t) => t !== tag) : [...tagFilt, tag];
+    setTagFilt(next);
+    setContactPage(1);
+    seleccionarFiltrados({ filt, tagFilt: next, q: contactSearch });
+  }
+
+  function handleLimpiarFiltros() {
     setFilt(new Set());
-    setModo24h(false);
+    setTagFilt([]);
+    setContactSearch("");
     setContactPage(1);
-    const next = new Set(contactsActivos.filter((c) => !c.bloqueado).map((c) => c.id));
-    setSel(next);
-    setStatus(next.size > 0 ? "need-tpl" : "idle");
-    addMsg(
-      `Seleccionaste ${next.size} contactos. ¿Elegís un template existente o querés que te arme uno especial para esta lista?`,
-    );
+    setSel(new Set());
   }
 
-  function handleToggleFilter(key: KpiFilterKey) {
+  function handleOrden(key: OrdenKey) {
     setContactPage(1);
-    setFilt((prev) => {
-      const next = new Set(prev);
-      let next24h = modo24h;
+    if (ordenKey === key) setOrdenDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setOrdenKey(key);
+      setOrdenDir("asc");
+    }
+  }
 
-      if (key === "ai" && !prev.has("ai")) {
-        next.clear();
-        next.add("ai");
-      } else if (key !== "ai" && prev.has("ai")) {
-        next.delete("ai");
-        next.add(key);
-        if (key === "24h") next24h = true;
-      } else if (next.has(key)) {
-        next.delete(key);
-        if (key === "24h") next24h = false;
-      } else {
-        next.add(key);
-        if (key === "24h") next24h = true;
-      }
+  // Nombre sugerido para la audiencia, a partir de los filtros activos.
+  function nombreSugeridoAudiencia(): string {
+    const partes = [
+      ...tagFilt.map((t) => mostrarEtiqueta(t)),
+      ...(["caliente", "tibio", "frio"] as const).filter((k) => filt.has(k)).map((k) => (k === "frio" ? "Frío" : k === "tibio" ? "Tibio" : "Caliente")),
+    ];
+    return partes.length > 0 ? partes.join(" + ") : "Mi audiencia";
+  }
 
-      setModo24h(next24h);
-      if (next24h && tplId) {
-        setTplId(null);
-        setIsCreatingNew(false);
-      }
-      recomputeSelFromFilters(next, next24h);
-      setStatus("need-tpl");
-      return next;
-    });
+  async function handleRenombrarContacto(id: string, nombre: string): Promise<string | null> {
+    const r = await renombrarContactoAction(id, nombre);
+    if (r.error) return r.error;
+    router.refresh();
+    return null;
   }
 
   function handleToggleRow(id: string) {
@@ -1284,6 +1469,45 @@ export default function AppShell({
     setTemplateModalOpen(true);
   }
 
+  // Campaña sugerida: la audiencia ya está armada; se abre el asistente en el
+  // paso del template para que la persona revise y confirme. No envía nada.
+  function handleCampanaSugerida(r: CrearAudienciaSugeridaResult) {
+    if (!r.lista) return;
+    const lista = r.lista;
+    setListasExtra((prev) => [...prev.filter((l) => l.id !== lista.id), lista]);
+    setWizardInitial({ nombre: r.nombreCampana, listaId: lista.id, templateId: null, paso: 2 });
+    setWizardOpen(true);
+    router.refresh();
+  }
+
+  // Pone o quita una etiqueta a todos los contactos seleccionados en Contactos.
+  async function handleEtiquetarSeleccion(etiqueta: string, modo: "agregar" | "quitar"): Promise<string | null> {
+    const r =
+      modo === "agregar"
+        ? await etiquetarContactosAction([...sel], [etiqueta])
+        : await quitarEtiquetasAction([...sel], [etiqueta]);
+    if (r.error) return r.error;
+    notificar(
+      modo === "agregar"
+        ? `Etiqueta «${mostrarEtiqueta(etiqueta)}» agregada a ${r.afectados} contacto${r.afectados === 1 ? "" : "s"}.`
+        : `Etiqueta «${mostrarEtiqueta(etiqueta)}» quitada a ${r.afectados} contacto${r.afectados === 1 ? "" : "s"}.`,
+    );
+    setEtiquetarSelOpen(false);
+    router.refresh();
+    return null;
+  }
+
+  // Abre el editor de templates con el mensaje sugerido ya escrito.
+  function handleMensajeSugerido(texto: string, nombreTemplate: string) {
+    setIsCreatingNew(true);
+    setTplId(null);
+    setNewTplContent(texto);
+    setNewTplName(nombreTemplate);
+    setNewTplCategoria("marketing");
+    setStatus("editing-tpl");
+    setTemplateModalOpen(true);
+  }
+
   function handleCancelNewTpl() {
     setIsCreatingNew(false);
     setTplId(null);
@@ -1324,6 +1548,11 @@ export default function AppShell({
     if (!result.ok) {
       setStatus("rejected");
       addMsg(`No se pudo enviar el template a Meta: ${result.error}`);
+      // El mensaje de arriba va al chat del Asistente, que acá no se ve: se
+      // avisa también con un aviso visible y se refresca la lista (el intento
+      // fallido queda guardado con estado "Error").
+      notificar(`No se pudo enviar el template a Meta: ${result.error}`, "error");
+      router.refresh();
       return;
     }
 
@@ -1344,6 +1573,7 @@ export default function AppShell({
     }
 
     addMsg(result.mensaje);
+    notificar("Template enviado a Meta. Está esperando aprobación; te avisamos cuando cambie.");
     setStatus("ready");
     setIsCreatingNew(false);
     setTplId(null);
@@ -1753,6 +1983,7 @@ export default function AppShell({
         onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
         avisos={avisosSidebar}
+        conteos={{ ...conteosSidebar, ia: iaNoLeidos }}
       />
 
       <MobileHeader onOpenDrawer={() => setDrawerOpen(true)} aviso={avisoMenuMobile} />
@@ -1768,6 +1999,7 @@ export default function AppShell({
         onOpenSettings={() => setConfigOpen(true)}
         hiddenSections={hiddenSections}
         avisos={avisosSidebar}
+        conteos={{ ...conteosSidebar, ia: iaNoLeidos }}
       />
 
       <ProfileDrawer
@@ -1805,7 +2037,6 @@ export default function AppShell({
       />
 
       {activeSection === "dashboard" && (
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
           <Dashboard
             userName={user.contactoNombre}
             tenantId={user.tenantId}
@@ -1824,36 +2055,55 @@ export default function AppShell({
               setWizardOpen(true);
             }}
           />
-        </div>
       )}
 
       {activeSection === "grupos" && (
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
           <Audiencias
-            lists={lists}
+            lists={listasVisibles}
             contacts={contacts}
             onOpenGroup={(group) => setOpenGroupId(group.id)}
             onCreateGroup={() => setCreateGroupOpen(true)}
+            onCreateCampaign={(g) => {
+              setWizardInitial({ nombre: `Campaña ${g.nombre}`, listaId: g.id, templateId: null, paso: 2 });
+              setWizardOpen(true);
+            }}
+            onDelete={async (ids) => {
+              let borradas = 0;
+              for (const id of ids) {
+                const r = await deleteListAction(id);
+                if (r.error) notificar(`No se pudo eliminar la audiencia: ${r.error}`, "error");
+                else borradas++;
+              }
+              if (borradas > 0) notificar(borradas === 1 ? "Audiencia eliminada" : `${borradas} audiencias eliminadas`);
+              router.refresh();
+            }}
             puedeCrear={user.permisos.crear_audiencias}
             onSinPermiso={() => avisarSinPermiso("crear audiencias")}
           />
-        </div>
       )}
 
       {activeSection === "templates" && (
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
           <Templates
             templates={templates}
             onNewTemplate={handleStartNewTpl}
             onOpenTemplate={setDetailTemplate}
+            onDuplicate={(t) => handleMensajeSugerido(t.contenido, `${t.nombre}_copia`)}
+            onDeleteDrafts={async (ids) => {
+              let borrados = 0;
+              for (const id of ids) {
+                const r = await deleteTemplateDraftAction(id);
+                if (r.error) notificar(`No se pudo eliminar el borrador: ${r.error}`, "error");
+                else borrados++;
+              }
+              if (borrados > 0) notificar(borrados === 1 ? "Borrador eliminado" : `${borrados} borradores eliminados`);
+              router.refresh();
+            }}
             puedeCrear={user.permisos.crear_templates}
             onSinPermiso={() => avisarSinPermiso("crear templates")}
           />
-        </div>
       )}
 
       {activeSection === "campanas" && (
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden pt-[58px] md:pt-0">
           <Campanas
             campaigns={campaigns}
             onNewCampaign={() => {
@@ -1861,15 +2111,71 @@ export default function AppShell({
               setWizardOpen(true);
             }}
             onOpenCampaign={(campaignId) => setDetailCampaignId(campaignId)}
+            onDuplicate={(c) => {
+              const listaExiste = !!c.listaId && lists.some((l) => l.id === c.listaId);
+              const templateExiste = !!c.templateId && templates.some((t) => t.id === c.templateId);
+              setWizardInitial({
+                nombre: `${c.nombre} (copia)`,
+                listaId: listaExiste ? c.listaId : null,
+                templateId: templateExiste ? c.templateId : null,
+                paso: listaExiste && templateExiste ? 4 : 1,
+                esDuplicada: true,
+              });
+              setWizardOpen(true);
+            }}
+            onDelete={async (ids) => {
+              let borradas = 0;
+              for (const id of ids) {
+                const r = await deleteCampaignAction(id);
+                if (r.error) notificar(`No se pudo eliminar la campaña: ${r.error}`, "error");
+                else borradas++;
+              }
+              if (borradas > 0) notificar(borradas === 1 ? "Campaña eliminada" : `${borradas} campañas eliminadas`);
+              router.refresh();
+            }}
             puedeCrear={user.permisos.crear_campanas}
             onSinPermiso={() => avisarSinPermiso("crear campañas")}
+            recurrentes={
+              <CampanasRecurrentes
+                recurrentes={recurrentes}
+                puedeGestionar={user.permisos.crear_campanas}
+                onSinPermiso={() => avisarSinPermiso("crear campañas")}
+                onPausar={async (id, activa) => {
+                  const r = await pausarRecurrenteAction(id, activa);
+                  if (r.error) notificar(r.error, "error");
+                  else notificar(activa ? "Repetición reanudada." : "Repetición pausada.");
+                  await recargarRecurrentes();
+                }}
+                onEliminar={async (id) => {
+                  const r = await eliminarRecurrenteAction(id);
+                  if (r.error) notificar(r.error, "error");
+                  else notificar("Repetición eliminada. Las campañas ya generadas se mantienen.");
+                  await recargarRecurrentes();
+                }}
+              />
+            }
+            sugeridas={
+              user.tenantId ? (
+                <CampanasSugeridas
+                  puedeCrear={user.permisos.crear_campanas && user.permisos.crear_audiencias}
+                  onSinPermiso={() => avisarSinPermiso("crear campañas")}
+                  onCrear={handleCampanaSugerida}
+                  onUsarMensaje={handleMensajeSugerido}
+                />
+              ) : null
+            }
           />
-        </div>
       )}
+
+      {activeSection === "perfil" && <Perfil tieneOrganizacion={user.orgId !== null} />}
 
       {activeSection === "ia" && (
         <IA
           userName={user.contactoNombre}
+          whatsappVinculado={whatsappVinculado}
+          onVincular={() =>
+            user.permisos.importar_contactos ? setQrOpen(true) : avisarSinPermiso("vincular WhatsApp")
+          }
           messages={messages}
           contacts={contacts}
           onSend={handleChatSend}
@@ -1908,229 +2214,109 @@ export default function AppShell({
       )}
 
       {activeSection === "contactos" && (
-      <div className="flex-1 min-w-0 flex flex-col overflow-y-auto pt-[58px] md:pt-0">
-      <div className="px-4 md:px-[38px] pt-3 md:pt-[34px] flex flex-col gap-1.5">
-        <div className="text-2xl md:text-[28px] font-extrabold tracking-[-0.025em] text-ys-text">
-          Contactos
-        </div>
-        <div className="text-sm md:text-[15px] text-ys-dim font-medium">
-          Gestioná y analizá tus contactos de WhatsApp.
-        </div>
-      </div>
-
-      <KpiRow
-        counts={counts}
-        activeFilters={filt}
-        onSelectTotal={handleSelectTotal}
-        onToggleFilter={handleToggleFilter}
-        onImportClick={() => setQrOpen(true)}
-        // El botón "Analizar" se reemplazó por la card de actividad (ver
-        // ActividadWhatsappCard). SyncConfigModal queda montado más abajo sin
-        // disparador en esta pantalla; el análisis a pedido sigue disponible
-        // desde el chat de IA.
-        importing={false}
-        puedeImportar={user.permisos.importar_contactos}
-        onSinPermiso={() => avisarSinPermiso("importar contactos")}
-        yaVinculado={wahaConectada === true}
-        verificandoVinculo={wahaConectada === null}
-        actividadVersion={actividadVersion}
-      />
-
-      {/* ── Contenido desktop: grid de 2 columnas, sin cambios de comportamiento ── */}
-      <div className="hidden md:flex relative px-[38px] pb-[34px]">
-        <div className="flex flex-col flex-1 relative bg-white border border-ys-border rounded-2xl">
-          <div className="flex items-center gap-3 px-6 pt-[18px] pb-4 flex-none">
-            <VistaContactosTabs
-              vista={vistaContactos}
-              cantidadExcluidos={excluidos.length}
-              onChange={setVistaContactos}
-            />
-            <div className="ml-auto flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 w-[250px] transition-colors focus-within:border-ys-green-border">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
-                <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
-                <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <input
-                type="text"
-                value={contactSearch}
-                onChange={(e) => handleContactSearchChange(e.target.value)}
-                placeholder="Buscar contacto..."
-                className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
-              />
-            </div>
-          </div>
-          {vistaContactos === "excluidos" ? (
-            <div className="overflow-hidden rounded-b-2xl">
-              <ContactosExcluidosLista
-                excluidos={excluidos}
-                busqueda={contactSearch}
-                cargando={excluidosCargando}
-                onIncluir={handleIncluirEnMotor}
-              />
-            </div>
-          ) : (
-            <>
-          <div className="overflow-hidden rounded-b-2xl">
-            <ContactsTable
-              contacts={paginatedContacts}
-              selected={sel}
-              onToggleRow={handleToggleRow}
-              onToggleAll={handleToggleAll}
-              onOpenDetail={setDetailContact}
-              modo24h={modo24h}
-            />
-          </div>
-          <ContactsPagination
-            page={contactPageSafe}
-            totalPages={contactTotalPages}
-            totalItems={visibleContacts.length}
-            perPage={CONTACTS_PER_PAGE}
-            onChange={setContactPage}
+        <SectionPage>
+          <SectionHeader
+            title="Contactos"
+            subtitle="Gestioná y analizá tus contactos de WhatsApp."
+            status={{
+              icon: (
+                <svg width="20" height="20" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <circle cx="6" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M2 13.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              ),
+              label: "WhatsApp",
+              value:
+                whatsappVinculado === null ? "Verificando…" : whatsappVinculado ? "Vinculado" : "Vincular WhatsApp",
+              tone: whatsappVinculado === null ? "neutral" : whatsappVinculado ? "ok" : "off",
+              onClick:
+                whatsappVinculado === false
+                  ? () => (user.permisos.importar_contactos ? setQrOpen(true) : avisarSinPermiso("vincular WhatsApp"))
+                  : undefined,
+            }}
           />
-            </>
-          )}
-        </div>
-      </div>
-      {sel.size > 0 && vistaContactos === "todos" && (
-        <div
-          className="hidden md:flex fixed bottom-6 left-[calc(248px+38px)] right-[38px] z-[9] bg-ys-dark rounded-2xl pl-[18px] pr-3.5 py-3 items-center gap-3.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
-          style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
-        >
-          <div className="text-[13.5px] font-bold text-white">
-            {sel.size} contacto{sel.size === 1 ? "" : "s"} seleccionado{sel.size === 1 ? "" : "s"}
-          </div>
-          <button
-            onClick={handleClearSel}
-            className="text-[12.5px] font-semibold text-[#9aa9a3] hover:text-white transition-colors cursor-pointer"
-          >
-            Deseleccionar
-          </button>
-          <div className="ml-auto flex items-center gap-2.5">
-            <button
-              onClick={() =>
-                user.permisos.importar_contactos
-                  ? setExcluirModalOpen(true)
-                  : avisarSinPermiso("gestionar contactos")
-              }
-              title="Para números que no son clientes: otras sucursales, proveedores, tu equipo"
-              className="text-[13px] font-bold text-[#9aa9a3] rounded-[10px] px-3 py-2.5 cursor-pointer transition-colors hover:text-white hover:bg-[#1e2a24]"
-            >
-              Excluir del motor
-            </button>
-            <button
-              onClick={() => setAddToGroupOpen(true)}
-              className="text-[13px] font-bold text-[#eef1ef] border border-[#33403a] rounded-[10px] px-3.5 py-2.5 cursor-pointer transition-colors hover:bg-[#1e2a24]"
-            >
-              Agregar a audiencia existente
-            </button>
-            <button
-              onClick={() => setCreateGroupOpen(true)}
-              className="text-[13px] font-extrabold text-[#0b1310] bg-ys-green rounded-[10px] px-4 py-2.5 cursor-pointer transition-all hover:bg-[#3ddb8f] hover:-translate-y-px"
-            >
-              Crear nueva audiencia
-            </button>
-          </div>
-        </div>
-      )}
 
-      {/* ── Contenido mobile: misma tabla + barra flotante que en desktop ── */}
-      <div className="flex md:hidden flex-col px-4 pb-4">
-        <div className="flex flex-col relative bg-white border border-ys-border rounded-2xl">
-          <div className="px-4 pt-4 pb-3 flex-none">
-            <div className="mb-3 -ml-2.5">
-              <VistaContactosTabs
-                vista={vistaContactos}
-                cantidadExcluidos={excluidos.length}
-                onChange={setVistaContactos}
-              />
-            </div>
-            <div className="flex items-center gap-2.5 bg-ys-bg border border-ys-border rounded-[10px] px-3.5 py-2.5 transition-colors focus-within:border-ys-green-border">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="flex-none">
-                <circle cx="7" cy="7" r="4.5" stroke="#9aa19c" strokeWidth="1.5" />
-                <path d="m10.5 10.5 3 3" stroke="#9aa19c" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <input
-                type="text"
-                value={contactSearch}
-                onChange={(e) => handleContactSearchChange(e.target.value)}
-                placeholder="Buscar contacto..."
-                className="flex-1 min-w-0 bg-transparent border-none outline-none text-[13.5px] text-ys-text placeholder:text-[#9aa19c] placeholder:font-medium"
-              />
-            </div>
-          </div>
-          {vistaContactos === "excluidos" ? (
-            <div className="overflow-hidden rounded-b-2xl">
-              <ContactosExcluidosLista
-                excluidos={excluidos}
-                busqueda={contactSearch}
-                cargando={excluidosCargando}
-                onIncluir={handleIncluirEnMotor}
-                compact
-              />
-            </div>
-          ) : (
-            <>
-          <div className="overflow-hidden rounded-b-2xl">
-            <ContactsTable
-              contacts={paginatedContacts}
-              selected={sel}
-              onToggleRow={handleToggleRow}
-              onToggleAll={handleToggleAll}
-              onOpenDetail={setDetailContact}
-              modo24h={modo24h}
-            />
-          </div>
-          <ContactsPagination
-            page={contactPageSafe}
-            totalPages={contactTotalPages}
-            totalItems={visibleContacts.length}
-            perPage={CONTACTS_PER_PAGE}
-            onChange={setContactPage}
-            compact
-          />
-            </>
-          )}
-        </div>
-      </div>
-      {sel.size > 0 && vistaContactos === "todos" && (
-        <div
-          className="flex md:hidden fixed bottom-3 left-3 right-3 z-[9] bg-ys-dark rounded-2xl pl-4 pr-3 py-3 flex-wrap items-center gap-2.5 shadow-[0_12px_30px_rgba(16,24,20,0.22)]"
-          style={{ animation: "ys-bar-up .18s cubic-bezier(.4,0,.2,1) both" }}
-        >
-          <div className="text-[13px] font-bold text-white">{sel.size} sel.</div>
-          <button
-            onClick={handleClearSel}
-            className="text-xs font-semibold text-[#9aa9a3] cursor-pointer"
-          >
-            Deseleccionar
-          </button>
-          <button
-            onClick={() =>
-              user.permisos.importar_contactos
-                ? setExcluirModalOpen(true)
-                : avisarSinPermiso("gestionar contactos")
+          <ContactosBarra
+            contacts={contactsActivos}
+            seleccionados={sel.size}
+            totalContactos={contactsActivos.filter((c) => !c.bloqueado).length}
+            scoreFilt={filt}
+            onToggleScore={handleToggleScore}
+            tagFilt={tagFilt}
+            onToggleTag={handleToggleTag}
+            onLimpiar={handleLimpiarFiltros}
+            busqueda={contactSearch}
+            onBusqueda={handleContactSearchChange}
+            vista={vistaContactos}
+            onVista={setVistaContactos}
+            cantidadExcluidos={excluidos.length}
+            puedeCrear={user.permisos.crear_audiencias}
+            onSinPermiso={() => avisarSinPermiso("crear audiencias")}
+            onEtiquetarSel={() =>
+              user.permisos.crear_audiencias ? setEtiquetarSelOpen(true) : avisarSinPermiso("etiquetar contactos")
             }
-            className="ml-auto text-xs font-bold text-[#9aa9a3] cursor-pointer"
-          >
-            Excluir del motor
-          </button>
-          <div className="w-full flex items-center gap-2 mt-1">
-            <button
-              onClick={() => setAddToGroupOpen(true)}
-              className="flex-1 text-xs font-bold text-[#eef1ef] border border-[#33403a] rounded-lg px-2.5 py-2 cursor-pointer text-center"
-            >
-              Agregar a audiencia
-            </button>
-            <button
-              onClick={() => setCreateGroupOpen(true)}
-              className="flex-1 text-xs font-extrabold text-[#0b1310] bg-ys-green rounded-lg px-2.5 py-2 cursor-pointer text-center"
-            >
-              Crear audiencia
-            </button>
-          </div>
-        </div>
-      )}
-      </div>
+            onCambio={() => router.refresh()}
+            onNotificar={notificar}
+          />
+
+          <SectionBody>
+            {vistaContactos === "excluidos" ? (
+              <div className="bg-ys-card border border-ys-border rounded-2xl overflow-hidden">
+                <ContactosExcluidosLista
+                  excluidos={excluidos}
+                  busqueda={contactSearch}
+                  cargando={excluidosCargando}
+                  onIncluir={handleIncluirEnMotor}
+                />
+              </div>
+            ) : (
+              <div className="bg-ys-card border border-ys-border rounded-2xl overflow-hidden">
+                <ContactsTable
+                  contacts={paginatedContacts}
+                  selected={sel}
+                  onToggleRow={handleToggleRow}
+                  onToggleAll={handleToggleAll}
+                  onOpenDetail={setDetailContact}
+                  modo24h={modo24h}
+                  ordenKey={ordenKey}
+                  ordenDir={ordenDir}
+                  onOrden={handleOrden}
+                  onRenombrar={user.permisos.crear_audiencias ? handleRenombrarContacto : undefined}
+                  onVincular={
+                    user.permisos.importar_contactos && contactsActivos.length === 0 ? () => setQrOpen(true) : undefined
+                  }
+                />
+                <ContactsPagination
+                  page={contactPageSafe}
+                  totalPages={contactTotalPages}
+                  totalItems={visibleContacts.length}
+                  perPage={CONTACTS_PER_PAGE}
+                  onChange={setContactPage}
+                />
+              </div>
+            )}
+          </SectionBody>
+
+          {sel.size > 0 && vistaContactos === "todos" && (
+            <SelectionBar texto={pluralizar(sel.size, "contacto", "contactos")} onClear={() => setSel(new Set())}>
+              <BarBtn
+                onClick={() =>
+                  user.permisos.importar_contactos
+                    ? setExcluirModalOpen(true)
+                    : avisarSinPermiso("gestionar contactos")
+                }
+              >
+                Excluir
+              </BarBtn>
+              <BarBtn onClick={() => setAddToGroupOpen(true)}>
+                Agregar a audiencia<span className="hidden md:inline">&nbsp;existente</span>
+              </BarBtn>
+              <BarBtn variante="primary" onClick={() => setNombrarAudienciaOpen(true)}>
+                Crear <span className="hidden md:inline">nueva&nbsp;</span>audiencia
+              </BarBtn>
+            </SelectionBar>
+          )}
+        </SectionPage>
       )}
 
       <QrImportModal
@@ -2196,7 +2382,7 @@ export default function AppShell({
       <CampaignWizardModal
         key={wizardInitial ? `dup-${wizardInitial.nombre}` : "new"}
         open={wizardOpen}
-        lists={lists}
+        lists={listasVisibles}
         templates={templatesAprobados}
         creditosDisponibles={user.credito ?? 0}
         creditosAplican={user.creditosAplican ?? false}
@@ -2206,7 +2392,15 @@ export default function AppShell({
         onClose={() => setWizardOpen(false)}
         onFetchInsight={obtenerInsightCacheado}
         onFetchSugerenciaHorario={getSugerenciaHorarioAction}
-        onConfirm={async ({ nombre, listaId, templateId, contactosIds, momento, fechaProgramada }) => {
+        onConfirm={async ({ nombre, listaId, templateId, contactosIds, momento, fechaProgramada, recurrencia }) => {
+          if (momento === "repetir" && recurrencia) {
+            const r = await crearRecurrenteAction({ nombre, listaId, templateId, config: recurrencia });
+            if (r.error) return { error: r.error };
+            notificar(`Campaña "${nombre}" programada: ${describirRecurrencia(recurrencia).toLowerCase()}.`);
+            void recargarRecurrentes();
+            router.refresh();
+            return { error: null };
+          }
           const saveResult = await saveCampaignAction(
             nombre,
             listaId,
@@ -2305,6 +2499,23 @@ export default function AppShell({
         }}
       />
 
+      {nombrarAudienciaOpen && (
+        <NombrarAudienciaModal
+          cantidad={sel.size}
+          nombreSugerido={nombreSugeridoAudiencia()}
+          onClose={() => setNombrarAudienciaOpen(false)}
+          onConfirmar={async (nombre) => {
+            const result = await saveListAction(nombre, Array.from(sel));
+            if (result.error) return result.error;
+            notificar(`Audiencia "${nombre}" creada con ${sel.size} contacto${sel.size === 1 ? "" : "s"}.`);
+            setNombrarAudienciaOpen(false);
+            handleLimpiarFiltros();
+            router.refresh();
+            return null;
+          }}
+        />
+      )}
+
       <AddToAudienceModal
         open={addToGroupOpen}
         lists={lists}
@@ -2378,6 +2589,15 @@ export default function AppShell({
         }}
       />
 
+      <EtiquetarSeleccionModal
+        key={etiquetarSelOpen ? "abierto" : "cerrado"}
+        open={etiquetarSelOpen}
+        cantidad={sel.size}
+        etiquetasExistentes={contarEtiquetas(contacts.map((c) => ({ etiquetas: c.etiquetas ?? [] }))).map((e) => e.nombre)}
+        onConfirmar={handleEtiquetarSeleccion}
+        onClose={() => setEtiquetarSelOpen(false)}
+/>
+
       <ExcluirMotorModal
         open={excluirModalOpen}
         cantidad={sel.size}
@@ -2389,6 +2609,41 @@ export default function AppShell({
       <ContactDetailModal
         contact={detailContact}
         onClose={() => setDetailContact(null)}
+        etiquetasExistentes={contarEtiquetas(contacts.map((c) => ({ etiquetas: c.etiquetas ?? [] }))).map((e) => e.nombre)}
+        onEtiquetar={
+          user.permisos.crear_audiencias
+            ? async (contactId, etiqueta) => {
+                const r = await etiquetarContactosAction([contactId], [etiqueta]);
+                if (r.error) {
+                  notificar(r.error, "error");
+                  return;
+                }
+                setDetailContact((prev) =>
+                  prev && prev.id === contactId
+                    ? { ...prev, etiquetas: normalizarEtiquetas([...(prev.etiquetas ?? []), etiqueta]) }
+                    : prev,
+                );
+                router.refresh();
+              }
+            : undefined
+        }
+        onQuitarEtiqueta={
+          user.permisos.crear_audiencias
+            ? async (contactId, etiqueta) => {
+                const r = await quitarEtiquetasAction([contactId], [etiqueta]);
+                if (r.error) {
+                  notificar(r.error, "error");
+                  return;
+                }
+                setDetailContact((prev) =>
+                  prev && prev.id === contactId
+                    ? { ...prev, etiquetas: (prev.etiquetas ?? []).filter((e) => e !== etiqueta) }
+                    : prev,
+                );
+                router.refresh();
+              }
+            : undefined
+        }
         onExcluirMotor={
           user.permisos.importar_contactos
             ? async (c) => {

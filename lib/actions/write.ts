@@ -1,5 +1,7 @@
 "use server";
 
+import { createAdminClient, hayServiceRole } from "@/lib/supabase/admin";
+import { ycloudApiKey } from "@/lib/ycloud/clave";
 import { createClient } from "@/lib/supabase/server";
 import { assertPermiso } from "@/lib/auth/permisos";
 import type { Template } from "@/lib/types";
@@ -298,7 +300,11 @@ export async function deleteListAction(
 // template_language, ventana_24h, total } y dispara el envío masivo vía
 // YCloud, actualizando yamas_send_listas.status y yamas_inmo_clientesdeclientes
 // a medida que va enviando.
+// Se puede apuntar a otro workflow de envío sin tocar código (variable
+// YAMASEND_SEND_WEBHOOK_URL en Vercel): sirve para tener una copia propia con
+// su propia firma sin pisar el workflow que usan otros despliegues.
 const CAMPAIGN_SEND_WEBHOOK_URL =
+  process.env.YAMASEND_SEND_WEBHOOK_URL?.trim() ||
   "https://yamasai.app.n8n.cloud/webhook/9a625055-39fb-4b59-a991-5f9d19beb32f";
 
 /**
@@ -357,11 +363,11 @@ export async function saveCampaignAction(
     return { id: null, error: "No se pudo resolver el tenant del usuario." };
   }
 
-  if (!cliente.ycloud_api || !cliente.wabaid) {
+  if (!ycloudApiKey(cliente.ycloud_api) || !cliente.wabaid) {
     return {
       id: null,
       error:
-        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (ycloud_api / wabaid). Contactá a soporte antes de crear campañas.",
+        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (número y WABA). Contactá a soporte antes de crear campañas.",
     };
   }
 
@@ -534,11 +540,11 @@ export async function sendCampaignAction(
     return { ok: false, error: "No se pudo resolver el tenant del usuario." };
   }
 
-  if (!cliente.ycloud_api || !cliente.wabaid || !cliente.ventas_tel) {
+  if (!ycloudApiKey(cliente.ycloud_api) || !cliente.wabaid || !cliente.ventas_tel) {
     return {
       ok: false,
       error:
-        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (ycloud_api / wabaid / ventas_tel). Contactá a soporte.",
+        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (número, WABA y teléfono de ventas). Contactá a soporte.",
     };
   }
 
@@ -554,7 +560,7 @@ export async function sendCampaignAction(
       body: JSON.stringify({
         tenant_id: cliente.tenant_id,
         campaign_id: campaignId,
-        ycloud_api: cliente.ycloud_api,
+        ycloud_api: ycloudApiKey(cliente.ycloud_api),
         wabaid: cliente.wabaid,
         ventas_tel: cliente.ventas_tel,
         lista_id: listaId,
@@ -840,6 +846,23 @@ export async function saveTemplateDraftAction(
 const TEMPLATE_APROBAR_WEBHOOK_URL =
   "https://yamasai.app.n8n.cloud/webhook/2ec4468d-e12b-448b-94c8-5f8eb253be9b";
 
+/**
+ * Meta solo acepta nombres de template en minúsculas, números y guion bajo
+ * ([_a-z0-9]): "Promo Agosto" se manda como "promo_agosto".
+ */
+function nombreParaMeta(nombre: string): string {
+  return (
+    nombre
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 60) || "template"
+  );
+}
+
 export interface SendTemplateResult {
   ok: boolean;
   templateId: string | null;
@@ -925,14 +948,14 @@ export async function sendTemplateToMetaAction(
     };
   }
 
-  if (!cliente.ycloud_api || !cliente.wabaid) {
+  if (!ycloudApiKey(cliente.ycloud_api) || !cliente.wabaid) {
     return {
       ok: false,
       templateId: null,
       status: null,
       mensaje: "",
       error:
-        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (ycloud_api / wabaid). Contactá a soporte antes de enviar templates a Meta.",
+        "Tu cuenta todavía no tiene configurada la integración de WhatsApp (número y WABA). Contactá a soporte antes de enviar templates a Meta.",
     };
   }
 
@@ -942,9 +965,9 @@ export async function sendTemplateToMetaAction(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         tenant_id: cliente.tenant_id,
-        ycloud_api: cliente.ycloud_api,
+        ycloud_api: ycloudApiKey(cliente.ycloud_api),
         waba_id: cliente.wabaid,
-        nombre_meta: nombre.trim(),
+        nombre_meta: nombreParaMeta(nombre),
         contenido: contenido.trim(),
         categoria,
         ia_conversacion_id: iaConversacionId ?? null,
@@ -1014,6 +1037,61 @@ export interface RefreshTemplatesResult {
  * webhook de YCloud y el panel no tiene otra forma de enterarse sin recargar
  * la página. Reutiliza el mismo mapeo que getTemplatesForTenant.
  */
+/**
+ * Consulta a YCloud el estado de los templates "enviado" del tenant y guarda
+ * el resultado (verificado / rechazado). Silenciosa: nunca rompe el polling.
+ */
+async function sincronizarTemplatesPendientes(tenantId: string, authUserId: string): Promise<void> {
+  try {
+    const supabase = await createClient();
+    const { data: pendientes } = await supabase
+      .from("yamas_send_templates")
+      .select("id, nombre, template_lang, waba_id")
+      .eq("tenant_id", tenantId)
+      .eq("status", "enviado")
+      .limit(20);
+    if (!pendientes || pendientes.length === 0) return;
+
+    const { data: cliente } = await supabase
+      .from("yamas_inmo_clientes")
+      .select("ycloud_api, wabaid")
+      .eq("auth_user_id", authUserId)
+      .maybeSingle();
+    const clave = ycloudApiKey(cliente?.ycloud_api);
+    if (!clave) return;
+
+    const escritor = hayServiceRole() ? createAdminClient() : supabase;
+
+    for (const t of pendientes) {
+      const waba = (t.waba_id as string | null) ?? cliente?.wabaid;
+      if (!waba) continue;
+      const lang = (t.template_lang as string | null) ?? "es_AR";
+      const res = await fetch(
+        `https://api.ycloud.com/v2/whatsapp/templates/${encodeURIComponent(waba)}/${encodeURIComponent(t.nombre as string)}/${encodeURIComponent(lang)}`,
+        { headers: { "X-API-Key": clave, accept: "application/json" }, cache: "no-store", signal: AbortSignal.timeout(8000) },
+      ).catch(() => null);
+      if (!res || !res.ok) continue;
+      const data = (await res.json().catch(() => null)) as { status?: string; reason?: string } | null;
+      const estado = data?.status;
+      if (estado === "APPROVED") {
+        await escritor
+          .from("yamas_send_templates")
+          .update({ status: "verificado", aprobado_at: new Date().toISOString() })
+          .eq("id", t.id)
+          .eq("tenant_id", tenantId);
+      } else if (estado === "REJECTED") {
+        await escritor
+          .from("yamas_send_templates")
+          .update({ status: "rechazado", meta_rechazo_motivo: data?.reason || "No especificado" })
+          .eq("id", t.id)
+          .eq("tenant_id", tenantId);
+      }
+    }
+  } catch {
+    // Best-effort: el webhook sigue siendo la vía principal.
+  }
+}
+
 export async function refreshTemplatesAction(): Promise<RefreshTemplatesResult> {
   const supabase = await createClient();
 
@@ -1032,6 +1110,11 @@ export async function refreshTemplatesAction(): Promise<RefreshTemplatesResult> 
   if (clienteError || !cliente?.tenant_id) {
     return { templates: null, error: "No se pudo resolver el tenant del usuario." };
   }
+
+  // Antes de leer: pone al día los templates "en revisión" preguntándole
+  // directo a YCloud. No depende de que el webhook de estados de Meta esté
+  // configurado: si Meta ya aprobó o rechazó, se actualiza acá en segundos.
+  await sincronizarTemplatesPendientes(cliente.tenant_id, user.id);
 
   // Reusa getTemplatesForTenant en vez de repetir el select: ahí vive el
   // filtro de los templates que reparte la empresa (solo visibles y
