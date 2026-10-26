@@ -15,6 +15,7 @@ import {
   reservarCreditosCampana,
   reservaSegunEstado,
 } from "@/lib/creditos/reserva";
+import { n8nHeaders } from "@/lib/n8n/firma";
 
 export interface SaveResult {
   id: string | null;
@@ -551,12 +552,8 @@ export async function sendCampaignAction(
   try {
     const res = await fetch(CAMPAIGN_SEND_WEBHOOK_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        // Secreto server-to-server: nunca se hardcodea ni llega al cliente.
-        // Si la env var no está seteada, se manda vacío (n8n rechaza igual).
-        "X-Yamasend-Signature": process.env.YAMASEND_SENDER_SECRET ?? "",
-      },
+      // Secreto server-to-server: nunca se hardcodea ni llega al cliente.
+      headers: n8nHeaders(),
       body: JSON.stringify({
         tenant_id: cliente.tenant_id,
         campaign_id: campaignId,
@@ -962,7 +959,7 @@ export async function sendTemplateToMetaAction(
   try {
     const res = await fetch(TEMPLATE_APROBAR_WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: n8nHeaders(),
       body: JSON.stringify({
         tenant_id: cliente.tenant_id,
         ycloud_api: ycloudApiKey(cliente.ycloud_api),
@@ -1172,7 +1169,7 @@ export async function getCampaignInsightAction(): Promise<CampaignInsightResult>
   try {
     const res = await fetch(CAMPAIGN_INSIGHT_WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: n8nHeaders(),
       body: JSON.stringify({ tenant_id: cliente.tenant_id }),
     });
 

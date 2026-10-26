@@ -9,6 +9,7 @@ import {
   type DatosNegocio,
 } from "@/lib/actions/profile";
 import { aplicarPropuesta, type DatosNegocioBase } from "@/lib/perfil/fusion";
+import { n8nHeaders } from "@/lib/n8n/firma";
 import type {
   PerfilChatMensaje,
   PerfilNegocio,
@@ -120,7 +121,7 @@ export async function regenerarPerfilNegocioAction(): Promise<{
   try {
     const res = await fetch(PERFIL_NEGOCIO_WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: n8nHeaders(),
       body: JSON.stringify({ tenant_id: gate.tenantId }),
     });
     if (!res.ok) {

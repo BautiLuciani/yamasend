@@ -3,6 +3,7 @@
 import { ycloudApiKey } from "@/lib/ycloud/clave";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentMembership } from "@/lib/auth/permisos";
+import { n8nHeaders } from "@/lib/n8n/firma";
 import {
   CATEGORIA_TEMPLATE_UNICA,
   validarVariablesTemplate,
@@ -664,7 +665,7 @@ async function dispararAprobaciones(
     try {
       const res = await fetch(TEMPLATE_APROBAR_WEBHOOK_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: n8nHeaders(),
         body: JSON.stringify({
           tenant_id: d.tenantId,
           ycloud_api: claveYcloud,

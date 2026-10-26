@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import type { Producto } from "@/lib/types";
+import { n8nHeaders } from "@/lib/n8n/firma";
 
 export interface ProfileActionResult {
   error: string | null;
@@ -261,7 +262,7 @@ export async function analizarCatalogoProductosAction(
   try {
     const res = await fetch(CATALOGO_IA_WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: n8nHeaders(),
       body: JSON.stringify({ fileBase64, fileName, mimeType }),
     });
 

@@ -5,6 +5,7 @@ import { assertPermiso } from "@/lib/auth/permisos";
 import type { SyncConfig, SyncResult } from "@/lib/types";
 import { logActivity } from "@/lib/actions/activity";
 import { CATEGORIA_TEMPLATE_UNICA } from "@/lib/templates/config";
+import { n8nHeaders } from "@/lib/n8n/firma";
 
 // Webhook del workflow "Yamasend: Sincronizar Contactos + Análisis de Chats (v2)"
 // en n8n. El nodo "0. Resolver auth.uid" del workflow espera el token en el
@@ -57,10 +58,9 @@ export async function syncAndAnalyzeAction(
   try {
     const res = await fetch(SYNC_ANALIZAR_WEBHOOK_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session.access_token}`,
-      },
+      // El Bearer identifica al usuario (n8n lo valida contra Supabase Auth);
+      // la firma identifica a la app.
+      headers: n8nHeaders({ Authorization: `Bearer ${session.access_token}` }),
       body: JSON.stringify({
         dias_analisis: config.diasAnalisis,
         limite_contactos: config.limiteContactos,
@@ -209,7 +209,7 @@ export async function generarTemplateConIAAction(
   try {
     const res = await fetch(TEMPLATE_IA_WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: n8nHeaders(),
       body: JSON.stringify({
         descripcion: descripcion.trim(),
         categoria,
