@@ -74,8 +74,11 @@ REVOKE EXECUTE ON FUNCTION public.yamas_send_reservar_creditos(uuid,integer)    
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 7) CONTROL DE CALIDAD DE ENVÍOS (regla fija de Pato, 26/10). Tablas nuevas, las
---    escribe solo n8n (RLS activa sin políticas). PENDIENTE DE APLICAR (el asistente
---    no tiene permiso para DDL vía apply_migration). rollback: DROP TABLE.
+--    escribe solo n8n (RLS activa sin políticas). APLICADO el 26/10 (migración
+--    yamas_send_calidad_linea_salud_y_wa_verificados). rollback: DROP TABLE.
+--    NOTA: yamas_send_wa_verificados NO se usa — en YamaSend los contactos salen
+--    de los chats del cliente y no se verifican con WA Lookup. Se puede borrar:
+--    DROP TABLE public.yamas_send_wa_verificados;
 CREATE TABLE IF NOT EXISTS public.yamas_send_linea_salud (
   tenant_id        text PRIMARY KEY,
   semaforo         text NOT NULL CHECK (semaforo IN ('VERDE','AMARILLO','ROJO')),

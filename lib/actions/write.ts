@@ -16,6 +16,7 @@ import {
   reservaSegunEstado,
 } from "@/lib/creditos/reserva";
 import { n8nHeaders } from "@/lib/n8n/firma";
+import { bloqueoPorSaludLinea } from "@/lib/actions/linea_salud";
 
 export interface SaveResult {
   id: string | null;
@@ -372,6 +373,12 @@ export async function saveCampaignAction(
     };
   }
 
+  // Gate de salud de la línea: con el semáforo en ROJO no se crea la campaña
+  // (ni inmediata ni programada). Se chequea antes del INSERT para no dejar
+  // filas ni reservas de créditos colgadas.
+  const bloqueoSalud = await bloqueoPorSaludLinea(cliente.tenant_id);
+  if (bloqueoSalud) return { id: null, error: bloqueoSalud };
+
   const [{ data: lista }, { data: template }] = await Promise.all([
     listaId
       ? supabase.from("yamas_send_listas").select("nombre").eq("id", listaId).maybeSingle()
@@ -547,6 +554,19 @@ export async function sendCampaignAction(
       error:
         "Tu cuenta todavía no tiene configurada la integración de WhatsApp (número, WABA y teléfono de ventas). Contactá a soporte.",
     };
+  }
+
+  // Gate de salud de la línea, última barrera antes del webhook. Si el
+  // semáforo está en ROJO la campaña pasa a "error" con el motivo en notas
+  // (igual que hace el workflow de envío) para que no quede en "enviando".
+  const bloqueoSalud = await bloqueoPorSaludLinea(cliente.tenant_id);
+  if (bloqueoSalud) {
+    await supabase
+      .from("yamas_send_campanas")
+      .update({ status: "error", notas: `Frenada por salud de la línea: ${bloqueoSalud}` })
+      .eq("id", campaignId)
+      .eq("tenant_id", cliente.tenant_id);
+    return { ok: false, error: bloqueoSalud };
   }
 
   try {

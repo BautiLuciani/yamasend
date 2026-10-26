@@ -121,6 +121,31 @@ export interface CampaignDetail extends Campaign {
   duracionMin: number | null;
 }
 
+export type Semaforo = "VERDE" | "AMARILLO" | "ROJO";
+
+/**
+ * Salud de la línea de WhatsApp del tenant, tal como la deja el workflow de
+ * n8n "YamaSend — Salud de líneas por tenant" en yamas_send_linea_salud
+ * (lunes a viernes 8:30 y 13:00). ROJO = la app no deja crear ni enviar
+ * campañas; el mismo gate existe en el workflow de envío, así que una campaña
+ * programada tampoco sale.
+ */
+export interface LineaSalud {
+  semaforo: Semaforo;
+  /** Lo que mueve el semáforo (línea desconectada, calidad roja, saldo...). */
+  motivos: string[];
+  /** Informativo: no cambia el semáforo. */
+  avisos: string[];
+  saldoUsd: number | null;
+  lineas: { tel: string; calidad: string; estado: string; limite: string }[];
+  /** Mensajes de template medidos (los últimos 100 de la cuenta). */
+  muestra: number | null;
+  entregadosPct: number | null;
+  leidosPct: number | null;
+  fallidosPct: number | null;
+  checkedAt: string; // ISO
+}
+
 export interface AppUser {
   id: string;
   tenantId: string;

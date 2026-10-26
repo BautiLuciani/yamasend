@@ -17,6 +17,7 @@ import type {
   IAFlowState,
   IAHistoryTurn,
   KpiFilterKey,
+  LineaSalud,
   MemberEstado,
   Permisos,
   StatusState,
@@ -111,6 +112,7 @@ import {
   isWahaConectadaAction,
 } from "@/lib/actions/sync";
 import { getCampaignDetailAction } from "@/lib/actions/campaigns";
+import { mensajeBloqueoSalud, saludBloqueaEnvios } from "@/lib/linea_salud/riesgo";
 import {
   sendIAMessageAction,
   seleccionarRecursoEditarAction,
@@ -205,6 +207,8 @@ interface AppShellProps {
   templates: Template[];
   lists: ContactList[];
   campaigns: Campaign[];
+  /** Último chequeo de salud de la línea de WhatsApp; null si nunca corrió. */
+  lineaSalud?: LineaSalud | null;
   onLogout: () => void | Promise<void>;
 }
 
@@ -214,6 +218,7 @@ export default function AppShell({
   templates: templatesProp,
   lists,
   campaigns: campaignsProp,
+  lineaSalud = null,
   onLogout,
 }: AppShellProps) {
   const router = useRouter();
@@ -951,6 +956,21 @@ export default function AppShell({
    */
   function notificar(texto: string, tipo: ToastData["tipo"] = "exito") {
     setToast({ id: `${Date.now()}-${Math.random()}`, texto, tipo });
+  }
+
+  /**
+   * Abre el asistente de campaña nueva, salvo que la línea de WhatsApp esté
+   * en rojo: ahí avisa por qué y no abre nada. Único punto de entrada para
+   * "Nueva campaña" (Dashboard y Campañas). El server action vuelve a
+   * chequearlo igual.
+   */
+  function abrirNuevaCampana() {
+    if (saludBloqueaEnvios(lineaSalud) && lineaSalud) {
+      notificar(mensajeBloqueoSalud(lineaSalud), "error");
+      return;
+    }
+    setWizardInitial(null);
+    setWizardOpen(true);
   }
 
   /**
@@ -2050,10 +2070,7 @@ export default function AppShell({
             }
             onComprarCreditos={abrirCompraCreditos}
             onViewAllCampaigns={() => setActiveSection("campanas")}
-            onNewCampaign={() => {
-              setWizardInitial(null);
-              setWizardOpen(true);
-            }}
+            onNewCampaign={abrirNuevaCampana}
           />
       )}
 
@@ -2106,10 +2123,9 @@ export default function AppShell({
       {activeSection === "campanas" && (
           <Campanas
             campaigns={campaigns}
-            onNewCampaign={() => {
-              setWizardInitial(null);
-              setWizardOpen(true);
-            }}
+            salud={lineaSalud}
+            onLineaEnRiesgo={abrirNuevaCampana}
+            onNewCampaign={abrirNuevaCampana}
             onOpenCampaign={(campaignId) => setDetailCampaignId(campaignId)}
             onDuplicate={(c) => {
               const listaExiste = !!c.listaId && lists.some((l) => l.id === c.listaId);

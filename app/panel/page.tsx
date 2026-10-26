@@ -9,6 +9,7 @@ import {
   getListsForTenant,
   getCampaignsForTenant,
 } from "@/lib/actions/campaigns";
+import { getLineaSaludAction } from "@/lib/actions/linea_salud";
 import { getCurrentMembership } from "@/lib/auth/permisos";
 import { createClient } from "@/lib/supabase/server";
 import AppShell from "@/components/yamasend/AppShell";
@@ -87,11 +88,12 @@ export default async function PanelPage() {
     redirect("/login");
   }
 
-  const [contacts, templates, lists, campaigns] = await Promise.all([
+  const [contacts, templates, lists, campaigns, lineaSalud] = await Promise.all([
     getContactsForTenant(user.tenantId),
     getTemplatesForTenant(user.tenantId),
     getListsForTenant(user.tenantId),
     getCampaignsForTenant(user.tenantId),
+    getLineaSaludAction(user.tenantId),
   ]);
 
   return (
@@ -101,6 +103,7 @@ export default async function PanelPage() {
       templates={templates}
       lists={lists}
       campaigns={campaigns}
+      lineaSalud={lineaSalud}
       onLogout={logoutAction}
     />
   );

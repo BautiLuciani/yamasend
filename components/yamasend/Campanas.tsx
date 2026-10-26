@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Campaign, CampaignStatus } from "@/lib/types";
+import type { Campaign, CampaignStatus, LineaSalud } from "@/lib/types";
+import { saludBloqueaEnvios } from "@/lib/linea_salud/riesgo";
+import LineaSaludBanner from "./LineaSaludBanner";
 import {
   ActionBar,
   BarBtn,
@@ -37,6 +39,15 @@ interface CampanasProps {
   sugeridas?: ReactNode;
   /** Series que se repiten (CampanasRecurrentes); null/undefined si no hay. */
   recurrentes?: ReactNode;
+  /**
+   * Salud de la línea de WhatsApp. Con ROJO el botón "Nueva campaña" queda
+   * visible pero bloqueado (igual que sin permiso) y el banner explica por
+   * qué. El gate real está en saveCampaignAction/sendCampaignAction y en el
+   * workflow de envío.
+   */
+  salud?: LineaSalud | null;
+  /** Se dispara al tocar "Nueva campaña" con la línea en rojo. */
+  onLineaEnRiesgo?: () => void;
 }
 
 const ESTADO_CONFIG: Record<CampaignStatus, { label: string; text: string; bg: string }> = {
@@ -162,7 +173,10 @@ export default function Campanas({
   onSinPermiso,
   sugeridas,
   recurrentes,
+  salud = null,
+  onLineaEnRiesgo,
 }: CampanasProps) {
+  const lineaEnRiesgo = saludBloqueaEnvios(salud);
   const [query, setQuery] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState<CampaignStatus | "todas">("todas");
   const [periodoFiltro, setPeriodoFiltro] = useState<Periodo>("todo");
@@ -261,7 +275,11 @@ export default function Campanas({
       />
 
       <ActionBar>
-        <BtnPrimary onClick={puedeCrear ? onNewCampaign : onSinPermiso} bloqueado={!puedeCrear}>
+        <BtnPrimary
+          onClick={!puedeCrear ? onSinPermiso : lineaEnRiesgo ? onLineaEnRiesgo : onNewCampaign}
+          bloqueado={!puedeCrear || lineaEnRiesgo}
+          title={lineaEnRiesgo ? "La línea de WhatsApp está en riesgo: los envíos están frenados." : undefined}
+        >
           Nueva campaña
         </BtnPrimary>
         {hayCampanas && (
@@ -274,6 +292,7 @@ export default function Campanas({
       </ActionBar>
 
       <SectionBody>
+        <LineaSaludBanner salud={salud} />
         {sugeridas}
         {recurrentes}
 
