@@ -1,6 +1,8 @@
 -- P0 seguridad / fiabilidad — Supabase "Yamas.AI" (fhqqdnehsjgnnqirsinu)
--- Borrador del 26/10/2026. NO APLICADO. Cada bloque es independiente y
--- reversible (el rollback va comentado debajo de cada uno).
+-- 26/10/2026. Bloques 1 y 2 APLICADOS (migración
+-- yamas_send_p0_wamid_unico_y_envio_iniciado; el índice se creó sin CONCURRENTLY
+-- porque la tabla tenía 2 filas). Bloques 3 a 6 pendientes. Cada bloque es
+-- independiente y reversible (el rollback va comentado debajo de cada uno).
 -- Aplicar por bloques, en el SQL Editor o con apply_migration, después del OK.
 
 -- ─────────────────────────────────────────────────────────────────────────────

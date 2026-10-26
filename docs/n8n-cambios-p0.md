@@ -1,6 +1,10 @@
-# Cambios P0 en n8n (n8n.yamasai.tech) — listos para aplicar, SIN aplicar
+# Cambios P0 en n8n (n8n.yamasai.tech)
 
-Fecha: 26/10/2026. Servidor: `n8n.yamasai.tech` (MCP `n8n-selfhosted`). Cada bloque
+Fecha: 26/10/2026. **Aplicados y publicados el 26/10 con OK de Pato:** bloques SQL 1 y 2
+(migración `yamas_send_p0_wamid_unico_y_envio_iniciado`), C1–C3 en envíos PATO
+(versión `7ef70611…`; anterior `35d66fc6…`) y D en el scheduler (versión
+`1c573211…`; anterior `a29d6368…`), salvo el filtro de tenant fijo del scheduler,
+que quedó igual hasta confirmar. Lo demás (A, B, E, F) sigue pendiente. Servidor: `n8n.yamasai.tech` (MCP `n8n-selfhosted`). Cada bloque
 se aplica con `update_workflow` sobre el workflow vivo y se revierte con
 `restore_workflow_version` a la versión anterior (n8n guarda el historial), o
 desactivando el workflow nuevo y reactivando el viejo cuando es una copia.
