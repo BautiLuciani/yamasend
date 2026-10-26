@@ -73,6 +73,40 @@ REVOKE EXECUTE ON FUNCTION public.yamas_send_reservar_creditos(uuid,integer)    
 -- rollback: ALTER TABLE public.<tabla> DISABLE ROW LEVEL SECURITY;
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- 7) CONTROL DE CALIDAD DE ENVÍOS (regla fija de Pato, 26/10). Tablas nuevas, las
+--    escribe solo n8n (RLS activa sin políticas). PENDIENTE DE APLICAR (el asistente
+--    no tiene permiso para DDL vía apply_migration). rollback: DROP TABLE.
+CREATE TABLE IF NOT EXISTS public.yamas_send_linea_salud (
+  tenant_id        text PRIMARY KEY,
+  semaforo         text NOT NULL CHECK (semaforo IN ('VERDE','AMARILLO','ROJO')),
+  motivos          jsonb NOT NULL DEFAULT '[]'::jsonb,   -- mueven el semáforo
+  avisos           jsonb NOT NULL DEFAULT '[]'::jsonb,   -- informativos
+  saldo_usd        numeric,
+  lineas           jsonb NOT NULL DEFAULT '[]'::jsonb,   -- [{tel, calidad, estado, limite, waba, review, restr}]
+  muestra          integer,                              -- mensajes template medidos (últimos 100)
+  entregados_pct   numeric,
+  leidos_pct       numeric,
+  fallidos_pct     numeric,
+  errores          jsonb NOT NULL DEFAULT '{}'::jsonb,   -- {codigo: cantidad} (131049, 131047, 131026...)
+  checked_at       timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE public.yamas_send_linea_salud ENABLE ROW LEVEL SECURITY;
+COMMENT ON TABLE public.yamas_send_linea_salud IS
+  'Semáforo de salud de la línea de WhatsApp por tenant (YCloud: saldo, phoneNumbers, businessAccounts, últimos mensajes). Lo escribe el workflow "YamaSend — Salud de líneas por tenant". ROJO = el envío no arranca.';
+
+CREATE TABLE IF NOT EXISTS public.yamas_send_wa_verificados (
+  telefono         text PRIMARY KEY,                     -- solo dígitos, con 549 para AR (igual que yamas_send_leads.telefono)
+  registrado       boolean NOT NULL,                     -- true = tiene WhatsApp; false = no tiene
+  verificado_at    timestamptz NOT NULL DEFAULT now(),
+  origen_tenant    text,
+  fuente           text NOT NULL DEFAULT 'walookup'
+);
+CREATE INDEX IF NOT EXISTS idx_yamas_send_wa_verificados_fecha ON public.yamas_send_wa_verificados (verificado_at);
+ALTER TABLE public.yamas_send_wa_verificados ENABLE ROW LEVEL SECURITY;
+COMMENT ON TABLE public.yamas_send_wa_verificados IS
+  'Resultado de WA Lookup por teléfono (vigencia 7 días). exists:false NO se guarda (indeterminado). El envío descarta registrado=false y verifica los que no tienen fila vigente.';
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- 6) Higiene (WARN del asesor): search_path fijo en 6 funciones yamas_send_*.
 ALTER FUNCTION public.yamas_send_valor_util                    SET search_path = public, pg_temp;
 ALTER FUNCTION public.yamas_send_array_texto                   SET search_path = public, pg_temp;
