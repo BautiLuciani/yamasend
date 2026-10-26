@@ -195,7 +195,7 @@ export async function actualizarDatosNegocioAction(
 // extrae su contenido (texto de PDF, filas de planilla, o visión para
 // imágenes) y normaliza todo a la misma lista de productos.
 const CATALOGO_IA_WEBHOOK_URL =
-  "https://yamasai.app.n8n.cloud/webhook/yamasend-analizar-catalogo";
+  "https://n8n.yamasai.tech/webhook/yamasend-analizar-catalogo";
 
 /** Tope de tamaño del archivo subido. Igual al límite del bucket de Storage. */
 const CATALOGO_MAX_BYTES = 15 * 1024 * 1024;
