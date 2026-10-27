@@ -146,13 +146,25 @@ el error y seguir.) El tope de marketing de 10 días hay que copiarlo de
   reintentar. Con C1 el reintento ya no duplica, pero sigue siendo ruido.
 
 ## E. Resto de webhooks sin auth (misma receta: `/authentication` = headerAuth + credencial)
-| Workflow | Nodo | Quién lo llama | Cuándo activar |
+
+**Aplicado el 26/10 (con OK, tras el deploy de la rama):** headerAuth activo en Sync v2
+(versión `960541c5…`, previa `f7426112…`), Perfil (`f1b9d01d…`, previa `6e6d1e3b…`),
+Sync LID (`cf2c39b2…`, previa `c04be4d4…`) y Motor (`3584a9fa…`, previa `6925fcf5…`).
+Antes se agregó la credencial a todos los HTTP internos que los llaman: worker
+(`Generar perfil del negocio`, `Refrescar mapa de LIDs`, `Avisar al Motor`, `Lanzar
+workers`, `Relanzar worker`; versión `0a7d3abb…`), v2 (`17b. Refrescar mapa de LIDs`)
+y Motor (`Disparar corrida por tenant`, `Seguir con el mismo tenant`). Verificado:
+los 4 webhooks devuelven 403 sin header (curl) y la corrida 7648 del cron del Motor
+disparó 7649–7651 por webhook con éxito (la llamada interna firmada funciona). Falta
+confirmar desde la app: "Sincronizar" (v2) y "Regenerar perfil" (Perfil).
+
+| Workflow | Nodo | Quién lo llama | Estado |
 |---|---|---|---|
-| `l245l2EnNjStx8qh` Perfil del negocio | Disparo del perfil | app (`perfil_negocio.ts`) y worker `byhTG2mp4pt47UPa` | tras deploy de la rama + agregar header en "Lanzar perfil" del worker |
-| `ekVcl5YBtlegBiJg` Sync+Análisis v2 | Webhook | app (`sync.ts`, ya manda Bearer) | tras deploy |
-| `byhTG2mp4pt47UPa` Análisis worker | Webhook | se autollama + QR Generator | agregar header en los HTTP que lo llaman, después activar |
-| `54lMIkx4oF6qUrse` Motor Pipeline | Webhook | se autollama (cron + continuación) + worker | ídem |
-| `AbfzphRS7LcsM88j` Sync LID | Webhook | worker y v2 | ídem |
+| `l245l2EnNjStx8qh` Perfil del negocio | Disparo del perfil | app (`perfil_negocio.ts`) y worker `byhTG2mp4pt47UPa` | ✅ 26/10 |
+| `ekVcl5YBtlegBiJg` Sync+Análisis v2 | Webhook | app (`sync.ts`, ya manda Bearer) | ✅ 26/10 |
+| `byhTG2mp4pt47UPa` Análisis worker | Webhook | se autollama + función SQL `public.yamas_send_analisis_kick` (pg_net, sin header). El QR Generator NO lo llama. | **Pendiente**: la función SQL tiene que mandar `X-Yamasend-Signature`. No poner el secreto en el cuerpo de la función: guardarlo en Supabase Vault (`vault.create_secret`, lo carga Pato) y leerlo con `vault.decrypted_secrets`. Los HTTP internos ya mandan el header. |
+| `54lMIkx4oF6qUrse` Motor Pipeline | Webhook | se autollama (cron + continuación) + worker | ✅ 26/10 |
+| `AbfzphRS7LcsM88j` Sync LID | Webhook | worker y v2 | ✅ 26/10 |
 | `3yNZelxXBx6Uo3S5` Receptor YCloud | Evento de YCloud | YCloud (webhook `yamasend-inbound` → reenvío desde `CKwrQPxt8a5M7wpN`) | YCloud firma con `ycloud-signature` (HMAC): copiar los nodos "Verificar/Validar Firma" de Aprobar Template; el reenvío interno lleva header |
 | `CKwrQPxt8a5M7wpN` Respuestas | Mensaje entrante de YCloud | YCloud | validar HMAC `ycloud-signature` con el secreto del webhook `6abd88fa262d4a22f5ce7c63` |
 | `VxtHWQiIvpZ0tHIh` QR Generator | Webhook | navegador (AppShell) | NO header: el browser no puede llevar el secreto; ya valida el access_token contra Supabase. Solo reemplazar la anon key a mano por la credencial `Ayf8omm7hiVVd9GK` |
